@@ -231,9 +231,6 @@ class ModelData(object):
         retdict = dict()
         retdict['names'] = list()
 
-        if not list(self.elements(element_type=element_type, **kwargs)):
-            return retdict
-
         for name, elem in self.elements(element_type=element_type, **kwargs):
             retdict['names'].append(name)
             for attrib, value in elem.items():
