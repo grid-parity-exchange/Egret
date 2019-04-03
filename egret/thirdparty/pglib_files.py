@@ -1,3 +1,17 @@
+#  ___________________________________________________________________________
+#
+#  EGRET: Electrical Grid Research and Engineering Tools
+#  Copyright 2019 National Technology & Engineering Solutions of Sandia, LLC
+#  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+#  Government retains certain rights in this software.
+#  This software is distributed under the Revised BSD License.
+#  ___________________________________________________________________________
+
+"""
+This is the list of expected files in the pglib ZIP archive
+If the archive changes, this list will need to be updated
+"""
+
 pglib_files_to_extract = [
    'pglib-opf-master/pglib_opf_case2746wop_k.m',
    'pglib-opf-master/MODEL.tex',

@@ -1,3 +1,4 @@
+_
 """
 This script downloads the Power Grid Lib - Optimal Power Flow benchmark library
 as a ZIP archive from GitHub at the following url:
@@ -23,6 +24,7 @@ import logging
 from zipfile import ZipFile
 import pyomo.common.fileutils as futil
 import pyomo.common.download as dload
+# we specifically list the files to prevent extracting unexpected data
 from egret.thirdparty.pglib_files import pglib_files_to_extract as files
 
 logger = logging.getLogger('egret.thirdparty.get_pglib')
