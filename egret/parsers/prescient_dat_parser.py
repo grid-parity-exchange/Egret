@@ -43,7 +43,7 @@ def create_model_data_dict(dat_file):
     elements = md_dict['elements']
     system = md_dict['system']
 
-    system['time_indices'] = list(params.TimePeriods)
+    system['time_indices'] = list(str(t) for t in params.TimePeriods)
     system['time_period_length_minutes'] = value(params.TimePeriodLengthMinutes)
 
     system['load_mismatch_cost'] = value(params.LoadMismatchPenalty)
@@ -77,13 +77,13 @@ def create_model_data_dict(dat_file):
                 'in_service': True,
                 'p_load':
                         {'data_type':'time_series',
-                            'values': { t : params.Demand[b,t] for t in params.TimePeriods }
+                            'values': { str(t) : params.Demand[b,t] for t in params.TimePeriods }
                         }
                }
         load_dict[b] = l_d
     elements['load'] = load_dict
 
-    reserve_dict = { t : value(params.ReserveRequirement[t]) for t in params.TimePeriods }
+    reserve_dict = { str(t) : value(params.ReserveRequirement[t]) for t in params.TimePeriods }
     system['spinning_reserve_requirement'] = { 'data_type':'time_series', 'values': reserve_dict }
 
     branch_dict = dict()
@@ -159,10 +159,10 @@ def create_model_data_dict(dat_file):
         g_d['in_service'] = True
         g_d['fuel'] = params.NondispatchableGeneratorType[g]
         g_d['p_min'] = { 'data_type':'time_series', 
-                            'values': { t : params.MinNondispatchablePower[g,t] for t in params.TimePeriods }
+                            'values': { str(t) : params.MinNondispatchablePower[g,t] for t in params.TimePeriods }
                        }
         g_d['p_max'] = { 'data_type':'time_series', 
-                            'values': { t : params.MaxNondispatchablePower[g,t] for t in params.TimePeriods }
+                            'values': { str(t) : params.MaxNondispatchablePower[g,t] for t in params.TimePeriods }
                        }
         ## NOTE: generators need unique names
         gen_dict[g+'_r'] = g_d
