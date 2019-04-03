@@ -44,13 +44,18 @@ To log an exception and capture the stack trace
 
 """
 import logging
+log_format = '%(message)s'
+logging.basicConfig(level=logging.DEBUG,
+                    format=log_format)
 
-logger = logging.getLogger('egret')
+"""
+logger = logging.getLogger('')
 
 # configure the basic egret logger
 console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.WARNING)
+console_handler.setLevel(logging.INFO)
 #fmtr = logging.Formatter('%(name)s: %(message)s')
 #console_handler.setFormatter(fmtr)
 
 logger.addHandler(console_handler)
+"""
