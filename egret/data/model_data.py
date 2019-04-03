@@ -228,6 +228,9 @@ class ModelData(object):
            * need a better error message when element_type is not found
 
         """
+        if element_type not in self.data['elements']:
+            return None
+
         retdict = dict()
         retdict['names'] = list()
 
