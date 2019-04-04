@@ -205,11 +205,11 @@ class ModelData(object):
         and, if requested, filtes using other sub-attributes. While the original 
         structure follows:
 
-        >>> data['elements'][<element-name>][<attribute>] = <value>
+        >>> data['elements'][<element-name>][<attribute>] = <value>  # doctest: +SKIP
 
         the returned dictionary follows:
 
-        >>> d[<attribute>][<element-name>] = <value>
+        >>> d[<attribute>][<element-name>] = <value>  # doctest: +SKIP
 
         Note that this call is actually building a dictionary (not a generator).
 
