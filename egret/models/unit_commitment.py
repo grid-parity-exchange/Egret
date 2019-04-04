@@ -24,7 +24,7 @@ def _get_uc_model(model_data, formulation_list):
     md = scale_ModelData_to_pu(model_data)
     return generate_model(md, formulation)
 
-def create_tight_unit_commitment_model(model_data):
+def create_tight_unit_commitment_model(model_data, network_constraints='power_balance_constraints'):
     '''
     Create a new unit commitment model based on the "tight" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -33,9 +33,12 @@ def create_tight_unit_commitment_model(model_data):
 
     Parameters
     ----------
-    model_data : egret.data.ModelData objective
+    model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
         # TODO: describe the required and optional attributes
+    network_constraints : str (optional)
+        Set of network constraints to use. The default option uses a B-\\theta 
+        "DC" network.
 
     Returns
     -------
@@ -52,6 +55,7 @@ def create_tight_unit_commitment_model(model_data):
                         'KOW_production_costs_tightened',
                         'rajan_takriti_UT_DT',
                         'KOW_startup_costs',
+                         network_constraints,
                        ]
     return _get_uc_model(model_data, formulation_list)
 

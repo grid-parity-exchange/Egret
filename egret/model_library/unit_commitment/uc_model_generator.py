@@ -33,6 +33,7 @@ UCFormulation = namedtuple('UCFormulation',
                              'production_costs',
                              'uptime_downtime',
                              'startup_costs',
+                             'network_constraints',
                              ]
                             )
 
@@ -122,7 +123,7 @@ def _get_formulation_from_UCFormulation( uc_formulation ):
               uc_formulation.production_costs,
               uc_formulation.uptime_downtime,
               uc_formulation.startup_costs,
-              'power_balance_constraints',
+              uc_formulation.network_constraints,
               'MLR_reserve_constraints' if uc_formulation.reserve_vars in ['MLR_reserve_vars'] else 'CA_reserve_constraints',
               'basic_objective',
             ]
