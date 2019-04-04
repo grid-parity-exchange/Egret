@@ -599,3 +599,41 @@ def create_riv_acopf_model(model_data):
     model.obj = pe.Objective(expr=obj_expr)
 
     return model
+
+
+if __name__ == '__main__':
+    import os
+
+    path = os.path.dirname(__file__)
+
+    matpower_file = os.path.join(path, '../../download/pglib-opf/pglib_opf_case14_ieee.m')
+
+    case = 'pglib_opf_case14_ieee'
+
+    assert os.path.isfile(matpower_file)
+
+    from egret.parsers.matpower_parser import create_ModelData
+
+    md = create_ModelData(matpower_file)
+
+    model = create_riv_acopf_model(md)
+
+    solver = pe.SolverFactory('ipopt')
+
+    results = solver.solve(model, tee=True)
+
+
+    model = create_rsv_acopf_model(md)
+
+    solver = pe.SolverFactory('ipopt')
+
+    results = solver.solve(model, tee=True)
+
+
+
+    model = create_psv_acopf_model(md)
+
+    solver = pe.SolverFactory('ipopt')
+
+    results = solver.solve(model, tee=True)
+

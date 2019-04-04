@@ -262,13 +262,11 @@ def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate
              g21 * m.c[(from_bus,to_bus)])
 
 
-def declare_eq_branch_power_dc_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):
+def declare_eq_branch_power_btheta_approx(model, index_set, branches):
     """
-    Create the equality constraints for power (from DC approximation)
+    Create the equality constraints for power (from BTHETA approximation)
     in the branch
     """
-    assert (approximation_type == ApproximationType.BTHETA
-            and "Only the B-Theta approximation has been implemented.")
     m = model
 
     con_set = decl.declare_set("_con_eq_branch_power_dc_approx_set", model, index_set)
@@ -282,7 +280,6 @@ def declare_eq_branch_power_dc_approx(model, index_set, branches, approximation_
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        x = branch['reactance']
         tau = 1.0
         shift = 0.0
 
@@ -290,10 +287,50 @@ def declare_eq_branch_power_dc_approx(model, index_set, branches, approximation_
             tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
 
-        b = 1/(tau*x)
+        # TODO: Discuss which version implementation to include
+        # x = branch['reactance']
+        # b = 1/(tau*x)
+
+        b = tx_calc.calculate_susceptance(branch)
+        b = b/tau
+
         m.eq_pf_branch[branch_name] = \
             m.pf[branch_name] == \
             b * (m.va[from_bus] - m.va[to_bus] - shift)
+
+
+def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol = None):
+    """
+    Create the equality constraints for power (from PTDF approximation)
+    in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_power_dc_approx_set", model, index_set)
+
+    m.eq_pf_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+        if not branch['in_service']:
+            continue
+        expr = 0
+
+        ptdf = branch['ptdf']
+        for bus_name, coef in ptdf.items():
+            if ptdf_tol and abs(coef) < ptdf_tol:
+                coef = 0.
+
+            if bus_gs_fixed_shunts[bus_name] != 0.0:
+                expr += coef * bus_gs_fixed_shunts[bus_name]
+
+            if bus_p_loads[bus_name] != 0.0:
+                expr += coef * m.pl[bus_name]
+
+            for gen_name in gens_by_bus[bus_name]:
+                expr -= coef * m.pg[gen_name]
+
+        m.eq_pf_branch[branch_name] = \
+            m.pf[branch_name] == expr
 
 
 def declare_ineq_s_branch_thermal_limit(model, index_set,

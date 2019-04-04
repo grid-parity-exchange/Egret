@@ -136,22 +136,17 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     at a bus using the variables for real power flows, respectively.
     """
     m = model
-    _system_idx = ['0']
-    con_set = decl.declare_set('_con_eq_p_balance', model, _system_idx)
 
-    m.eq_p_balance = pe.Constraint(con_set)
-
-    p_expr = -sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
-    p_expr += sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
-    p_expr += sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
+    p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
             if idx == 'include_feasibility_slack':
-                p_expr += eval("m." + val)[_system_idx]
+                p_expr -= eval("m." + val)
 
-    m.eq_p_balance[_system_idx[0]] = \
-        p_expr == 0
+    m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
 
 def declare_eq_p_balance_dc_approx(model, index_set,
@@ -174,25 +169,25 @@ def declare_eq_p_balance_dc_approx(model, index_set,
 
     for bus_name in con_set:
         if approximation_type == ApproximationType.BTHETA:
-            p_expr = sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-            p_expr -= sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr = sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr -= sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
-            p_expr += bus_gs_fixed_shunts[bus_name]
+            p_expr -= bus_gs_fixed_shunts[bus_name]
 
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
-            p_expr += m.pl[bus_name]
+            p_expr -= m.pl[bus_name]
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
                 if idx == 'include_feasibility_slack':
-                    p_expr += eval("m." + val)[bus_name]
+                    p_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
-            p_expr -= m.pg[gen_name]
+            p_expr += m.pg[gen_name]
 
         m.eq_p_balance[bus_name] = \
-            p_expr == 0
+            p_expr == 0.0
 
 
 def declare_eq_p_balance(model, index_set,
@@ -213,29 +208,29 @@ def declare_eq_p_balance(model, index_set,
     m.eq_p_balance = pe.Constraint(con_set)
 
     for bus_name in con_set:
-        p_expr = sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-        p_expr += sum([m.pt[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+        p_expr = -sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        p_expr -= sum([m.pt[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
             if coordinate_type == CoordinateType.RECTANGULAR:
                 vmsq = m.vr[bus_name] ** 2 + m.vj[bus_name] ** 2
             elif coordinate_type == CoordinateType.POLAR:
                 vmsq = m.vm[bus_name] ** 2
-            p_expr += bus_gs_fixed_shunts[bus_name] * vmsq
+            p_expr -= bus_gs_fixed_shunts[bus_name] * vmsq
 
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
-            p_expr += m.pl[bus_name]
+            p_expr -= m.pl[bus_name]
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
                 if idx == 'include_feasibility_slack':
-                    p_expr += eval("m." + val)[bus_name]
+                    p_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
-            p_expr -= m.pg[gen_name]
+            p_expr += m.pg[gen_name]
 
         m.eq_p_balance[bus_name] = \
-            p_expr == 0
+            p_expr == 0.0
 
 
 def declare_eq_p_balance_with_i_aggregation(model, index_set,
@@ -252,22 +247,22 @@ def declare_eq_p_balance_with_i_aggregation(model, index_set,
     m.eq_p_balance = pe.Constraint(con_set)
 
     for bus_name in con_set:
-        p_expr = m.vr[bus_name] * m.ir_aggregation_at_bus[bus_name] + \
-                 m.vj[bus_name] * m.ij_aggregation_at_bus[bus_name]
+        p_expr = -(m.vr[bus_name] * m.ir_aggregation_at_bus[bus_name] + \
+                 m.vj[bus_name] * m.ij_aggregation_at_bus[bus_name])
 
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
-            p_expr += m.pl[bus_name]
+            p_expr -= m.pl[bus_name]
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
                 if idx == 'include_feasibility_slack':
-                    p_expr += eval("m." + val)[bus_name]
+                    p_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
-            p_expr -= m.pg[gen_name]
+            p_expr += m.pg[gen_name]
 
         m.eq_p_balance[bus_name] = \
-            p_expr == 0
+            p_expr == 0.0
 
 
 def declare_eq_q_balance(model, index_set,
@@ -287,29 +282,29 @@ def declare_eq_q_balance(model, index_set,
     m.eq_q_balance = pe.Constraint(con_set)
 
     for bus_name in con_set:
-        q_expr = sum([m.qf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-        q_expr += sum([m.qt[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+        q_expr = -sum([m.qf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        q_expr -= sum([m.qt[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_bs_fixed_shunts[bus_name] != 0.0:
             if coordinate_type == CoordinateType.RECTANGULAR:
                 vmsq = m.vr[bus_name] ** 2 + m.vj[bus_name] ** 2
             elif coordinate_type == CoordinateType.POLAR:
                 vmsq = m.vm[bus_name] ** 2
-            q_expr -= bus_bs_fixed_shunts[bus_name] * vmsq
+            q_expr += bus_bs_fixed_shunts[bus_name] * vmsq
 
         if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
-            q_expr += m.ql[bus_name]
+            q_expr -= m.ql[bus_name]
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
                 if idx == 'include_feasibility_slack':
-                    q_expr += eval("m." + val)[bus_name]
+                    q_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
-            q_expr -= m.qg[gen_name]
+            q_expr += m.qg[gen_name]
 
         m.eq_q_balance[bus_name] = \
-            q_expr == 0
+            q_expr == 0.0
 
 
 def declare_eq_q_balance_with_i_aggregation(model, index_set,
@@ -326,22 +321,22 @@ def declare_eq_q_balance_with_i_aggregation(model, index_set,
     m.eq_q_balance = pe.Constraint(con_set)
 
     for bus_name in con_set:
-        q_expr = -m.vr[bus_name] * m.ij_aggregation_at_bus[bus_name] + \
-                 m.vj[bus_name] * m.ir_aggregation_at_bus[bus_name]
+        q_expr = -(-m.vr[bus_name] * m.ij_aggregation_at_bus[bus_name] + \
+                 m.vj[bus_name] * m.ir_aggregation_at_bus[bus_name])
 
         if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
-            q_expr += m.ql[bus_name]
+            q_expr -= m.ql[bus_name]
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
                 if idx == 'include_feasibility_slack':
-                    q_expr += eval("m." + val)[bus_name]
+                    q_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
-            q_expr -= m.qg[gen_name]
+            q_expr += m.qg[gen_name]
 
         m.eq_q_balance[bus_name] = \
-            q_expr == 0
+            q_expr == 0.0
 
 
 def declare_ineq_vm_bus_lbub(model, index_set, buses, coordinate_type=CoordinateType.POLAR):

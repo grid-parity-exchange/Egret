@@ -12,7 +12,9 @@ This module collects some helper functions useful for performing
 different computations for transmission models
 """
 import math
-
+import numpy as np
+from math import cos
+from egret.model_library.defn import BasePointType
 
 def calculate_conductance(branch):
     rs = branch['resistance']
@@ -224,3 +226,136 @@ def calculate_vj_from_vm_va(vm, va):
         return vj
     return None
 
+def calculate_ptdf(branches,buses,index_set_row,index_set_column):
+
+
+
+    '''
+    calculates the sensitivity of real power flow to real power injections (i.e., PTDF, shift factor, etc.)
+    :param grid_network:
+    :return: sensitivity_Pflow_p
+    '''
+
+    # Define necessary matrices
+    F = _calculate_J11(branches,buses,index_set_row,index_set_column)
+    Z = grid_network.sensitivity_theta_p
+
+    # Compute
+    X = np.matmul(F,Z)      #TODO: check if F should be transposed
+    #X = np.matmul(F.transpose(),Z)
+    X[np.absolute(X)< 1e-12] = 0
+    sensitivity_Pflow_p = X
+
+    return sensitivity_Pflow_p
+
+def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=BasePointType.FLATSTART):
+    """
+    Compute the power flow Jacobian for partial derivative of real power flow to voltage angle
+    """
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    J11 = np.zeros((_len_branch,_len_bus))
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+        b = calculate_susceptance(branch)
+        b = b/tau
+
+        if base_point == BasePointType.FLATSTART:
+            vn = 1.
+            vm = 1.
+            tn = 0.
+            tm = 0.
+        elif base_point == BasePointType.AC: # TODO: check that we are loading the correct values (or results)
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+            tn = buses[from_bus]['va']
+            tm = buses[to_bus]['va']
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        J11[idx_row][idx_col] = -b * vn * vm * cos(tn - tm - shift)
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        J11[idx_row][idx_col] = b * vn * vm * cos(tn - tm - shift)
+
+    return J11
+
+
+def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART):
+    """
+    Calculates the sensitivity of the voltage angle to real power injections
+    """
+
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    _ref_bus_idx = [key for key, value in _mapping_bus.items() if value == reference_bus][0]
+
+    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point)
+    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
+    M = np.matmul(A.transpose(),J)
+
+    J0 = np.zeros((_len_bus+1,_len_bus+1))
+    J0[:-1,:-1] = M
+    J0[-1][_ref_bus_idx] = 1
+    J0[_ref_bus_idx][-1] = 1
+
+    try:
+        SENSI = np.linalg.inv(J0)
+    except np.linalg.LinAlgError:
+        print("Matrix not invertible. Calculating pseudo-inverse instead.")
+        SENSI = np.linalg.pinv(J0,rcond=1e-7)
+        pass
+    SENSI = SENSI[:-1,:-1]
+
+    PTDF = np.matmul(J,SENSI)
+
+    return PTDF
+
+def calculate_adjacency_matrix(branches,index_set_branch,index_set_bus):
+    """
+    Calculates the adjacency matrix where (-1) represents flow from the bus and (1) represents flow to the bus
+    for a given branch
+    """
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    adjacency_matrix = np.zeros((_len_branch,_len_bus))
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+
+        from_bus = branch['from_bus']
+        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        adjacency_matrix[idx_row,idx_col] = -1
+
+        to_bus = branch['to_bus']
+        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        adjacency_matrix[idx_row,idx_col] = 1
+
+    return adjacency_matrix
+
+
+def calculate_absolute_adjacency_matrix(adjacency_matrix):
+    """
+    Calculates the absolute value of the adjacency matrix
+    """
+    return np.absolute(adjacency_matrix)
