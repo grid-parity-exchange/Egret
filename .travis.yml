@@ -1,0 +1,54 @@
+language: python
+sudo: false # if false, use TravisCI's container based build
+
+matrix:
+    include:
+    - python: 3.6
+      env: CONDA_ENV=py36
+
+addons:
+    apt:
+        packages:
+            - ccache
+
+cache:
+    directories:
+        - $HOME/.ccache
+
+before_script: 
+    - "export DISPLAY=:99.0"
+    - "sh -e /etc/init.d/xvfb start"
+    - sleep 3 # give xvfb some time to start
+
+# setup miniconda for numpy, scipy, pandas
+before_install:
+    - echo "before install"
+    - export PATH=/usr/lib/ccache:$PATH
+    - if [[ "$TRAVIS_PYTHON_VERSION" == "2.7" ]]; then
+        wget http://repo.continuum.io/miniconda/Miniconda-3.16.0-Linux-x86_64.sh -O miniconda.sh;
+      else
+        wget http://repo.continuum.io/miniconda/Miniconda3-3.16.0-Linux-x86_64.sh -O miniconda.sh;
+      fi
+    - bash miniconda.sh -b -p $HOME/miniconda
+    - export PATH="$HOME/miniconda/bin:$PATH"
+    - hash -r
+    - conda config --set always_yes yes --set changeps1 no
+    - conda update -q conda
+    - conda info -a
+    
+install:
+    - echo "install"
+    - conda env create --file ci/requirements-$CONDA_ENV.yml
+    - source activate test_env # all envs are named test_env in the yml files
+    - conda list
+    - echo $PATH
+    - ls -l /home/travis/miniconda/envs/test_env/lib
+    - conda install -c conda-forge ipopt
+    - conda install -c conda-forge glpk
+    - python setup.py develop
+
+script:
+    - nosetests -v --nologcapture --with-coverage --with-doctest --doctest-extension=.rst --cover-package=egret egret
+
+after_success:
+    coveralls

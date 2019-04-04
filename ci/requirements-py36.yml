@@ -1,0 +1,14 @@
+name: test_env
+channels:
+    - defaults
+dependencies:
+    - python=3.6
+    - numpy
+    - scipy
+    - pandas
+    - pyomo
+    - pytest
+    - six
+    - nose
+    - pip:
+        - coveralls
