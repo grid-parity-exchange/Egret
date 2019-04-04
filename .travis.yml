@@ -43,6 +43,7 @@ install:
     - conda list
     - echo $PATH
     - ls -l /home/travis/miniconda/envs/test_env/lib
+    - pip install pyomo
     - conda install -c conda-forge ipopt
     - conda install -c conda-forge glpk
     - python setup.py develop

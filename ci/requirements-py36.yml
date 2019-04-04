@@ -6,7 +6,6 @@ dependencies:
     - numpy
     - scipy
     - pandas
-    - pyomo
     - pytest
     - six
     - nose
