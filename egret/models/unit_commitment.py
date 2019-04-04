@@ -37,7 +37,7 @@ def create_tight_unit_commitment_model(model_data, network_constraints='power_ba
         An egret ModelData object with the appropriate data loaded.
         # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta 
+        Set of network constraints to use. The default option uses a B-\\theta
         "DC" network.
 
     Returns
@@ -59,3 +59,37 @@ def create_tight_unit_commitment_model(model_data, network_constraints='power_ba
                        ]
     return _get_uc_model(model_data, formulation_list)
 
+def create_compact_unit_commitment_model(model_data, network_constraints='power_balance_constraints'):
+    '''
+    Create a new unit commitment model based on the "compact" formulation from
+    B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
+    Formulations for the Unit Commitment Problem" (2018). Available:
+    http://www.optimization-online.org/DB_FILE/2018/11/6930.pdf
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+        # TODO: describe the required and optional attributes
+    network_constraints : str (optional)
+        Set of network constraints to use. The default option uses a B-\\theta
+        "DC" network.
+
+    Returns
+    -------
+        pyomo.environ.ConcreteModel unit commitment model
+
+    '''
+
+    formulation_list = [
+                         'garver_3bin_vars',
+                         'garver_power_vars',
+                         'garver_power_avail_vars',
+                         'MLR_generation_limits',
+                         'damcikurt_ramping',
+                         'HB_production_costs',
+                         'rajan_takriti_UT_DT',
+                         'MLR_startup_costs',
+                         network_constraints,
+                       ]
+    return _get_uc_model(model_data, formulation_list)
