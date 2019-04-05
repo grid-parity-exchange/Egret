@@ -16,48 +16,99 @@ import math
 
 import pytest
 from pyomo.opt import SolverFactory, TerminationCondition
+from pyomo.core.plugins.transform.relax_integrality \
+        import RelaxIntegrality
 from egret.models.unit_commitment import *
 from egret.data.model_data import ModelData
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 test_cases = [os.path.join(current_dir,'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1,6)]
-test_objvals = [4218219.415648284, 5476393.707647476, 6023692.988920635, 5484256.671628478, 6091360.072517988]
+test_int_objvals = [4201915.017320504, 5454367.7670904165, 5999272.361123627, 5461120.3231092375, 6062406.32677043]
 
-def _test_uc_model(uc_model):
+def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
 
     for test_case, ref_objval in zip(test_cases, test_objvals):
     
         md_dict = json.load(open(test_case,'r'))
         md = ModelData(md_dict)
-        model = uc_model(md)
-        opt = SolverFactory('cbc')
-        opt.options['Rens'] = 'on'
-        opt.options['DivingG'] = 'on'
-        opt.options['DivingC'] = 'off'
-        opt.options['Rins'] = 'often'
-        opt.options['passF'] = '10'
-        result = opt.solve(model, tee=True)
+        
+        if relax:
+            model = uc_model(md, relaxed=relax)
+            opt = SolverFactory('cbc')
+        else:
+            model = uc_model(md)
+            opt = SolverFactory('gurobi')
+            opt.options['mipgap'] = 0.0
+
+        result = opt.solve(model, tee=False)
 
         assert result.solver.termination_condition == TerminationCondition.optimal
         assert math.isclose(ref_objval, result.problem.upper_bound)
 
-def test_tight_uc_model():
+@pytest.mark.mip
+def test_int_all_uc_models():
     _test_uc_model(create_tight_unit_commitment_model)
+    _test_uc_model(create_compact_unit_commitment_model)
+    _test_uc_model(create_KOW_unit_commitment_model)
+    _test_uc_model(create_ALS_unit_commitment_model)
+    _test_uc_model(create_MLR_unit_commitment_model)
+    _test_uc_model(create_random1_unit_commitment_model)
+    _test_uc_model(create_random2_unit_commitment_model)
+    _test_uc_model(create_OAV_unit_commitment_model)
+    _test_uc_model(create_OAV_tighter_unit_commitment_model)
+    _test_uc_model(create_OAV_original_unit_commitment_model)
+    _test_uc_model(create_OAV_up_downtime_unit_commitment_model)
+    _test_uc_model(create_CA_unit_commmitment_model)
+
+def test_tight_uc_model():
+    lp_obj_list = [4194720.23424, 5441076.85034, 5988496.92621, 5453617.47912, 6055376.54656]
+    _test_uc_model(create_tight_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_compact_uc_model():
-    _test_uc_model(create_compact_unit_commitment_model)
+    lp_obj_list = [4194304.94748, 5440720.727, 5988068.23178, 5453218.02764, 6055020.46427]
+    _test_uc_model(create_compact_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_KOW_uc_model():
-    _test_uc_model(create_KOW_unit_commitment_model)
+    lp_obj_list = [4193749.67682, 5440148.79074, 5987686.94763, 5452888.22712, 6054163.40576]
+    _test_uc_model(create_KOW_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_ALS_uc_model():
-    _test_uc_model(create_ALS_unit_commitment_model)
+    lp_obj_list = [4193603.40346, 5439977.63794, 5987392.27642, 5452580.38476, 6054545.74347]
+    _test_uc_model(create_ALS_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_MLR_uc_model():
-    _test_uc_model(create_MLR_unit_commitment_model)
+    lp_obj_list = [4193700.64155, 5440122.0449, 5987617.01183, 5452837.51833, 6054088.71399]
+    _test_uc_model(create_MLR_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_random1_uc_model():
-    _test_uc_model(create_random1_unit_commitment_model)
+    lp_obj_list = [4194304.94748, 5440720.727, 5988068.23178, 5453218.02764, 6055020.46427]
+    _test_uc_model(create_random1_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_random2_uc_model():
-    _test_uc_model(create_random2_unit_commitment_model)
+    lp_obj_list = [4194686.42109, 5441087.41223, 5988465.58558, 5453619.48855, 6055360.5608] 
+    _test_uc_model(create_random2_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
+def test_OAV_uc_model():
+    lp_obj_list = [4190770.57777, 5436680.81342, 5984071.37653, 5449824.53072, 6051451.70067]
+    _test_uc_model(create_OAV_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
+def test_OAV_tighter_uc_model():
+    lp_obj_list = [4190774.76258, 5436685.6315, 5984097.794, 5449825.81448, 6051485.86608]
+    _test_uc_model(create_OAV_tighter_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
+def test_OAV_original_uc_model():
+    lp_obj_list = [4186901.74384, 5428888.70061, 5975676.69077, 5443849.68783, 6041296.59018]
+    _test_uc_model(create_OAV_original_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
+def test_OAV_up_downtime_uc_model():
+    lp_obj_list = [4190745.01259, 5436634.52576, 5984052.06305, 5449795.75874, 6051432.92077]
+    _test_uc_model(create_OAV_up_downtime_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
+def test_CA_uc_model():
+    lp_obj_list = [4185855.30972, 5423650.80043, 5965411.93718, 5439434.94733, 6029118.03019]
+    _test_uc_model(create_CA_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
+
+
+
+
