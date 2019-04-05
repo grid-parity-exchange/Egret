@@ -145,6 +145,8 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
         for idx,val in rhs_kwargs.items():
             if idx == 'include_feasibility_slack':
                 p_expr -= eval("m." + val)
+            if idx == 'include_losses':
+                p_expr -= sum(m.pfl[branch_name] for branch_name in val)
 
     m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
@@ -160,8 +162,6 @@ def declare_eq_p_balance_dc_approx(model, index_set,
     Create the equality constraints for the real power balance
     at a bus using the variables for real power flows, respectively.
     """
-    assert (approximation_type == ApproximationType.BTHETA
-            and "Only the B-Theta approximation has been implemented.")
     m = model
     con_set = decl.declare_set('_con_eq_p_balance', model, index_set)
 
@@ -171,6 +171,11 @@ def declare_eq_p_balance_dc_approx(model, index_set,
         if approximation_type == ApproximationType.BTHETA:
             p_expr = sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
             p_expr -= sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        elif approximation_type == ApproximationType.BTHETA_LOSSES:
+            p_expr = -0.5*sum([m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr -= 0.5*sum([m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+            p_expr -= sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr += sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
             p_expr -= bus_gs_fixed_shunts[bus_name]

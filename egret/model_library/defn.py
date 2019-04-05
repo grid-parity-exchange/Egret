@@ -25,4 +25,8 @@ class ApproximationType(Enum):
 
 class BasePointType(Enum):
     FLATSTART = 1
-    AC = 2
+    SOLUTION = 2
+
+class RelaxationType(Enum):
+    NONE = 1
+    SOC = 2
