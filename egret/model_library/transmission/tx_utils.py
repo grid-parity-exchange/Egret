@@ -268,8 +268,10 @@ def _divide_by_baseMVA(element, attr_name, attr, baseMVA):
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
             if attr['cost_curve_type'] == 'polynomial':
                 values_dict = attr['values']
+                new_values = dict()
                 for power, coeff in values_dict.items():
-                    values_dict[power] = coeff*baseMVA**power
+                    new_values[int(power)] = coeff*baseMVA**int(power)
+                attr['values'] = new_values
             elif attr['cost_curve_type'] == 'piecewise':
                 values_list_of_tuples = attr['values']
                 new_values = list()

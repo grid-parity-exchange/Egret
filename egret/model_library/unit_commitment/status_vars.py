@@ -8,10 +8,8 @@
 #  ___________________________________________________________________________
 
 ## functions for adding the basic status varibles
-from __future__ import division
 from pyomo.environ import *
 import math
-import six 
 
 from .uc_utils import add_model_attr 
 component_name = 'status_vars'
