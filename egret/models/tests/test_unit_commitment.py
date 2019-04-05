@@ -15,6 +15,7 @@ import os
 import math
 
 import pytest
+import unittest
 from pyomo.opt import SolverFactory, TerminationCondition
 from pyomo.core.plugins.transform.relax_integrality \
         import RelaxIntegrality
@@ -45,6 +46,8 @@ def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
         assert result.solver.termination_condition == TerminationCondition.optimal
         assert math.isclose(ref_objval, result.problem.upper_bound)
 
+## definitely skip if we don't have gurobi
+@unittest.skipUnless(SolverFactory('gurobi').available(), "Solver gurobi unavailabe")
 @pytest.mark.mip
 def test_int_all_uc_models():
     _test_uc_model(create_tight_unit_commitment_model)
