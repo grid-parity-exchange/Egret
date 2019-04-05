@@ -171,6 +171,18 @@ def gens_by_bus(buses, gens):
     return gens_by_bus
 
 
+def gens_in_service_by_bus(buses, gens):
+    """
+    Return a dictionary of the generators attached to each bus
+    """
+    gens_by_bus = {k: list() for k in buses.keys()}
+    for gen_name, gen in gens.items():
+        if gen['in_service']:
+            gens_by_bus[gen['bus']].append(gen_name)
+
+    return gens_by_bus
+
+
 ## attributes which are scaled for power flow models
 scaled_attributes = {
                          ('element_type','generator'): [
