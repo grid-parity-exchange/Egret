@@ -61,7 +61,7 @@ def test_int_all_uc_models():
     _test_uc_model(create_OAV_tighter_unit_commitment_model)
     _test_uc_model(create_OAV_original_unit_commitment_model)
     _test_uc_model(create_OAV_up_downtime_unit_commitment_model)
-    _test_uc_model(create_CA_unit_commmitment_model)
+    _test_uc_model(create_CA_unit_commitment_model)
 
 def test_tight_uc_model():
     lp_obj_list = [4194720.23424, 5441076.85034, 5988496.92621, 5453617.47912, 6055376.54656]
