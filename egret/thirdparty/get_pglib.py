@@ -1,4 +1,12 @@
-_
+#  ___________________________________________________________________________
+#
+#  EGRET: Electrical Grid Research and Engineering Tools
+#  Copyright 2019 National Technology & Engineering Solutions of Sandia, LLC
+#  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+#  Government retains certain rights in this software.
+#  This software is distributed under the Revised BSD License.
+#  ___________________________________________________________________________
+
 """
 This script downloads the Power Grid Lib - Optimal Power Flow benchmark library
 as a ZIP archive from GitHub at the following url:
@@ -8,10 +16,11 @@ These benchmarks provide commonly used test cases for OPF formulations.
 For more information see:
 https://power-grid-lib.github.io
 
-The ZIP archive is extracted and placed in the following folder relative to the egret
-repository location:
+The ZIP archive is extracted to pglib-opf-master in the folder specified by the 
+keyword argument download_dir (or the current working directory if left None)
 
-./egret/thirdparty/downloads/pglib-opf-master
+This module can also be executed at the command line, and the benchmarks will
+be extracted to pglib-opf-master in the current working directory.
 
 To run the script, execute the following at a terminal prompt:
    
@@ -31,50 +40,50 @@ logger = logging.getLogger('egret.thirdparty.get_pglib')
 
 _pglib_zip_url = 'https://github.com/power-grid-lib/pglib-opf/archive/master.zip'
 
-_this_file = futil.this_file()
-_thirdparty_dir = os.path.dirname(_this_file)
-_download_dir = os.path.join(_thirdparty_dir, 'downloads')
-_zipfile_dest = os.path.join(_download_dir, 'pglib-master.zip')
-_pglib_dir = os.path.join(_download_dir, 'pglib-opf-master')
-_license_file = os.path.join(_pglib_dir, 'LICENSE')
-
-def get_pglib():
-    logger.critical("\n\n##################################################################################\n"
+def get_pglib(download_dir=None):
+    print("\n\n##################################################################################\n"
                     "# This script downloads the Power Grid Lib - Optimal Power Flow benchmark library\n"
                     "# as a ZIP archive from GitHub at the following url:\n"
                     "# https://github.com/power-grid-lib/pglib-opf/archive/master.zip\n"
                     "##################################################################################\n"
 )
 
-    if not os.path.isdir(_download_dir):
+    if download_dir is None:
+        download_dir = os.path.join(os.getcwd())
+
+    zipfile_dest = os.path.join(download_dir, 'pglib-master.zip')
+    pglib_dir = os.path.join(download_dir, 'pglib-opf-master')
+    license_file = os.path.join(pglib_dir, 'LICENSE')
+
+    if not os.path.isdir(download_dir):
         try:
-            os.mkdir(_download_dir)
+            os.mkdir(download_dir)
         except OSError:
             logger.error("***\nFailed to create directory: {}\n"
-                         "when trying to download pglib data\n***".format(_download_dir)
+                         "when trying to download pglib data\n***".format(download_dir)
                          )
             raise
 
     try:
         downloader = dload.FileDownloader()
-        downloader.set_destination_filename(_zipfile_dest)
+        downloader.set_destination_filename(zipfile_dest)
         logger.info('... downloading from: {}'.format(_pglib_zip_url))
         downloader.get_binary_file(_pglib_zip_url)
     except:
         logger.error("***\nFailed to download: {}\n***".format(_pglib_zip_url))
         raise
 
-    logger.critical('complete')
-    logger.critical('... extracting files from zip archive')
+    print('complete')
+    print('... extracting files from zip archive')
     try:
-        zf = ZipFile(_zipfile_dest, 'r')
-        zf.extractall(_download_dir, files)
+        zf = ZipFile(zipfile_dest, 'r')
+        zf.extractall(download_dir, files)
     except:
-        logger.error("***\nFailed to extract files from {}\n***".format(_zipfile_dest))
+        logger.error("***\nFailed to extract files from {}\n***".format(zipfile_dest))
         raise
 
-    logger.critical('complete')
-    logger.critical('\n\n###################################################################################\n'
+    print('complete')
+    print('\n\n###################################################################################\n'
                     '# Successfully downloaded the Power Grid Lib - Optimal Power Flow benchmark library\n'
                     '# from: {}\n'
                     '# to the following location:\n'
@@ -84,13 +93,13 @@ def get_pglib():
                     "# For more information see:\n"
                     "# https://power-grid-lib.github.io\n"
                     '###################################################################################\n\n'
-                    .format(_pglib_zip_url, _pglib_dir))
+                    .format(_pglib_zip_url, pglib_dir))
 
 
     # show the license file and the download message
-    with open(_license_file, 'r') as fd:
-        logger.critical(fd.read())
-    logger.critical('\n\n####################################################################################\n'
+    with open(license_file, 'r') as fd:
+        print(fd.read())
+    print('\n\n####################################################################################\n'
                     '# Successfully downloaded the Power Grid Lib - Optimal Power Flow benchmark library\n'
                     '# from: {}\n'
                     '# to the following location:\n'
@@ -100,7 +109,7 @@ def get_pglib():
                     "# For more information see:\n"
                     "# https://power-grid-lib.github.io\n"
                     '####################################################################################\n\n'
-                    .format(_pglib_zip_url, _pglib_dir))
+                    .format(_pglib_zip_url, pglib_dir))
 
 if __name__ == '__main__':
     get_pglib()
