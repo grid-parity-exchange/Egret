@@ -171,6 +171,18 @@ def gens_by_bus(buses, gens):
     return gens_by_bus
 
 
+def gens_in_service_by_bus(buses, gens):
+    """
+    Return a dictionary of the generators attached to each bus
+    """
+    gens_by_bus = {k: list() for k in buses.keys()}
+    for gen_name, gen in gens.items():
+        if gen['in_service']:
+            gens_by_bus[gen['bus']].append(gen_name)
+
+    return gens_by_bus
+
+
 ## attributes which are scaled for power flow models
 scaled_attributes = {
                          ('element_type','generator'): [
@@ -268,8 +280,10 @@ def _divide_by_baseMVA(element, attr_name, attr, baseMVA):
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
             if attr['cost_curve_type'] == 'polynomial':
                 values_dict = attr['values']
+                new_values = dict()
                 for power, coeff in values_dict.items():
-                    values_dict[power] = coeff*baseMVA**power
+                    new_values[int(power)] = coeff*baseMVA**int(power)
+                attr['values'] = new_values
             elif attr['cost_curve_type'] == 'piecewise':
                 values_list_of_tuples = attr['values']
                 new_values = list()
