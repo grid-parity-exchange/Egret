@@ -43,8 +43,15 @@ To log an exception and capture the stack trace
       logging.error("Exception occurred", exc_info=True)
 
 """
+import sys
 import logging
 log_format = '%(message)s'
-logging.basicConfig(level=logging.DEBUG,
-                    format=log_format)
 
+# configure the root logger for egret
+logger = logging.getLogger('egret')
+logger.setLevel(logging.INFO)
+
+console_handler = logging.StreamHandler(sys.stdout)
+fmtr = logging.Formatter(log_format)
+console_handler.setFormatter(fmtr)
+logger.addHandler(console_handler)
