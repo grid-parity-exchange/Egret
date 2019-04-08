@@ -48,7 +48,10 @@ install:
     - python setup.py develop
 
 script:
-    - nosetests -v --nologcapture --with-coverage --with-doctest --doctest-extension=.rst --cover-package=egret egret
+    # CDL: This command is somehow recursing into Pyomo doctests - let's add doctest manually in the correct folder when
+    # we have them
+    # - nosetests -v --nologcapture --with-coverage --with-doctest --doctest-extension=.rst --cover-package=egret egret
+    - nosetests -v --nologcapture --with-coverage --cover-package=egret egret
 
 after_success:
     coveralls
