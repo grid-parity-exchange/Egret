@@ -39,13 +39,19 @@ install:
     - conda list
     - echo $PATH
     - ls -l /home/travis/miniconda/envs/test_env/lib
-    - pip install pyomo
+    # CDL use the github master
+    # - pip install pyomo
+    - pip install git+https://github.com/PyUtilib/pyutilib.git
+    - pip install git+https://github.com/Pyomo/pyomo.git
     - conda install -c conda-forge ipopt
     - conda install -c conda-forge coincbc
     - python setup.py develop
 
 script:
-    - nosetests -v --nologcapture --with-coverage --with-doctest --doctest-extension=.rst --cover-package=egret egret
+    # CDL: This command is somehow recursing into Pyomo doctests - let's add doctest manually in the correct folder when
+    # we have them
+    # - nosetests -v --nologcapture --with-coverage --with-doctest --doctest-extension=.rst --cover-package=egret egret
+    - nosetests -v --nologcapture --with-coverage --cover-package=egret egret
 
 after_success:
     coveralls
