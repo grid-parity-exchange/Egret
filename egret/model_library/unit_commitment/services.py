@@ -139,6 +139,11 @@ def storage_services(model):
         return m.SocStorage[s, value(m.NumTimePeriods)] == m.EndPointSocStorage[s]
     model.EnforceEndPointSocStorage = Constraint(model.Storage, rule=storage_end_point_soc_rule)
 
+    def storage_cost_rule(m, s, t):
+        return m.ChargeCost[s]*m.PowerInputStorage[s,t]*m.TimePeriodLengthHours 
+                + m.DischargeCost[s]*m.PowerOutputStorage[s,t]*m.TimePeriodLengthHours
+    model.StorageCost = Expression(model.Storage, model.TimePeriods, rule=storage_cost_rule)
+
     return
 ## end storage_services
 

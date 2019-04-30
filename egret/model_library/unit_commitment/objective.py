@@ -113,6 +113,8 @@ def basic_objective(model):
         cc = sum(m.ProductionCost[g, t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) + \
               sum(m.LoadMismatchCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st])
+        if m.storage_services:
+            cc += sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
         if m.ancillary_services:
             cc += sum(m.RegulationCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
                 + sum(m.RegulationCostPenalty[t] for t in m.GenerationTimeInStage[st]) \

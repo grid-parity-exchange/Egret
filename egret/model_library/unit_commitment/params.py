@@ -977,6 +977,9 @@ def load_params(model, model_data):
     model.RetentionRate          = Param(model.Storage, within=PercentFraction, default=1.0,
                                             initialize=storage_attrs.get('retention_rate_60min')) ## assumed to be %/hr
 
+    model.ChargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('charge_cost'))
+    model.DischargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('discharge_cost'))
+
     ## this will be multiplied by itself 1/m.TimePeriodLengthHours times, so this is the scaling to
     ## get us back to %/hr
     def scaled_retention_rate(m,s):
