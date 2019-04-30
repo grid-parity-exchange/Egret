@@ -159,9 +159,8 @@ def load_params(model, model_data):
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    ## NOTE: we take care of p.u. here
     def _get_impedence(m, l):
-        return branch_attrs['reactance'][l]/system['baseMVA']
+        return branch_attrs['reactance'][l]
     model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=_get_impedence)
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term')) # max flow across the line
