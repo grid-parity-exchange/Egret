@@ -160,11 +160,12 @@ def load_params(model, model_data):
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    def _get_impedence(m, l):
-        return branch_attrs['reactance'][l]
-    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=_get_impedence)
+    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs['reactance'])
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term')) # max flow across the line
+
+    model.LineInService = Param(model.TransmissionLines, model.TimePeriods, within=Boolean, default=True,
+                                    initialize=TimeMapper(branch_attrs.get('in_service')))
 
     ## Interfaces
     ## NOTE: Lines in iterfaces should be all go "from" the
@@ -286,8 +287,9 @@ def load_params(model, model_data):
     for lname, load in loads.items():
         bus = load['bus']
         load_time = TimeMapper(load['p_load'])
+        load_in_service = TimeMapper(load['in_service'])
         for t in model.TimePeriods:
-            bus_loads[bus, t] += load_time(None,t)
+            bus_loads[bus, t] += load_time(None,t) if load_in_service(None,t) else 0.
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
@@ -330,13 +332,25 @@ def load_params(model, model_data):
     # the PowerBalance constraint. this parameter is not intended to be used in the     #
     # context of ramping or time up/down constraints.                                   # 
     #####################################################################################
+
+    ## simple function builder to invert in service to forced outage
+    def _get_forced_outage_initilizer(in_service_attrs):
+        in_service_time_mapper = TimeMapper(in_service_attrs)
+        def initialize_forced_outage(m, e, t):
+            return not in_service_time_mapper(m,e,t)
+        return initialize_forced_outage
     
     model.ThermalGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
-                                        within=Binary, default=False, initialize=TimeMapper(thermal_gen_attrs['in_serivce']))
+                                        within=Binary, default=False, 
+                                        initialize=_get_forced_outage_initilizer(thermal_gen_attrs['in_service']))
+
     model.NondispatchableGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
-                                        within=Binary, default=False, initialize=TimeMapper(renewable_gen_attrs['in_serivce']))
+                                        within=Binary, default=False, 
+                                        initialize=_get_forced_outage_initilizer(renewable_gen_attrs['in_service']))
+    
     model.StorageForceOutage = Param(model.ThermalGenerators, model.TimePeriods,
-                                        within=Binary, default=False, initialize=TimeMapper(storage_attrs['in_serivce']))
+                                        within=Binary, default=False,
+                                        initialize=_get_forced_outage_initilizer(storage_attrs['in_service']))
     
     
     ####################################################################################

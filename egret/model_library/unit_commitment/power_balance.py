@@ -28,7 +28,7 @@ def power_balance_constraints(model):
     # system variables
     # amount of power flowing along each line, at each time period
     def line_power_bounds_rule(m, l, t):
-       return (-m.ThermalLimit[l], m.ThermalLimit[l])
+        return (-m.ThermalLimit[l], m.ThermalLimit[l])
     model.LinePower = Var(model.TransmissionLines, model.TimePeriods, bounds=line_power_bounds_rule)
     
     # voltage angles at the buses (S) (lock the first bus at 0) in radians
@@ -40,7 +40,10 @@ def power_balance_constraints(model):
     model.FixFirstAngle = Constraint(model.TimePeriods, rule=fix_first_angle_rule)
 
     def line_power_rule(m, l, t):
-        return m.LinePower[l,t] == (m.Angle[m.BusFrom[l], t] - m.Angle[m.BusTo[l], t]) / m.Impedence[l]
+        if value(m.LineInService[l,t]):
+            return m.LinePower[l,t] == (m.Angle[m.BusFrom[l], t] - m.Angle[m.BusTo[l], t]) / m.Impedence[l]
+        else:
+            return m.LinePower[l,t] == 0.0
     model.CalculateLinePower = Constraint(model.TransmissionLines, model.TimePeriods, rule=line_power_rule)
     
     def interface_from_limit_rule(m,i,t):
