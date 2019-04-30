@@ -36,12 +36,12 @@ def storage_services(model):
         return m.InputStorage[s,t] + m.OutputStorage[s,t] <= 1
     model.InputOutputComplementarity = Constraint(model.Storage, model.TimePeriods, rule=input_output_complementarity_rule)
 
-    # amount of output power of each storage unit, at each time period
+    # amount of output power of each storage unit, at each time period, on the grid side
     def power_output_storage_bounds_rule(m, s, t):
         return (0, m.MaximumPowerOutputStorage[s])
     model.PowerOutputStorage = Var(model.Storage, model.TimePeriods, within=NonNegativeReals, bounds=power_output_storage_bounds_rule)
 
-    # amount of input power of each storage unit, at each time period
+    # amount of input power of each storage unit, at each time period, on the grid side
     def power_input_storage_bounds_rule(m, s, t):
         return (0, m.MaximumPowerInputStorage[s])
     model.PowerInputStorage = Var(model.Storage, model.TimePeriods, within=NonNegativeReals, bounds=power_input_storage_bounds_rule)
@@ -124,10 +124,10 @@ def storage_services(model):
         # storage s, time t
         if t == m.InitialTime:
             return m.SocStorage[s, t] == m.StorageSocOnT0[s]  + \
-                (- m.PowerOutputStorage[s, t] + m.PowerInputStorage[s,t]*m.InputEfficiencyEnergy[s])*m.TimePeriodLengthHours/m.MaximumEnergyStorage[s]
+                (-m.PowerOutputStorage[s, t]/m.OutputEfficiencyEnergy[s] + m.PowerInputStorage[s,t]*m.InputEfficiencyEnergy[s])*m.TimePeriodLengthHours/m.MaximumEnergyStorage[s]
         else:
             return m.SocStorage[s, t] == m.SocStorage[s, t-1]*m.ScaledRetentionRate[s]  + \
-                (- m.PowerOutputStorage[s, t] + m.PowerInputStorage[s,t]*m.InputEfficiencyEnergy[s])*m.TimePeriodLengthHours/m.MaximumEnergyStorage[s]
+                (-m.PowerOutputStorage[s, t]/m.OutputEfficiencyEnergy[s] + m.PowerInputStorage[s,t]*m.InputEfficiencyEnergy[s])*m.TimePeriodLengthHours/m.MaximumEnergyStorage[s]
     model.EnergyConservation = Constraint(model.Storage, model.TimePeriods, rule=energy_conservation_rule)
 
     ##################################

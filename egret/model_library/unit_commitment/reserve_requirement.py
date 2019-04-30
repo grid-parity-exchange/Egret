@@ -49,7 +49,7 @@ def CA_reserve_constraints(model):
         if m.storage_services:
             return sum(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
                  + sum(m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
-                 + sum(m.PowerOutputStorage[s,t]*m.OutputEfficiencyEnergy[s] for s in m.Storage) \
+                 + sum(m.PowerOutputStorage[s,t] for s in m.Storage) \
                  - sum(m.PowerInputStorage[s,t] for s in m.Storage) \
                  + sum(m.LoadGenerateMismatch[b,t] for b in m.Buses) \
                  + m.ReserveShortfall[t] \

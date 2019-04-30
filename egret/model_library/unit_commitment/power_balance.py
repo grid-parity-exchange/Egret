@@ -84,7 +84,7 @@ def power_balance_constraints(model):
         # bus b, time t (S)
         if m.storage_services:
             return sum((1 - m.GeneratorForcedOutage[g,t]) * m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
-                + sum(m.PowerOutputStorage[s, t]*m.OutputEfficiencyEnergy[s] for s in m.StorageAtBus[b])\
+                + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
                 - sum(m.PowerInputStorage[s, t] for s in m.StorageAtBus[b])\
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
                 + sum(m.LinePower[l,t] for l in m.LinesTo[b]) \
