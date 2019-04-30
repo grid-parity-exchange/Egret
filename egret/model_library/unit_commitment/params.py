@@ -22,13 +22,14 @@ def _verify_must_run_t0_state_consistency(model):
     # sure that the unit has satisifed its minimum down time condition if UnitOnT0 is negative.
     
     def verify_must_run_t0_state_consistency_rule(m, g):
-        if value(m.MustRun[g]):
-            t0_state = value(m.UnitOnT0State[g])
-            if t0_state < 0:
-                min_down_time = value(m.MinimumDownTime[g])
-                if abs(t0_state) < min_down_time:
-                    print("DATA ERROR: The generator %s has been flagged as must-run, but its T0 state=%d is inconsistent with its minimum down time=%d" % (g, t0_state, min_down_time))
-                    return False
+        t0_state = value(m.UnitOnT0State[g])
+        if t0_state < 0:
+            min_down_time = value(m.MinimumDownTime[g])
+            if abs(t0_state) < min_down_time:
+                for t in range(m.TimePeriods.first(), min_down_time+t0_state+m.TimePeriods.first()+1):
+                    if value(m.MustRun[g, t]):
+                        print("DATA ERROR: The generator %s has been flagged as must-run at time %d, but its T0 state=%d is inconsistent with its minimum down time=%d" % (g, t, t0_state, min_down_time))
+                        return False
         return True
     
     model.VerifyMustRunT0StateConsistency = BuildAction(model.ThermalGenerators, rule=verify_must_run_t0_state_consistency_rule)
@@ -201,12 +202,12 @@ def load_params(model, model_data):
     model.QuickStartGenerators = Set(within=model.ThermalGenerators, initialize=init_quick_start_generators)
     
     # optionally force a unit to be on.
-    model.MustRun = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('must_run'))
-    
-    def init_must_run_generators(m):
-        return [g for g in m.ThermalGenerators if value(m.MustRun[g]) == 1]
-    
-    model.MustRunGenerators = Set(within=model.ThermalGenerators, initialize=init_must_run_generators)
+    model.MustRun = Param(model.ThermalGenerators, model.TimePeriods, within=Boolean,
+                            default=False, initialize=TimeMapper(thermal_gen_attrs.get('must_run')))
+
+    model.FixedCommitmentTypes = Set(initialize=[0,1,None])
+    model.FixedCommitment = Param(model.ThermalGenerators, model.TimePeriods, within=model.FixedCommitmentTypes,
+                                    default=None, initialize=TimeMapper(thermal_gen_attrs.get('fixed_commitment')))
     
     model.NondispatchableGeneratorsAtBus = Set(model.Buses, initialize=renewable_gens_by_bus)
     
@@ -330,7 +331,13 @@ def load_params(model, model_data):
     # context of ramping or time up/down constraints.                                   # 
     #####################################################################################
     
-    model.GeneratorForcedOutage = Param(model.ThermalGenerators * model.TimePeriods, within=Binary, default=False)
+    model.ThermalGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
+                                        within=Binary, default=False, initialize=TimeMapper(thermal_gen_attrs['in_serivce']))
+    model.NondispatchableGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
+                                        within=Binary, default=False, initialize=TimeMapper(renewable_gen_attrs['in_serivce']))
+    model.StorageForceOutage = Param(model.ThermalGenerators, model.TimePeriods,
+                                        within=Binary, default=False, initialize=TimeMapper(storage_attrs['in_serivce']))
+    
     
     ####################################################################################
     # minimum and maximum generation levels, for each thermal generator. units are MW. #
