@@ -160,7 +160,7 @@ def load_params(model, model_data):
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs['reactance'])
+    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs.get('reactance'))
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term')) # max flow across the line
 
@@ -234,23 +234,23 @@ def load_params(model, model_data):
             yield 'area_'+name
     model.ReserveZones = Set(initialize=_init_reserve_zones)
 
-    if 'spinning_reserve_requirement' in zone_attrs:
-        zone_spin_time = TimeMapper(zone_attrs['spinning_reserve_requirement'])
-    if 'spinning_reserve_requirement' in area_attrs:
-        area_spin_time = TimeMapper(area_attrs['spinning_reserve_requirement'])
+    if 'reserve_requirement' in zone_attrs:
+        zone_r_time = TimeMapper(zone_attrs['reserve_requirement'])
+    if 'reserve_requirement' in area_attrs:
+        area_r_time = TimeMapper(area_attrs['reserve_requirement'])
 
     def _init_zonal_reserve_requirement(m,z,t):
         z_name = str(z)
         if z_name[:5] == 'zone_':
             name = z_name[5:]
-            if name in zone_attrs['spinning_reserve_requirement']:
-                return zone_spin_time(m,name,t)
+            if name in zone_attrs['reserve_requirement']:
+                return zone_r_time(m,name,t)
             else:
                 return 0.0
         elif z_name[:5] == 'area_':
             name = z_name[5:]
-            if name in area_attrs['spinning_reserve_requirement']:
-                return area_spin_time(m,name,t)
+            if name in area_attrs['reserve_requirement']:
+                return area_r_time(m,name,t)
             else:
                 return 0.0
         else:
@@ -309,7 +309,7 @@ def load_params(model, model_data):
     # the global system reserve, for each time period. units are MW. #
     ##################################################################
 
-    reserve_requirement = system.get("spinning_reserve_requirement", 0.)
+    reserve_requirement = system.get("reserve_requirement", 0.)
     model.ReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, 
                                         initialize=TimeMapper(reserve_requirement), mutable=True)
     
@@ -335,6 +335,8 @@ def load_params(model, model_data):
 
     ## simple function builder to invert in service to forced outage
     def _get_forced_outage_initilizer(in_service_attrs):
+        if in_service_attrs is None:
+            return None
         in_service_time_mapper = TimeMapper(in_service_attrs)
         def initialize_forced_outage(m, e, t):
             return not in_service_time_mapper(m,e,t)
@@ -342,15 +344,15 @@ def load_params(model, model_data):
     
     model.ThermalGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
                                         within=Binary, default=False, 
-                                        initialize=_get_forced_outage_initilizer(thermal_gen_attrs['in_service']))
+                                        initialize=_get_forced_outage_initilizer(thermal_gen_attrs.get('in_service')))
 
     model.NondispatchableGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
                                         within=Binary, default=False, 
-                                        initialize=_get_forced_outage_initilizer(renewable_gen_attrs['in_service']))
+                                        initialize=_get_forced_outage_initilizer(renewable_gen_attrs.get('in_service')))
     
     model.StorageForceOutage = Param(model.ThermalGenerators, model.TimePeriods,
                                         within=Binary, default=False,
-                                        initialize=_get_forced_outage_initilizer(storage_attrs['in_service']))
+                                        initialize=_get_forced_outage_initilizer(storage_attrs.get('in_service')))
     
     
     ####################################################################################

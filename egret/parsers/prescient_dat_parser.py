@@ -84,7 +84,7 @@ def create_model_data_dict(dat_file):
     elements['load'] = load_dict
 
     reserve_dict = { str(t) : value(params.ReserveRequirement[t]) for t in params.TimePeriods }
-    system['spinning_reserve_requirement'] = { 'data_type':'time_series', 'values': reserve_dict }
+    system['reserve_requirement'] = { 'data_type':'time_series', 'values': reserve_dict }
 
     branch_dict = dict()
     for l in sorted(params.TransmissionLines):
@@ -111,7 +111,7 @@ def create_model_data_dict(dat_file):
     zone_dict = dict()
     for z in sorted(params.ReserveZones):
         reserve_dict = { t : params.ZonalReserveRequirement[z,t] }
-        z_d = { 'spinning_reserve_requirement' : {'data_type': 'time_series', 'values' : reserve_dict } }
+        z_d = { 'reserve_requirement' : {'data_type': 'time_series', 'values' : reserve_dict } }
         zone_dict[z] = z_d
     elements['zone'] = zone_dict
 

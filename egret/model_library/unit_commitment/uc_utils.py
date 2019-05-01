@@ -43,6 +43,8 @@ def add_model_attr(attr, requires = {}):
 def build_uc_time_mapping(md_timeperiods):
     ## Assums the last key is time
     def uc_time_helper(_data):
+        if _data is None:
+            return None
         def init_rule(m, *key):
             if not isinstance(key, tuple):
                 ## time indexed
