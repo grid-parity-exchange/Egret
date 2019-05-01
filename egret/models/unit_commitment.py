@@ -17,7 +17,7 @@ unit commitment formulations
 from egret.model_library.unit_commitment.uc_model_generator \
         import UCFormulation, generate_model 
 from egret.model_library.transmission.tx_utils import \
-        scale_ModelData_to_pu
+        scale_ModelData_to_pu, unscale_ModelData_to_pu
 
 def _get_uc_model(model_data, formulation_list, relax_binaries):
     formulation = UCFormulation(*formulation_list)
@@ -504,3 +504,314 @@ def create_CA_unit_commitment_model(model_data,
                          network_constraints,
                        ]
     return _get_uc_model(model_data, formulation_list, relaxed)
+
+def _set_options(solver, mipgap, timelimit, other_options):
+    solver_name = solver.name
+
+    if 'gurobi' in solver_name:
+        solver.options.MIPGap = mipgap
+        if timelimit is not None:
+            solver.options.TimeLimit = timelimit
+    elif 'cplex' in solver_name:
+        solver.options.mip_tolerances_mipgap = mipgap
+    elif 'glpk' in solver_name:
+        solver.options.mipgap = mipgap
+    elif 'cbc' in solver_name:
+        solver.options.ratioGap = mipgap
+    else:
+        raise Exception('Solver {0} not recognized'.format(solver_name))
+
+    for key, opt in other_options:
+        solver.options[key] = opt
+
+def _time_series_dict(values):
+    return {'data_type':'time_series', 'values':values}
+
+def solve_unit_commitment(model_data,
+                          solver,
+                          mipgap = 0.001,
+                          timelimit = None,
+                          solver_tee = True,
+                          symbolic_solver_labels = False,
+                          options = dict(),
+                          uc_model_generator=create_tight_unit_commitment_model,
+                          relaxed=False):
+    '''
+    Create and solve a new unit commitment model
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+        # TODO: describe the required and optional attributes
+    solver : str or pyomo.opt.base.solvers.OptSolver
+        Either a string specifying a pyomo solver name, or an instanciated pyomo solver
+    mipgap : float (optional)
+        Mipgap to use for unit commitment solve; default is 0.001
+    timelimit : float (optional)
+        Time limit for unit commitment run. Default of None results in no time
+        limit being set -- runs until mipgap is satisfied
+    solver_tee : bool (optional)
+        Display solver log. Default is True.
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels. Useful for debugging; default is False.
+    options : dict (optional)
+        Other options to pass into the solver. Default is dict().
+    uc_model_generator : function (optional)
+        Function for generating the unit commitment model. Default is 
+        egret.models.unit_commitment.create_tight_unit_commitment_model
+    relaxed : bool (optional)
+        If True, creates a relaxed unit commitment model
+
+    '''
+    import pyomo.environ as pe
+    from pyomo.opt import SolverFactory, TerminationCondition
+    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+
+    ## termination conditions which are acceptable
+    safe_termination_conditions = [ 
+                                   TerminationCondition.maxTimeLimit,
+                                   TerminationCondition.maxIterations,
+                                   TerminationCondition.minFunctionValue,
+                                   TerminationCondition.minStepLength,
+                                   TerminationCondition.globallyOptimal,
+                                   TerminationCondition.locallyOptimal,
+                                   TerminationCondition.feasible,
+                                   TerminationCondition.optimal,
+                                   TerminationCondition.maxEvaluations,
+                                   TerminationCondition.other,
+                                  ]
+
+    m = uc_model_generator(model_data, relaxed=relaxed)
+
+    if relaxed:
+        m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+
+    if isinstance(solver, str):
+        solver = SolverFactory(solver)
+    elif isinstance(solver, pyomo.opt.base.OptSolver):
+        pass
+    else:
+        raise Exception('solver must be string or an instanciated pyomo solver')
+
+    _set_options(solver, mipgap, timelimit, options) 
+
+    if isinstance(solver, PersistentSolver):
+        solver.set_instance(m, symbolic_solver_labels=symbolic_solver_labels)
+        results = solver.solve(m, timelimit=timelimit, tee=solver_tee)
+    else:
+        results = solver.solve(m, timelimit=timelimit, tee=solver_tee, \
+                              symbolic_solver_labels=symbolic_solver_labels)
+
+    if results.solver.termination_condition not in safe_termination_conditions:
+        raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.terminataion_condition))
+
+    md = m.model_data
+
+    thermal_gens = dict(md.elements(element_type='generator', generator_type='thermal'))
+    renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+    storage = dict(md.elements(element_type='storage'))
+    zones = dict(md.elements(element_type='zone'))
+    areas = dict(md.elements(element_type='area'))
+
+    data_time_periods = md.data['system']['time_indices']
+    reserve_requirement = ('reserve_requirement' in md.data['system'])
+    value = pe.value
+
+    for g,g_dict in thermal_gens.items():
+        pg_dict = {}
+        if reserve_requirement:
+            rg_dict = {}
+        commitment_dict = {}
+        commitment_cost_dict = {}
+        production_cost_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            if value(m.ThermalGeneratorForcedOutage[g,mt]):
+                pg_dict[dt] = 0.
+                if reserve_requirement:
+                    rg_dict[dt] = 0.
+                spin_g_dict[dt] = 0.
+                commitment_dict[dt] = 0
+                commitment_cost_dict[dt] = 0.
+                production_cost_dict[dt] = 0.
+            else:
+                pg_dict[dt] = value(m.PowerGenerated[g,mt])
+                if reserve_requirement:
+                    rg_dict[dt] = value(m.ReserveProvided[g,mt])
+                commitment_dict[dt] = value(m.UnitOn[g,mt])
+                commitment_cost_dict[dt] = value(m.StartupCost[g,mt]+m.ShutdownCost[g,mt]+\
+                                        m.MinimumProductionCost[g]*m.UnitOn[g,mt]*m.TimePeriodLengthHours)
+                production_cost_dict[dt] = value(m.ProductionCost[g,mt])
+
+                ## NOTE: we may want different hooks for these as we better integrate the
+                ##       ancillary service model
+                ## TODO: need add hooks for different kinds of ancillary services
+                if m.ancillary_services:
+                    pass
+
+
+        g_dict['pg'] = _time_series_dict(pg_dict)
+        if reserve_requirement:
+            g_dict['rg'] = _time_series_dict(rg_dict)
+        g_dict['commitment'] = _time_series_dict(commitment_dict)
+        g_dict['commitment_cost'] = _time_series_dict(commitment_cost_dict)
+        g_dict['production_cost'] = _time_series_dict(production_cost_dict)
+
+    for g,g_dict in renewable_gens.items():
+        pg_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            if value(m.NondispatchableGeneratorForcedOutage[g,mt]):
+                pg_dict[dt] = 0.
+            else:
+                pg_dict[dt] = value(m.NondispatchablePowerUsed[g,mt])
+        g_dict['pg'] = _time_series_dict(pg_dict)
+
+    for s,s_dict in storage.items():
+        state_of_charge_dict = {}
+        p_discharge_dict = {}
+        p_charge_dict = {}
+        operational_cost_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            if value(m.StorageForceOutage[g,mt]):
+                p_discharge_dict[dt] = 0.
+                p_charge_dict[dt] = 0.
+                operational_cost_dict[dt] = 0.
+                # NOTE: if it goes offline, we'll assume it reverts to its minimum SOC 
+                # TODO: Is this reasonable? 
+                state_of_charge_dict[dt] = s_dict['minimum_state_of_charge']
+            else:
+                p_discharge_dict[dt] = value(m.PowerOutputStorage[s,mt])
+                p_charge_dict[dt] = value(m.PowerInputStorage[s,mt])
+                operational_cost_dict[dt] = value(m.StorageCost[s,mt])
+                state_of_charge_dict[dt] = value(m.SocStorage[s.mt])
+
+        s_dict['p_discharge'] = _time_series_dict(p_discharge_dict)
+        s_dict['p_charge'] = _time_series_dict(p_charge_dict)
+        s_dict['operational_cost'] = _time_series_dict(operational_cost_dict)
+        s_dict['state_of_charge'] = _time_series_dict(state_of_charge_dict)
+
+    ## NOTE: UC model currently has no notion of separate loads
+
+    for l,l_dict in branches.items():
+        pf_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            pf_dict[dt] = value(m.LinePower[l,mt])
+        l_dict['pf'] = _time_series_dict(pf_dict)
+
+    for b,b_dict in buses.items():
+        va_dict = {}
+        p_balance_violation_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            va_dict[dt] = value(m.Angle[b,mt])
+            p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
+        b_dict['va'] = _time_series_dict(va_dict)
+        b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
+        if relaxed:
+            lmp_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
+            b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+
+    if reserve_requirement:
+        ## populate the system attributes
+        sys_dict = md.data['system']
+        sr_s_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            sr_s_dict[dt] = value(m.ReserveShortfall[mt])
+        sys_dict['reserve_shortfall'] = _time_series_dict(sr_s_dict)
+        if relaxed:
+            sr_p_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                ## TODO: if the 'relaxed' flag is set, we should automatically
+                ##       pick a formulation which uses the MLR reserve constraints
+                sr_p_dict[dt] = value(m.dual[m.EnforceReserveRequirements[mt]])
+            sys_dict['reserve_price'] = _time_series_dict(sr_p_dict)
+
+
+    # NOTE: these ancillary service results should really only be added
+    #       if the zone/area had that specific requirement
+    def _populate_zonal_reserves(elements_dict, string_handle):
+        for e,e_dict in elements_dict.items():
+            me = string_handle+e
+            sr_s_dict = {}
+            r_up_s_dict = {}
+            r_dn_s_dict = {}
+            f_up_s_dict = {}
+            f_dn_s_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                sr_s_dict[dt] = value(m.ZonalSpinningReserveShortfall[me,mt])
+                r_up_s_dict[dt] = value(m.ZonalRegulationUpShortfall[me,mt])
+                r_dn_s_dict[dt] = value(m.ZonalRegulationDnShortfall[me,mt])
+                f_up_s_dict[dt] = value(m.ZonalFlexUpShortfall[me,mt])
+                f_dn_s_dict[dt] = value(m.ZonalFlexDnShortfall[me,mt])
+            e_dict['spinning_reserve_shortfall'] = _time_series_dict(sr_s_dict)
+            e_dict['regulation_up_shortfall'] = _time_series_dict(r_up_s_dict)
+            e_dict['regulation_down_shortfall'] = _time_series_dict(r_dn_s_dict)
+            e_dict['flexible_ramp_up_shortfall'] = _time_series_dict(f_up_s_dict)
+            e_dict['flexible_ramp_down_shortfall'] = _time_series_dict(f_dn_s_dict)
+            if relaxed:
+                sr_p_dict = {}
+                r_up_p_dict = {}
+                r_dn_p_dict = {}
+                f_up_p_dict = {}
+                f_dn_p_dict = {}
+                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                    sr_p_dict[dt] = value(m.dual[m.EnforceZonalSpinningReserveRequirement[me,mt]])
+                    r_up_p_dict[dt] = value(m.dual[m.EnforceZonalRegulationUpRequirements[me,mt]])
+                    r_dn_p_dict[dt] = value(m.dual[m.EnforceZonalRegulationDnRequirements[me,mt]])
+                    f_up_p_dict[dt] = value(m.dual[m.ZonalFlexUpRequirementConstr[me,mt]])
+                    f_dn_p_dict[dt] = value(m.dual[m.ZonalFlexDnRequirementConstr[me,mt]])
+                e_dict['spinning_reserve_price'] = _time_series_dict(sr_p_dict)
+                e_dict['regulation_up_price'] = _time_series_dict(r_up_p_dict)
+                e_dict['regulation_down_price'] = _time_series_dict(r_dn_p_dict)
+                e_dict['flexible_ramp_up_price'] = _time_series_dict(f_up_p_dict)
+                e_dict['flexible_ramp_down_price'] = _time_series_dict(f_dn_p_dict)
+
+    
+    if m.ancillary_services:
+        _populate_zonal_reserves(areas, 'area_')
+        _populate_zonal_reserves(zones, 'zone_')
+
+        ## populate the system attributes
+        sys_dict = md.data['system']
+        sr_s_dict = {}
+        r_up_s_dict = {}
+        r_dn_s_dict = {}
+        f_up_s_dict = {}
+        f_dn_s_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            sr_s_dict[dt] = value(m.SystemSpinningReserveShortfall[mt])
+            r_up_s_dict[dt] = value(m.SystemRegulationUpShortfall[mt])
+            r_dn_s_dict[dt] = value(m.SystemRegulationDnShortfall[mt])
+            f_up_s_dict[dt] = value(m.SystemFlexUpShortfall[mt])
+            f_dn_s_dict[dt] = value(m.SystemFlexDnShortfall[mt])
+        sys_dict['spinning_reserve_shortfall'] = _time_series_dict(sr_s_dict)
+        sys_dict['regulation_up_shortfall'] = _time_series_dict(r_up_s_dict)
+        sys_dict['regulation_down_shortfall'] = _time_series_dict(r_dn_s_dict)
+        sys_dict['flexible_ramp_up_shortfall'] = _time_series_dict(f_up_s_dict)
+        sys_dict['flexible_ramp_down_shortfall'] = _time_series_dict(f_dn_s_dict)
+        if relaxed:
+            sr_p_dict = {}
+            r_up_p_dict = {}
+            r_dn_p_dict = {}
+            f_up_p_dict = {}
+            f_dn_p_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                sr_p_dict[dt] = value(m.dual[m.EnforceSystemSpinningReserveRequirement[mt]])
+                r_up_p_dict[dt] = value(m.dual[m.EnforceSystemRegulationUpRequirement[mt]])
+                r_dn_p_dict[dt] = value(m.dual[m.EnforceSystemRegulationDnRequirement[mt]])
+                f_up_p_dict[dt] = value(m.dual[m.SystemFlexUpRequirementConstr[mt]])
+                f_dn_p_dict[dt] = value(m.dual[m.SystemFlexDnRequirementConstr[mt]])
+            sys_dict['spinning_reserve_price'] = _time_series_dict(sr_p_dict)
+            sys_dict['regulation_up_price'] = _time_series_dict(r_up_p_dict)
+            sys_dict['regulation_down_price'] = _time_series_dict(r_dn_p_dict)
+            sys_dict['flexible_ramp_up_price'] = _time_series_dict(f_up_p_dict)
+            sys_dict['flexible_ramp_down_price'] = _time_series_dict(f_dn_p_dict)
+
+    unscale_ModelData_to_pu(md, inplace=True)
+    
+    return md
+

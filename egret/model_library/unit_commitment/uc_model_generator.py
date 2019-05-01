@@ -78,6 +78,9 @@ def _generate_model( model_data,
 
     
     model = pe.ConcreteModel()
+
+    # hold on to this for later
+    model.model_data = model_data
     
     model.name = "UnitCommitment"
     
