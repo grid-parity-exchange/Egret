@@ -149,7 +149,6 @@ def storage_services(model):
 
 
 ## TODO: add hooks into model_data
-## TODO: add hooks for ThermalGeneratorForcedOutage
 ## NEW: general ancillary service function. These cannot be separated
 ##      because when multilple services are active they have interdependent constraints
 ##      (mostly involving capacity and ramping).
@@ -173,7 +172,7 @@ def storage_services(model):
 def ancillary_services(model):
     '''
     Defines ancillary services: regulation, spinning reserve, nonspinning reserve, operational reserve, flexible ramp
-    ## NOTE: As in most markets, the value of ancillary services from high to low is regulation, spinning reserve, nonspinning reserve, and operational reserve.
+    ## NOTE: As in most markets, the value of ancillary services from high to low is regulation, spinning reserve, nonspinning reserve, and supplemental reserve.
     ##       We allow for a higher-quality ancillary service to be subtituted for a lower-quality one
     ##       Flexible ramp is treated differently, again as it is in most markets. There is no bid for flexible ramp, and it is priced at opportunity cost
     '''
@@ -206,11 +205,11 @@ def ancillary_services(model):
         return value(m.MinimumPowerOutput[g])
     model.RegulationLowLimit = Param(model.ThermalGenerators, within=NonNegativeReals, validate=regulation_low_limit_validator, initialize=regulation_low_limit_init)
     
-    # Regulation capacity is calculated as the max of "regulation band" and 5*AutomaticResponseRate
+    # Regulation capacity is calculated as the max of "regulation band" and RegulationMinutes*AutomaticResponseRate
     model.AutomaticResponseRate = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0)
     
     def calculate_regulation_capability_rule(m, g):
-        temp1 = 5 * m.AutomaticResponseRate[g]
+        temp1 = m.RegulationMinutes * m.AutomaticResponseRate[g]
         temp2 = (m.RegulationHighLimit[g] - m.RegulationLowLimit[g])/2
         if temp1 > temp2:
             return temp2
@@ -279,7 +278,7 @@ def ancillary_services(model):
     model.EnforceRegulationDnBound = Constraint(model.ThermalGenerators, model.TimePeriods, rule=reg_dn_rule)
 
     def zonal_reg_up_provided(m,rz,t):
-        return sum(m.RegulationReserveUp[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalRegulationUpShortfall[rz,t] 
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.RegulationReserveUp[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalRegulationUpShortfall[rz,t] 
     model.ZonalRegulationUpProvided = Expression(model.ReserveZones, model.TimePeriods, rule=zonal_reg_up_provided)
 
     def enforce_zonal_reg_up_requirement_rule(m, rz, t):
@@ -287,13 +286,13 @@ def ancillary_services(model):
     model.EnforceZonalRegulationUpRequirements = Constraint(model.ReserveZones, model.TimePeriods, rule=enforce_zonal_reg_up_requirement_rule)
 
     def enforce_zonal_reg_dn_requirement_rule(m, rz, t):
-        return sum(m.RegulationReserveDn[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + \
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.RegulationReserveDn[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + \
                 m.ZonalRegulationDnShortfall[rz,t] >= m.ZonalRegulationDnRequirement[rz,t]
     model.EnforceZonalRegulationDnRequirements = Constraint(model.ReserveZones, model.TimePeriods, rule=enforce_zonal_reg_dn_requirement_rule)
 
     ## NOTE: making sure not to double count the shortfall
     def system_reg_up_provided(m,t):
-        return sum(m.RegulationReserveUp[g,t] for g in m.ThermalGenerators) + \
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.RegulationReserveUp[g,t] for g in m.ThermalGenerators) + \
                 m.SystemRegulationUpShortfall[t] + sum(m.ZonalRegulationUpShortfall[rz,t] for rz in m.ReserveZones) 
     model.SystemRegulationUpProvided = Expression(model.TimePeriods, rule=system_reg_up_provided)
 
@@ -302,7 +301,7 @@ def ancillary_services(model):
     model.EnforceSystemRegulationUpRequirement = Constraint(model.TimePeriods, rule=enforce_system_regulation_up_requirement_rule)
 
     def enforce_system_regulation_dn_requirement_rule(m, t):
-        return sum(m.RegulationReserveDn[g,t] for g in m.ThermalGenerators) + \
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.RegulationReserveDn[g,t] for g in m.ThermalGenerators) + \
                 m.SystemRegulationDnShortfall[t] + sum(m.ZonalRegulationDnShortfall[rz,t] for rz in m.ReserveZones) \
                 >= m.SystemRegulationDnRequirement[t]
     model.EnforceSystemRegulationDnRequirement = Constraint(model.TimePeriods, rule=enforce_system_regulation_dn_requirement_rule)
@@ -332,9 +331,11 @@ def ancillary_services(model):
     model.SpinningReserveMinutes = Param(within=PositiveReals, default=10.) # in minutes, varies among ISOs
 
     # limit,  cost of spinning reserves
+    def validate_spin_bid(m,v,g):
+        return v <= (m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g])
     def get_spin_bid(m,g):
         return m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g]
-    model.SpinningReserveCapability = Param(model.ThermalGenerators, within=NonNegativeReals, default=get_spin_bid)
+    model.SpinningReserveCapability = Param(model.ThermalGenerators, within=NonNegativeReals, default=get_spin_bid, validate=validate_spin_bid)
     model.SpinningReservePrice = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0)
     
     # spinning reserve requirements
@@ -367,7 +368,7 @@ def ancillary_services(model):
 
 
     def zonal_spinning_reserve_provided(m, rz, t):
-        return sum(m.SpinningReserveDispatched[g, t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalSpinningReserveShortfall[rz,t]
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SpinningReserveDispatched[g, t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalSpinningReserveShortfall[rz,t]
     model.ZonalSpinningReserveProvided = Expression(model.ReserveZones, model.TimePeriods, rule=zonal_spinning_reserve_provided)
 
     def enforce_zonal_spinning_reserve_requirement(m, rz, t):
@@ -376,7 +377,7 @@ def ancillary_services(model):
     model.EnforceZonalSpinningReserveRequirement = Constraint(model.ReserveZones, model.TimePeriods, rule=enforce_zonal_spinning_reserve_requirement)
 
     def system_spinning_reserve_provided(m,t):
-        return sum(m.SpinningReserveDispatched[g,t] for g in m.ThermalGenerators) \
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SpinningReserveDispatched[g,t] for g in m.ThermalGenerators) \
                 + sum(m.ZonalSpinningReserveShortfall[rz,t] for rz in m.ReserveZones) \
                 + m.SystemSpinningReserveShortfall[t]
     model.SystemSpinningReserveProvided = Expression(model.TimePeriods, rule=system_spinning_reserve_provided)
@@ -402,7 +403,7 @@ def ancillary_services(model):
     ## begin non-spinning reserves
     # non-spinning reserve
     
-    # Non-spinning reserves are assumed to be fast -- Operating reserves are slow (30 minutes)
+    # Non-spinning reserves are assumed to be fast -- Supplemental reserves are slow (30 minutes)
 
     def validate_nonspin_bid(m,v,g):
         return v <= value(m.MaximumPowerOutput[g])
@@ -436,7 +437,7 @@ def ancillary_services(model):
     model.CalculateNonSpinningReserveLimit = Constraint(model.ThermalGenerators, model.TimePeriods, rule=calculate_non_spinning_reserve_limit_rule)
 
     def nspin_zonal_reserves_provided(m,rz,t):
-        return sum(m.NonSpinningReserveDispatched[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalNonSpinningReserveShortfall[rz,t]
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.NonSpinningReserveDispatched[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalNonSpinningReserveShortfall[rz,t]
     model.NonSpinningZonalReservesProvided = Expression(model.ReserveZones, model.TimePeriods, rule=nspin_zonal_reserves_provided)
 
     def enforce_zonal_non_spinning_reserve_rule(m, rz, t):
@@ -445,7 +446,7 @@ def ancillary_services(model):
     model.EnforceNonSpinningZonalReserveRequirement = Constraint(model.ReserveZones, model.TimePeriods, rule=enforce_zonal_non_spinning_reserve_rule)
 
     def nspin_reserves_provided(m,t):
-        return sum(m.NonSpinningReserveDispatched[g,t] for g in m.ThermalGenerators) \
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.NonSpinningReserveDispatched[g,t] for g in m.ThermalGenerators) \
                 + sum(m.ZonalNonSpinningReserveShortfall[rz,t] for rz in m.ReserveZones) \
                 + m.SystemNonSpinningReserveShortfall[t]
     model.SystemNonSpinningReserveProvided = Expression(model.TimePeriods, rule=nspin_reserves_provided)
@@ -468,72 +469,87 @@ def ancillary_services(model):
 
     ## end non-spinning reserve
 
-    ## begin operating reserve
+    ## begin supplemental reserve
 
-    # Thirty-minute operating reserve, for generators which can start in 30 minutes
-    model.OperatingReserveCapability = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0, validate=validate_nonspin_bid)
-    model.OperatingReservePrice = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0)
+    # Thirty-minute supplemental reserves, for generators which can start in 30 minutes
+    model.SupplementalReserveCapabilityNonSpin = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0, validate=validate_nonspin_bid)
+    model.SupplementalReserveCapabilitySpin = Param(model.ThermalGenerators, within=NonNegativeReals, default=get_spin_bid, validate=validate_spin_bid)
+    model.SupplementalReservePrice = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0)
+    model.SupplementalReserveMinutes = Param(within=PositiveReals, default=30.)
 
-    # Operating reserve requirement
-    model.ZonalOperatingReserveRequirement = Param(model.ReserveZones, model.TimePeriods, within=NonNegativeReals, default=0.0)
-    model.SystemOperatingReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, default=0.0)
+    # Supplemental reserve requirement
+    model.ZonalSupplementalReserveRequirement = Param(model.ReserveZones, model.TimePeriods, within=NonNegativeReals, default=0.0)
+    model.SystemSupplementalReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, default=0.0)
 
-    model.OperatingReservePenalty = Param(within=NonNegativeReals, mutable=True)
+    model.SupplementalReservePenalty = Param(within=NonNegativeReals, mutable=True)
 
-    def set_operating_reserve_penalty(m):
-        if m.OperatingReservePenalty(exception=False) is None:
-            m.OperatingReservePenalty = value(m.NonSpinningReservePenalty+m.ReserveShortfallPenalty)/2.
-    model.SetOperatingReservePenalty = BuildAction(rule=set_operating_reserve_penalty)
+    def set_supplemental_reserve_penalty(m):
+        if m.SupplementalReservePenalty(exception=False) is None:
+            m.SupplementalReservePenalty = value(m.NonSpinningReservePenalty+m.ReserveShortfallPenalty)/2.
+    model.SetSupplementalReservePenalty = BuildAction(rule=set_supplemental_reserve_penalty)
 
     def zonal_op_bounds(m,rz,t):
-        return (0, m.ZonalOperatingReserveRequirement[rz,t])
-    model.ZonalOperatingReserveShortfall = Var(model.ReserveZones, model.TimePeriods, within=NonNegativeReals, bounds=zonal_op_bounds)
+        return (0, m.ZonalSupplementalReserveRequirement[rz,t])
+    model.ZonalSupplementalReserveShortfall = Var(model.ReserveZones, model.TimePeriods, within=NonNegativeReals, bounds=zonal_op_bounds)
     def system_op_bounds(m,t):
-        return (0, m.SystemOperatingReserveRequirement[t])
-    model.SystemOperatingReserveShortfall = Var(model.TimePeriods, within=NonNegativeReals, bounds=system_op_bounds)
+        return (0, m.SystemSupplementalReserveRequirement[t])
+    model.SystemSupplementalReserveShortfall = Var(model.TimePeriods, within=NonNegativeReals, bounds=system_op_bounds)
     
     def op_bounds(m,g,t):
-        return (0,m.OperatingReserveCapability[g])
-    model.OperatingReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds)
+        return (0,m.SupplementalReserveCapabilityNonSpin[g])
+    model.SupplementalNonSpinReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds)
 
-    # thirty-minute operating reserve, for units which are off
-    def calculate_operating_reserve_limit_rule(m, g, t):
-        return m.OperatingReserveDispatched[g, t] + m.NonSpinningReserveDispatched[g, t] <= m.OperatingReserveCapability[g] * (1 - m.UnitOn[g, t])
-    model.CalculateOperatingReserveLimits = Constraint(model.ThermalGenerators, model.TimePeriods, rule=calculate_operating_reserve_limit_rule)
+    def op_bound_spin(m,g,t):
+        return (0,m.SupplementalReserveCapabilitySpin[g])
+    model.SupplementalSpinReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds)
+
+    # thirty-minute supplemental reserve, for units which are off
+    def calculate_supplemental_reserve_limit_rule_nonspin(m, g, t):
+        return m.SupplementalNonSpinReserveDispatched[g, t] + m.NonSpinningReserveDispatched[g, t] <= m.SupplementalReserveCapabilityNonSpin[g] * (1 - m.UnitOn[g, t])
+    model.CalculateSupplementalReserveLimits = Constraint(model.ThermalGenerators, model.TimePeriods, rule=calculate_supplemental_reserve_limit_rule_nonspin)
+
+    def calculate_supplemental_reserve_limit_rule_spin(m, g, t):
+        spin_limit = min(value(m.SupplementalReserveCapabilitySpin[g]), value(m.NominalRampUpLimit[g]/60.*m.SupplementalReserveMinutes))
+        return m.SpinningReserveDispatched[g, t] + m.SupplementalSpinReserveDispatched <= spin_limit*m.UnitOn[g,t]
+    model.CalculateSupplementalReserveLimitsSpin = Constraint(model.ThermalGenerators, model.TimePeriods, rule=calculate_supplemental_reserve_limit_rule_spin)
+
+    def supplemental_reserve_expr_rule(m, g, t):
+        return m.SupplementalNonSpinReserveDispatched[g,t] + m.SupplementalSpinReserveDispatched[g,t]
+    model.SupplementalReserveDispatched = Expression(model.ThermalGenerators, model.TimePeriods, rule=supplemental_reserve_expr_rule)
 
     def operational_zonal_reserves_provided(m,rz,t):
-        return sum(m.OperatingReserveDispatched[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalOperatingReserveShortfall[rz,t]
-    model.OperatingZonalReservesProvided = Expression(model.ReserveZones, model.TimePeriods, rule=operational_zonal_reserves_provided)
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SupplementalReserveDispatched[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalSupplementalReserveShortfall[rz,t]
+    model.SupplementalZonalReservesProvided = Expression(model.ReserveZones, model.TimePeriods, rule=operational_zonal_reserves_provided)
 
-    def enforce_zonal_operating_reserve_requirement_rule(m, rz, t):
-        return m.OperatingZonalReservesProvided[rz,t] + m.NonSpinningZonalReservesProvided[rz,t] + m.ZonalSpinningReserveProvided[rz,t] + m.ZonalRegulationUpRequirement[rz,t] \
-                >= m.ZonalOperatingReserveRequirement[rz,t] + m.ZonalNonSpinningReserveRequirement[rz,t] + m.ZonalSpinningReserveRequirement[rz,t] + m.ZonalRegulationUpRequirement[rz,t]
-    model.EnforceZonalOperatingReserveRequirement = Constraint(model.ReserveZones, model.TimePeriods, rule=enforce_zonal_operating_reserve_requirement_rule)
+    def enforce_zonal_supplemental_reserve_requirement_rule(m, rz, t):
+        return m.SupplementalZonalReservesProvided[rz,t] + m.NonSpinningZonalReservesProvided[rz,t] + m.ZonalSpinningReserveProvided[rz,t] + m.ZonalRegulationUpRequirement[rz,t] \
+                >= m.ZonalSupplementalReserveRequirement[rz,t] + m.ZonalNonSpinningReserveRequirement[rz,t] + m.ZonalSpinningReserveRequirement[rz,t] + m.ZonalRegulationUpRequirement[rz,t]
+    model.EnforceZonalSupplementalReserveRequirement = Constraint(model.ReserveZones, model.TimePeriods, rule=enforce_zonal_supplemental_reserve_requirement_rule)
 
     def operational_reserves_provided(m,t):
-        return sum(m.OperatingReserveDispatched[g,t] for g in m.ThermalGenerators) \
-                + sum(m.ZonalOperatingReserveShortfall[rz,t] for rz in m.ReserveZones) \
-                + m.SystemOperatingReserveShortfall[t]
-    model.SystemOperatingReserveProvided = Expression(model.TimePeriods, rule=nspin_reserves_provided)
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SupplementalReserveDispatched[g,t] for g in m.ThermalGenerators) \
+                + sum(m.ZonalSupplementalReserveShortfall[rz,t] for rz in m.ReserveZones) \
+                + m.SystemSupplementalReserveShortfall[t]
+    model.SystemSupplementalReserveProvided = Expression(model.TimePeriods, rule=nspin_reserves_provided)
 
-    def enforce_system_operating_reserve_requirement(m, t):
-        return m.SystemOperatingReserveProvided[t] + m.SystemNonSpinningReserveProvided[t] + m.SystemSpinningReserveProvided[t] + m.SystemRegulationUpRequirement[t] >= \
-                m.SystemOperatingReserveRequirement[t] + m.SystemNonSpinningReserveRequirement[t] + m.SystemSpinningReserveRequirement[t] + m.SystemRegulationUpRequirement[t]
+    def enforce_system_supplemental_reserve_requirement(m, t):
+        return m.SystemSupplementalReserveProvided[t] + m.SystemNonSpinningReserveProvided[t] + m.SystemSpinningReserveProvided[t] + m.SystemRegulationUpRequirement[t] >= \
+                m.SystemSupplementalReserveRequirement[t] + m.SystemNonSpinningReserveRequirement[t] + m.SystemSpinningReserveRequirement[t] + m.SystemRegulationUpRequirement[t]
 
-    model.EnforceSystemOperatingReserveRequirement = Constraint(model.TimePeriods, rule=enforce_system_operating_reserve_requirement)
+    model.EnforceSystemSupplementalReserveRequirement = Constraint(model.TimePeriods, rule=enforce_system_supplemental_reserve_requirement)
 
-    def calculate_operating_reserve_cost_rule(m, g, t):
-        return m.OperatingReserveDispatched[g, t] * m.OperatingReservePrice[g] * m.TimePeriodLengthHours
-    model.OperatingReserveCostGeneration = Expression(model.ThermalGenerators, model.TimePeriods, rule=calculate_operating_reserve_cost_rule)
+    def calculate_supplemental_reserve_cost_rule(m, g, t):
+        return m.SupplementalReserveDispatched[g, t] * m.SupplementalReservePrice[g] * m.TimePeriodLengthHours
+    model.SupplementalReserveCostGeneration = Expression(model.ThermalGenerators, model.TimePeriods, rule=calculate_supplemental_reserve_cost_rule)
 
-    def operating_reserve_cost_penalty(m,t):
-        return m.TimePeriodLengthHours*m.OperatingReservePenalty*(
-                        m.SystemOperatingReserveShortfall[t] \
-                      + sum(m.ZonalOperatingReserveShortfall[rz,t] for rz in m.ReserveZones)
+    def supplemental_reserve_cost_penalty(m,t):
+        return m.TimePeriodLengthHours*m.SupplementalReservePenalty*(
+                        m.SystemSupplementalReserveShortfall[t] \
+                      + sum(m.ZonalSupplementalReserveShortfall[rz,t] for rz in m.ReserveZones)
                       )
-    model.OperatingReserveCostPenalty = Expression(model.TimePeriods, rule=operating_reserve_cost_penalty)
+    model.SupplementalReserveCostPenalty = Expression(model.TimePeriods, rule=supplemental_reserve_cost_penalty)
 
-    ## end operating reserve
+    ## end supplemental reserve
 
 
     ## begin flexible_ramp
@@ -578,22 +594,22 @@ def ancillary_services(model):
     model.FlexDnLimit = Constraint(model.ThermalGenerators, model.TimePeriods, rule=flex_down_limit_rule)
 
     def zonal_flex_up_requirement_rule(m, rz, t):
-        return sum(m.FlexUpProvided[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalFlexUpShortfall[rz,t] >= m.ZonalFlexUpRequirement[t]
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexUpProvided[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalFlexUpShortfall[rz,t] >= m.ZonalFlexUpRequirement[t]
     model.ZonalFlexUpRequirementConstr = Constraint(model.ReserveZones, model.TimePeriods, rule=zonal_flex_up_requirement_rule)
 
     def zonal_flex_dn_requirement_rule(m, rz, t):
-        return sum(m.FlexDnProvided[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalFlexDnShortfall[rz,t] >= m.ZonalFlexDnRequirement[t]
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexDnProvided[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalFlexDnShortfall[rz,t] >= m.ZonalFlexDnRequirement[t]
     model.ZonalFlexDnRequirementConstr = Constraint(model.ReserveZones, model.TimePeriods, rule=zonal_flex_dn_requirement_rule)
 
     def system_flex_up_requirement_rule(m, t):
-        return sum(m.FlexUpProvided[g,t] for g in m.ThermalGenerators) \
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexUpProvided[g,t] for g in m.ThermalGenerators) \
                  + sum(m.ZonalFlexUpShortfall[rz,t] for rz in m.ReserveZones) \
                  + m.SystemFlexUpShortfall[t] \
                  >= m.SystemFlexUpRequirement[t]
     model.SystemFlexUpRequirementConstr = Constraint(model.ReserveZones, model.TimePeriods, rule=system_flex_up_requirement_rule)
 
     def system_flex_dn_requirement_rule(m, t):
-        return sum(m.FlexDnProvided[g,t] for g in m.ThermalGenerators) \
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexDnProvided[g,t] for g in m.ThermalGenerators) \
                  + sum(m.ZonalFlexDnShortfall[rz,t] for rz in m.ReserveZones) \
                  + m.SystemFlexDnShortfall[t] \
                  >= m.SystemFlexDnRequirement[t]
@@ -612,7 +628,7 @@ def ancillary_services(model):
     ## Ancillary service capacity limits (enhance for ramping, start-up/shutdown)
 
     def ancillary_service_capacity_limit_upper(m, g, t):
-        return m.PowerGenerated[g,t] + m.FlexUpProvided[g,t] + m.RegulationReserveUp[g,t] + m.SpinningReserveDispatched[g,t] <= \
+        return m.MaximumPowerAvailable[g,t] + m.FlexUpProvided[g,t] + m.RegulationReserveUp[g,t] + m.SpinningReserveDispatched[g,t] + m.SupplementalSpinReserveDispatched[g,t] <= \
                     m.MaximumPowerOutput[g]*m.UnitOn[g,t] - (m.MaximumPowerOutput[g] - m.RegulationHighLimit[g])*m.RegulationOn[g,t]
     model.AncillaryServiceCapacityLimitUpper = Constraint(model.ThermalGenerators, model.TimePeriods, rule=ancillary_service_capacity_limit_upper)
 
@@ -628,19 +644,19 @@ def ancillary_services(model):
 
     def as_ramp_up(m,g):
         return m.NominalRampUpLimit[g]*m.TimePeriodLengthHours
-    model.AS_ScaledNominalRampUpLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_ramp_up, mutable=True)
+    model.AS_ScaledNominalRampUpLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_ramp_up)
 
     def as_ramp_down(m,g):
         return m.NominalRampDownLimit[g]*m.TimePeriodLengthHours
-    model.AS_ScaledNominalRampDownLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_ramp_down, mutable=True)
+    model.AS_ScaledNominalRampDownLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_ramp_down)
 
     def as_startup_ramp(m,g):
         return (m.StartupRampLimit[g] - m.MinimumPowerOutput[g])*m.TimePeriodLengthHours
-    model.AS_ScaledStartupRampLessMin = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_startup_ramp, mutable=True)
+    model.AS_ScaledStartupRampLessMin = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_startup_ramp)
 
     def as_shutdown_ramp(m,g):
         return (m.ShutdownRampLimit[g] - m.MinimumPowerOutput[g])*m.TimePeriodLengthHours
-    model.AS_ScaledShutdownRampLessMin = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_shutdown_ramp, mutable=True)
+    model.AS_ScaledShutdownRampLessMin = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_shutdown_ramp)
 
     def ancillary_service_ramp_up_limit(m,g,t):
         if t == m.InitialTime:
@@ -648,6 +664,7 @@ def ancillary_services(model):
                      + (m.TimePeriodLengthMinutes/m.RegulationMinutes)*m.RegulationReserveUp[g,t] \
                      + (m.TimePeriodLengthMinutes/m.SpinningReserveMinutes)*m.SpinningReserveDispatched[g,t] \
                      + (m.TimePeriodLengthMinutes/m.FlexRampMinutes)*m.FlexUpProvided[g,t] \
+                     + (m.TimePeriodLengthMinutes/m.SupplementalReserveMinutes)*m.SupplementalSpinReserveDispatched[g,t] \
                   <= \
                     m.AS_ScaledNominalRampUpLimit[g]*m.UnitOn[g,t] + \
     		    (m.AS_ScaledStartupRampLessMin[g] - m.AS_ScaledNominalRampUpLimit[g])*m.UnitStart[g,t] 
@@ -656,6 +673,7 @@ def ancillary_services(model):
                      + (m.TimePeriodLengthMinutes/m.RegulationMinutes)*(m.RegulationReserveUp[g,t]+m.RegulationReserveUp[g,t-1])/2. \
                      + (m.TimePeriodLengthMinutes/m.SpinningReserveMinutes)*(m.SpinningReserveDispatched[g,t]+m.SpinningReserveDispatched[g,t-1])/2. \
                      + (m.TimePeriodLengthMinutes/m.FlexRampMinutes)*m.FlexUpProvided[g,t] \
+                     + (m.TimePeriodLengthMinutes/m.SupplementalReserveMinutes)*(m.SupplementalSpinReserveDispatched[g,t]+m.SupplementalSpinReserveDispatched[g,t-1])/2. \
                   <= \
                     m.AS_ScaledNominalRampUpLimit[g]*m.UnitOn[g,t] + \
     		    (m.AS_ScaledStartupRampLessMin[g] - m.AS_ScaledNominalRampUpLimit[g])*m.UnitStart[g,t] 
