@@ -739,7 +739,12 @@ def solve_unit_commitment(model_data,
                                                                   'shortfall_m' : m.ZonalSpinningReserveShortfall,
                                                                   'balance_m' : m.EnforceZonalSpinningReserveRequirement,
                                                                  },
-                               'regulation_up_requirement' : { 'shorfall' : 'regulation_up_shortfall',
+                               'non_spinning_reserve_requirement': { 'shortfall' : 'non_spinning_reserve_shortfall',
+                                                                     'price'     : 'non_spinning_reserve_price',
+                                                                     'shortfall_m' : m.ZonalNonSpinningReserveShortfall,
+                                                                     'balance_m' : m.EnforceNonSpinningZonalReserveRequirement,
+                                                                    },
+                               'regulation_up_requirement' : { 'shortfall' : 'regulation_up_shortfall',
                                                                'price'    : 'regulation_up_price',
                                                                'shortfall_m' : m.ZonalRegulationUpShorfall,
                                                                'balance_m' : m.EnforceZonalRegulationUpRequirements,
@@ -749,16 +754,21 @@ def solve_unit_commitment(model_data,
                                                                  'shortfall_m' : m.ZonalRegulationDnShortfall,
                                                                  'balance_m' : m.EnforceZonalRegulationDnRequirements,
                                                                 },
-                               'flexible_ramp_up_requirement' : { 'shorfall' : 'flexible_ramp_up_shortfall',
+                               'flexible_ramp_up_requirement' : { 'shortfall' : 'flexible_ramp_up_shortfall',
                                                                   'price' : 'flexible_ramp_up_price',
                                                                   'shortfall_m' : m.ZonalFlexUpShortfall,
                                                                   'balance_m' : m.ZonalFlexUpRequirementConstr,
                                                                 },
-                               'flexible_ramp_down_requirement' : { 'shorfall' : 'flexible_ramp_down_shortfall',
+                               'flexible_ramp_down_requirement' : { 'shortfall' : 'flexible_ramp_down_shortfall',
                                                                     'price'    : 'flexible_ramp_down_price',
                                                                     'shortfall_m' : m.ZonalFlexDnShortfall,
                                                                     'balance_m' : m.ZonalFlexDnRequirementConstr,
                                                                    },
+                               'supplemental_reserve_requirement' : {'shortfall' : 'supplemental_shortfall',
+                                                                     'price' : 'supplemental_price',
+                                                                     'shortfall_m' : m.ZonalSupplementalReserveShortfall,
+                                                                     'balance_m' : m.ZonalSupplementalReserveRequirement,
+                                                                     }
                                }
 
         ## as we add more system reserve products, they can be added here
@@ -767,7 +777,12 @@ def solve_unit_commitment(model_data,
                                                                   'shortfall_m' : m.SystemSpinningReserveShortfall,
                                                                   'balance_m' : m.EnforceSystemSpinningReserveRequirement,
                                                                  },
-                               'regulation_up_requirement' : { 'shorfall' : 'regulation_up_shortfall',
+                               'non_spinning_reserve_requirement': { 'shortfall' : 'non_spinning_reserve_shortfall',
+                                                                     'price'     : 'non_spinning_reserve_price',
+                                                                     'shortfall_m' : m.SystemNonSpinningReserveShortfall,
+                                                                     'balance_m' : m.EnforceSystemNonSpinningReserveRequirement,
+                                                                    },
+                               'regulation_up_requirement' : { 'shortfall' : 'regulation_up_shortfall',
                                                                'price'    : 'regulation_up_price',
                                                                'shortfall_m' : m.SystemRegulationUpShortfall,
                                                                'balance_m' : m.EnforceSystemRegulationUpRequirement,
@@ -777,16 +792,21 @@ def solve_unit_commitment(model_data,
                                                                  'shortfall_m' : m.SystemRegulationDnShortfall,
                                                                  'balance_m' : m.EnforceSystemRegulationDnRequirement,
                                                                 },
-                               'flexible_ramp_up_requirement' : { 'shorfall' : 'flexible_ramp_up_shortfall',
+                               'flexible_ramp_up_requirement' : { 'shortfall' : 'flexible_ramp_up_shortfall',
                                                                   'price' : 'flexible_ramp_up_price',
                                                                   'shortfall_m' : m.SystemFlexUpShortfall,
                                                                   'balance_m' : m.SystemFlexUpRequirementConstr,
                                                                 },
-                               'flexible_ramp_down_requirement' : { 'shorfall' : 'flexible_ramp_down_shortfall',
+                               'flexible_ramp_down_requirement' : { 'shortfall' : 'flexible_ramp_down_shortfall',
                                                                     'price'    : 'flexible_ramp_down_price',
                                                                     'shortfall_m' : m.SystemFlexDnShortfall,
                                                                     'balance_m' : m.SystemFlexDnRequirementConstr,
                                                                    },
+                               'supplemental_reserve_requirement' : {'shortfall' : 'supplemental_shortfall',
+                                                                     'price' : 'supplemental_price',
+                                                                     'shortfall_m' : m.SystemSupplementalReserveShortfall,
+                                                                     'balance_m' : m.EnforceSystemSupplementalReserveRequirement,
+                                                                     }
                                }
 
 
@@ -797,8 +817,8 @@ def solve_unit_commitment(model_data,
                     if req in e_dict:
                         req_shortfall_dict = {}
                         for dt, mt in zip(data_time_periods, m.TimePeriods):
-                            req_shortfall_dict[dt] = value(req_dict['shorfall_m'][me,mt])
-                        e_dict[req_dict['shorfall']] = _time_series_dict(req_shortfall_dict)
+                            req_shortfall_dict[dt] = value(req_dict['shortfall_m'][me,mt])
+                        e_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                         if relaxed:
                             req_price_dict = {}
                             for dt, mt in zip(data_time_periods, m.TimePeriods):
@@ -810,7 +830,7 @@ def solve_unit_commitment(model_data,
                 if req in sys_dict:
                     req_shortfall_dict = {}
                     for dt, mt in zip(data_time_periods, m.TimePeriods):
-                        req_shortfall_dict[dt] = value(req_dict['shorfall_m'][mt])
+                        req_shortfall_dict[dt] = value(req_dict['shortfall_m'][mt])
                     sys_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                     if relaxed:
                         req_price_dict = {}

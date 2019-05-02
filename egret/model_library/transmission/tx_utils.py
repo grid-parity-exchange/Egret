@@ -200,7 +200,7 @@ ancillary_service_stack = [
                             'regulation_down_shortfall',
                             'flexible_ramp_up_shortfall',
                             'flexible_ramp_down_shortfall',
-                            'supplemental_reserve_shortfall',
+                            'supplemental_shortfall',
                             'reserve_price',
                             'spinning_reserve_price',
                             'non_spinning_reserve_price',
@@ -208,7 +208,7 @@ ancillary_service_stack = [
                             'regulation_down_price',
                             'flexible_ramp_up_price',
                             'flexible_ramp_down_price',
-                            'supplemental_reserve_price',
+                            'supplemental_price',
                         ]
 
 ## TODO?: break apart by data that needed to be scaled down (capacity limits, power),
@@ -320,7 +320,7 @@ scaled_attributes = {
                                                         'load_mismatch_cost',
                                                         'reserve_shortfall_cost',
                                                      ] + \
-                                                     ancillary_service_stack,,
+                                                     ancillary_service_stack,
                    }
 
 
