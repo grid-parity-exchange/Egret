@@ -83,10 +83,6 @@ def load_params(model, model_data):
         elements['interface'] = dict()
     if 'storage' not in elements:
         elements['storage'] = dict()
-    if 'zone' not in elements:
-        elements['zone'] = dict()
-    if 'area' not in elements:
-        elements['area'] = dict()
 
     ## NOTE: generator, bus, and load should be in here for a well-defined problem
 
@@ -105,8 +101,6 @@ def load_params(model, model_data):
     interface_attrs = md.attributes(element_type='interface')
     storage_attrs = md.attributes(element_type='storage')
 
-    zone_attrs = md.attributes(element_type='zone')
-    area_attrs = md.attributes(element_type='area')
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
@@ -217,60 +211,6 @@ def load_params(model, model_data):
     model.NondispatchableGeneratorType = Param(model.AllNondispatchableGenerators, within=Any, default='W', 
                                                 initialize=renewable_gen_attrs.get('fuel'))
     
-    ######################
-    #   Reserve Zones    #
-    ######################
-    
-    # Generators are grouped in zones to provide zonal reserve requirements. #
-    # All generators can contribute to global reserve requirements           #
-
-    # The same kinds of constraints can handle "reserves by area" and "reserves
-    # by zone" as defined in model_data. So we carefully combine them here
-
-    def _init_reserve_zones(m):
-        for name in zone_attrs['names']:
-            yield 'zone_'+name
-        for name in area_attrs['names']:
-            yield 'area_'+name
-    model.ReserveZones = Set(initialize=_init_reserve_zones)
-
-    if 'reserve_requirement' in zone_attrs:
-        zone_r_time = TimeMapper(zone_attrs['reserve_requirement'])
-    if 'reserve_requirement' in area_attrs:
-        area_r_time = TimeMapper(area_attrs['reserve_requirement'])
-
-    def _init_zonal_reserve_requirement(m,z,t):
-        z_name = str(z)
-        if z_name[:5] == 'zone_':
-            name = z_name[5:]
-            if name in zone_attrs['reserve_requirement']:
-                return zone_r_time(m,name,t)
-            else:
-                return 0.0
-        elif z_name[:5] == 'area_':
-            name = z_name[5:]
-            if name in area_attrs['reserve_requirement']:
-                return area_r_time(m,name,t)
-            else:
-                return 0.0
-        else:
-            raise Exception("Unexpected case in _init_zonal_reserve_requirement")
-
-    model.ZonalReserveRequirement = Param(model.ReserveZones, model.TimePeriods, default=0.0, within=NonNegativeReals,
-                                            initialize=_init_zonal_reserve_requirement)
-
-    def _init_reserve_zone_location(m,g):
-        zone = thermal_gen_attrs[g].get('zone')
-        if zone is not None:
-            yield 'zone_'+zone
-        area = thermal_gen_attrs[g].get('area')
-        if area is not None:
-            yield 'area_'+area
-    model.ReserveZoneLocation = Param(model.ThermalGenerators, initialize=_init_reserve_zone_location)
-    
-    def form_thermal_generator_reserve_zones(m,rz):
-        return (g for g in m.ThermalGenerators if m.ReserveZoneLocation[g]==rz)
-    model.ThermalGeneratorsInReserveZone = Set(model.ReserveZones, initialize=form_thermal_generator_reserve_zones)
     
     #################################################################
     # the global system demand, for each time period. units are MW. #
