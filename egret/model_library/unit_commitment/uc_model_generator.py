@@ -91,7 +91,7 @@ def _generate_model( model_data,
     model.storage_services = True
 
     ## new flag for ancillary services
-    model.ancillary_services = False
+    model.ancillary_services = True
     
     ## to relax binaries
     model.relax_binaries = _relax_binaries

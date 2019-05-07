@@ -253,46 +253,6 @@ def load_params(model, model_data):
     model.ReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, 
                                         initialize=TimeMapper(reserve_requirement), mutable=True)
     
-    ##############################################################
-    # failure probability for each generator, in any given hour. #
-    # not used within the model itself at present, but rather    #
-    # used by scripts that read / manipulate the model.          #
-    ##############################################################
-    
-    def probability_failure_validator(m, v, g):
-       return v >= 0.0 and v <= 1.0
-    
-    model.FailureProbability = Param(model.ThermalGenerators, validate=probability_failure_validator, default=0.0)
-    
-    #####################################################################################
-    # a binary indicator as to whether or not each generator is on-line during a given  #
-    # time period. intended to represent a sampled realization of the generator failure #
-    # probability distributions. strictly speaking, we interpret this parameter value   #
-    # as indicating whether or not the generator is contributing (injecting) power to   #
-    # the PowerBalance constraint. this parameter is not intended to be used in the     #
-    # context of ramping or time up/down constraints.                                   # 
-    #####################################################################################
-
-    ## simple function builder to invert in service to forced outage
-    def _get_forced_outage_initilizer(in_service_attrs):
-        if in_service_attrs is None:
-            return None
-        in_service_time_mapper = TimeMapper(in_service_attrs)
-        def initialize_forced_outage(m, e, t):
-            return not in_service_time_mapper(m,e,t)
-        return initialize_forced_outage
-    
-    model.ThermalGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
-                                        within=Binary, default=False, 
-                                        initialize=_get_forced_outage_initilizer(thermal_gen_attrs.get('in_service')))
-
-    model.NondispatchableGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
-                                        within=Binary, default=False, 
-                                        initialize=_get_forced_outage_initilizer(renewable_gen_attrs.get('in_service')))
-    
-    model.StorageForceOutage = Param(model.ThermalGenerators, model.TimePeriods,
-                                        within=Binary, default=False,
-                                        initialize=_get_forced_outage_initilizer(storage_attrs.get('in_service')))
     
     
     ####################################################################################
@@ -979,5 +939,46 @@ def load_params(model, model_data):
                                             initialize=storage_attrs.get('initial_charge_rate'))
     model.StorageSocOnT0         = Param(model.Storage, within=PercentFraction,
                                             default=0.5, initialize=storage_attrs.get('initial_state_of_charge'))
+
+    ##############################################################
+    # failure probability for each generator, in any given hour. #
+    # not used within the model itself at present, but rather    #
+    # used by scripts that read / manipulate the model.          #
+    ##############################################################
+    
+    def probability_failure_validator(m, v, g):
+       return v >= 0.0 and v <= 1.0
+    
+    model.FailureProbability = Param(model.ThermalGenerators, validate=probability_failure_validator, default=0.0)
+    
+    #####################################################################################
+    # a binary indicator as to whether or not each generator is on-line during a given  #
+    # time period. intended to represent a sampled realization of the generator failure #
+    # probability distributions. strictly speaking, we interpret this parameter value   #
+    # as indicating whether or not the generator is contributing (injecting) power to   #
+    # the PowerBalance constraint. this parameter is not intended to be used in the     #
+    # context of ramping or time up/down constraints.                                   # 
+    #####################################################################################
+
+    ## simple function builder to invert in service to forced outage
+    def _get_forced_outage_initilizer(in_service_attrs):
+        if in_service_attrs is None:
+            return None
+        in_service_time_mapper = TimeMapper(in_service_attrs)
+        def initialize_forced_outage(m, e, t):
+            return not in_service_time_mapper(m,e,t)
+        return initialize_forced_outage
+    
+    model.ThermalGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
+                                        within=Binary, default=False, 
+                                        initialize=_get_forced_outage_initilizer(thermal_gen_attrs.get('in_service')))
+
+    model.NondispatchableGeneratorForcedOutage = Param(model.AllNondispatchableGenerators, model.TimePeriods,
+                                        within=Binary, default=False, 
+                                        initialize=_get_forced_outage_initilizer(renewable_gen_attrs.get('in_service')))
+    
+    model.StorageForceOutage = Param(model.Storage, model.TimePeriods,
+                                        within=Binary, default=False,
+                                        initialize=_get_forced_outage_initilizer(storage_attrs.get('in_service')))
 
     return model

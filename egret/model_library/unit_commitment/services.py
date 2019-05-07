@@ -12,6 +12,7 @@ from pyomo.environ import *
 import math
 
 from .uc_utils import add_model_attr, build_uc_time_mapping
+from .status_vars import _is_relaxed
 
 @add_model_attr('storage_service', requires = {'data_loader': None,
                                             })
@@ -29,8 +30,12 @@ def storage_services(model):
     #       neither inputing or outputing. If we only have one variable, then 
     #       if the minimum charge/discharge rates are not zero, we cannot model
     #       this condition.
-    model.InputStorage = Var(model.Storage, model.TimePeriods, within=Binary)
-    model.OutputStorage = Var(model.Storage, model.TimePeriods, within=Binary)
+    if _is_relaxed(model):
+        model.InputStorage = Var(model.Storage, model.TimePeriods, within=UnitInterval)
+        model.OutputStorage = Var(model.Storage, model.TimePeriods, within=UnitInterval)
+    else:
+        model.InputStorage = Var(model.Storage, model.TimePeriods, within=Binary)
+        model.OutputStorage = Var(model.Storage, model.TimePeriods, within=Binary)
 
     def input_output_complementarity_rule(m,s,t):
         return m.InputStorage[s,t] + m.OutputStorage[s,t] <= 1
@@ -148,10 +153,6 @@ def storage_services(model):
 ## end storage_services
 
 
-## TODO: add hooks into model_data
-## NEW: general ancillary service function. These cannot be separated
-##      because when multilple services are active they have interdependent constraints
-##      (mostly involving capacity and ramping).
 ## NOTE: when moving to a Real-Time market, ramping limits need to be also considered
 ##       It seems MISO did not in its DA as of 2009 [1], but definitely does in RT as of 2016 [2].
 ##       This model is, however, based more on CAISO, which has ramping limits for all markets,[2],[3, p. 2-36].
@@ -228,6 +229,27 @@ def ancillary_services(model):
     if no_reserves:
         return
     
+    ## set these penalties in relation to each other, from higher quality service to lower
+    model.RegulationPenalty = Param(within=NonNegativeReals,
+                                    default=value(model.LoadMismatchPenalty+model.ReserveShortfallPenalty)/2.,
+                                    initialize=system.get('regulation_penalty_price'))
+
+    model.SpinningReservePenalty = Param(within=NonNegativeReals, 
+                                         default=value(model.RegulationPenalty+model.ReserveShortfallPenalty)/2.,
+                                         initialize=system.get('spinning_reserve_penalty_price'))
+
+    model.NonSpinningReservePenalty = Param(within=NonNegativeReals,
+                                            default=value(model.SpinningReservePenalty+model.ReserveShortfallPenalty)/2.,
+                                            initialize=system.get('non_spinning_reserve_penalty_price'))
+
+    model.SupplementalReservePenalty = Param(within=NonNegativeReals,
+                                             default=value(model.NonSpinningReservePenalty+model.ReserveShortfallPenalty)/2.,
+                                             initialize=system.get('supplemental_reserve_penalty_price'))
+
+    model.FlexRampPenalty = Param(within=NonNegativeReals,
+                                  default=value(model.NonSpinningReservePenalty+model.SpinningReservePenalty)/2.,
+                                  initialize=system.get('flexible_ramp_penalty_price'))
+
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
     
     def zone_initializer_builder(reserve_checker):
@@ -246,10 +268,10 @@ def ancillary_services(model):
     def zone_requirement_getter(reserve_product):
         if reserve_product in zone_attrs:
             zone_r_time = TimeMapper(zone_attrs[reserve_product])
-        if reserve_product in zone_attrs:
+        if reserve_product in area_attrs:
             area_r_time = TimeMapper(area_attrs[reserve_product])
-        def get_attribute(m, az_n, t):
-            az_n = str(az_n)
+        def get_attribute(m, az, t):
+            az_n = str(az)
             if az_n[:5] == 'zone_':
                 z_n = az_n[5:]
                 if z_n in zone_attrs[reserve_product]:
@@ -267,21 +289,21 @@ def ancillary_services(model):
         return get_attribute
     
     def gens_in_reserve_zone_getter(gen_attrs_subset=None):
-        if gen_subset is None:
+        if gen_attrs_subset is None:
             gen_attrs = thermal_gen_attrs
         else:
             gen_attrs = gen_attrs_subset
         def get_gens_in_reserve_zone(m, az):
-            az_n = str(az_n)
+            az_n = str(az)
             if az_n[:5] == 'zone_':
                 z_n = az_n[5:]
                 for g in gen_attrs['names']:
-                    if gen_attrs['zone'] == z_n:
+                    if gen_attrs['zone'][g] == z_n:
                         yield g
             elif az_n[:5] == 'area_':
                 a_n = az_n[5:]
                 for g in gen_attrs['names']:
-                    if gen_attrs['area'] == a_n:
+                    if gen_attrs['area'][g] == a_n:
                         yield g
             else:
                 raise Exception('Unexpected case in instance of gens_in_reserve_zone_getter')
@@ -411,6 +433,7 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     #################################
     # Regulation ancillary services #
     #################################
+
     agc_gen_attrs = md.attributes(element_type='generator', generator_type='thermal', agc_capable=True)
     
     model.AGC_Generators = Set(within=model.ThermalGenerators, initialize=agc_gen_attrs['names'])
@@ -423,22 +446,18 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     # I'll refer to it as the "regulation band"
     def regulation_high_limit_validator(m, v, g):
         return v <= value(m.MaximumPowerOutput[g])
-    def regulation_high_limit_default(m, g):
-        return value(m.MaximumPowerOutput[g])   
-    model.RegulationHighLimit = Param(model.AGC_Generators, within=NonNegativeReals, validate=regulation_high_limit_validator, default=regulation_high_limit_default, initialize=agc_gen_attrs.get('p_max_agc'))
+    model.RegulationHighLimit = Param(model.AGC_Generators, within=NonNegativeReals, validate=regulation_high_limit_validator, initialize=agc_gen_attrs['p_max_agc'])
     
     def regulation_low_limit_validator(m, v, g):
         return (v <= value(m.RegulationHighLimit[g]) and v >= value(m.MinimumPowerOutput[g]))
-    def regulation_low_limit_default(m, g):
-        return value(m.MinimumPowerOutput[g])
-    model.RegulationLowLimit = Param(model.AGC_Generators, within=NonNegativeReals, validate=regulation_low_limit_validator, default=regulation_low_limit_default, initialize=agc_gen_attrs.get('p_min_agc'))
+    model.RegulationLowLimit = Param(model.AGC_Generators, within=NonNegativeReals, validate=regulation_low_limit_validator, initialize=agc_gen_attrs['p_min_agc'])
     
-    # Regulation capacity is calculated as the max of "regulation band" and RegulationMinutes*AutomaticResponseRate
+    # Regulation capacity is calculated as the min of "regulation band" and RegulationMinutes*AutomaticResponseRate
     model.AutomaticResponseRate = Param(model.AGC_Generators, within=NonNegativeReals, initialize=agc_gen_attrs['ramp_agc'])
     
     def calculate_regulation_capability_rule(m, g):
-        temp1 = m.RegulationMinutes * m.AutomaticResponseRate[g]
-        temp2 = (m.RegulationHighLimit[g] - m.RegulationLowLimit[g])/2
+        temp1 = value(m.RegulationMinutes * m.AutomaticResponseRate[g])
+        temp2 = value(m.RegulationHighLimit[g] - m.RegulationLowLimit[g])/2.
         if temp1 > temp2:
             return temp2
         else:
@@ -457,17 +476,19 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
 
     model.SystemRegulationDnRequirement = Param(model.TimePeriods, within=NonNegativeReals, default=0.0, initialize=TimeMapper(system.get('regulation_down_requirement')))
 
-    model.RegulationPenalty = Param(within=NonNegativeReals, mutable=True)
-    def set_regulation_penalty(m):
-        if m.RegulationPenalty(exception=False) is None:
-            m.RegulationPenalty = value(m.LoadMismatchPenalty+m.ReserveShortfallPenalty)/2.
-    model.SetRegulationPenalty = BuildAction(rule=set_regulation_penalty)
+    def validate_fixed_reg(m,v,g,t):
+        if (v is not None) and (value(m.FixedCommitment[g,t]) is not None):
+            return v <= value(m.FixedCommitment[g,t])
+        else:
+            return True
+    model.FixedRegulation = Param(model.AGC_Generators, model.TimePeriods, initialize=TimeMapper(agc_gen_attrs.get('fixed_regulation')),
+                                    default=None, within=model.FixedCommitmentTypes, validate=validate_fixed_reg)
 
     def zonal_up_bounds(m, rz, t):
-        return (0, m.ZonalRegulationUpRequirement[zt,t])
+        return (0, m.ZonalRegulationUpRequirement[rz,t])
     model.ZonalRegulationUpShortfall = Var(model.RegulationZones, model.TimePeriods, within=NonNegativeReals, bounds=zonal_up_bounds)
     def zonal_dn_bounds(m, rz, t):
-        return (0, m.ZonalRegulationDnRequirement[zt,t])
+        return (0, m.ZonalRegulationDnRequirement[rz,t])
     model.ZonalRegulationDnShortfall = Var(model.RegulationZones, model.TimePeriods, within=NonNegativeReals, bounds=zonal_dn_bounds)
 
     def system_up_bounds(m, t):
@@ -481,7 +502,10 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     model.RegulationOfferFixedCost = Param(model.AGC_Generators, within=NonNegativeReals, default=0.0, initialize=agc_gen_attrs.get('agc_fixed_cost'))
     model.RegulationOfferMarginalCost = Param(model.AGC_Generators, within=NonNegativeReals, default=0.0, initialize=agc_gen_attrs.get('agc_marginal_cost'))
 
-    model.RegulationOn = Var(model.AGC_Generators, model.TimePeriods, within=Binary)
+    if _is_relaxed(model):
+        model.RegulationOn = Var(model.AGC_Generators, model.TimePeriods, within=UnitInterval)
+    else:
+        model.RegulationOn = Var(model.AGC_Generators, model.TimePeriods, within=Binary)
 
     def reg_up_bounds(m,g,t):
         return (0, m.RegulationUpCapability[g])
@@ -490,6 +514,12 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     model.RegulationReserveUp = Var(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, bounds=reg_up_bounds)
     model.RegulationReserveDn = Var(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, bounds=reg_dn_bounds)
 
+    def enforce_fixed_regulation_rule(m,g,t):
+        if value(m.FixedRegulation[g,t]) is not None:
+            m.RegulationOn[g,t].value = value(m.FixedRegulation[g,t])
+            m.RegulationOn[g,t].fix()
+    model.EnforceFixedRegulation = BuildAction(model.AGC_Generators, model.TimePeriods, rule=enforce_fixed_regulation_rule)
+
     # a generator can provide regulation only when it's on
     def provide_regulation_when_unit_on_rule(m, g, t):
         return m.RegulationOn[g, t] <= m.UnitOn[g, t]
@@ -497,12 +527,12 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
 
     def reg_up_rule(m,g,t):
         reg_up_limit = min(value(m.RegulationUpCapability[g]), value(m.NominalRampUpLimit[g]/60.*m.RegulationMinutes))
-        return m.RegulationReserveUp[g,t] <= reg_up_limit*m.UnitOn[g,t]
+        return m.RegulationReserveUp[g,t] <= reg_up_limit*m.RegulationOn[g,t]
     model.EnforceRegulationUpBound = Constraint(model.AGC_Generators, model.TimePeriods, rule=reg_up_rule)
 
     def reg_dn_rule(m,g,t):
         reg_dn_limit = min(value(m.RegulationDnCapability[g]), value(m.NominalRampDownLimit[g]/60.*m.RegulationMinutes))
-        return m.RegulationReserveDn[g,t] <= reg_dn_limit*m.UnitOn[g,t]
+        return m.RegulationReserveDn[g,t] <= reg_dn_limit*m.RegulationOn[g,t]
     model.EnforceRegulationDnBound = Constraint(model.AGC_Generators, model.TimePeriods, rule=reg_dn_rule)
 
     def zonal_reg_up_provided(m,rz,t):
@@ -569,18 +599,15 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
 
     model.SpinningReserveZones = Set(initialize=zone_initializer_builder(_check_spin))
 
-    model.ThermalGeneratorsInSpinningReserveZone = Set(model.SpinningReserveZones, initialize=gens_in_reserve_zone_getter)
+    model.ThermalGeneratorsInSpinningReserveZone = Set(model.SpinningReserveZones, initialize=gens_in_reserve_zone_getter())
     ## begin spinning reserve
 
     # spinning reserve response time
     model.SpinningReserveMinutes = Param(within=PositiveReals, default=10.) # in minutes, varies among ISOs
 
     # limit,  cost of spinning reserves
-    def validate_spin_bid(m,v,g):
-        return v <= (m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g])
-    def get_spin_bid(m,g):
-        return m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g]
-    model.SpinningReserveCapability = Param(model.ThermalGenerators, within=NonNegativeReals, default=get_spin_bid, validate=validate_spin_bid, 
+    # NOTE: This is here in case the user wants to limit this beyond the ramping limits
+    model.SpinningReserveCapability = Param(model.ThermalGenerators, within=NonNegativeReals, default=float('inf'),
                                                 initialize=thermal_gen_attrs.get('spinning_capacity'))
     model.SpinningReservePrice = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0, initialize=thermal_gen_attrs.get('spinning_cost'))
     
@@ -588,13 +615,6 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
     model.ZonalSpinningReserveRequirement = Param(model.SpinningReserveZones, model.TimePeriods, within=NonNegativeReals,
                                                         initialize=zone_requirement_getter('spinning_reserve_requirement'))
     model.SystemSpinningReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, default=0.0, initialize=TimeMapper(system.get('spinning_reserve_requirement')))
-
-    model.SpinningReservePenalty = Param(within=NonNegativeReals, mutable=True)
-
-    def set_spinning_reserve_penalty(m):
-        if m.SpinningReservePenalty(exception=False) is None:
-            m.SpinningReservePenalty = value(m.RegulationPenalty+m.ReserveShortfallPenalty)/2.
-    model.SetSpinningReservePenalty = BuildAction(rule=set_spinning_reserve_penalty)
 
     def zonal_spin_bounds(m,rz,t):
         return (0, m.ZonalSpinningReserveRequirement[rz,t])
@@ -686,20 +706,13 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
     def validate_nonspin_bid(m,v,g):
         return v <= value(m.MaximumPowerOutput[g])
     model.NonSpinningReserveCapability = Param(model.NonSpinGenerators, within=NonNegativeReals, default=0.0, validate=validate_nonspin_bid,
-                                                    initialize=nspin_gen_attrs.get('non_spinning_capacity'))
+                                                    initialize=nspin_gen_attrs['non_spinning_capacity'])
     model.NonSpinningReservePrice = Param(model.NonSpinGenerators, within=NonNegativeReals, default=0.0, initialize=nspin_gen_attrs.get('non_spinning_cost'))
     
     model.ZonalNonSpinningReserveRequirement = Param(model.NonSpinReserveZones, model.TimePeriods, within=NonNegativeReals, default=0.0,
                                                         initialize=zone_requirement_getter('non_spinning_reserve_requirement'))
     model.SystemNonSpinningReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, default=0.0, 
                                                         initialize=TimeMapper(system.get('non_spinning_reserve_requirement')))
-
-    model.NonSpinningReservePenalty = Param(within=NonNegativeReals, mutable=True)
-
-    def set_non_spinning_reserve_penalty(m):
-        if m.NonSpinningReservePenalty(exception=False) is None:
-            m.NonSpinningReservePenalty = value(m.SpinningReservePenalty+m.ReserveShortfallPenalty)/2.
-    model.SetNonSpinningReservePenalty = BuildAction(rule=set_non_spinning_reserve_penalty)
 
     def zonal_fast_bounds(m,rz,t):
         return (0, m.ZonalNonSpinningReserveRequirement[rz,t])
@@ -785,22 +798,18 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
 
     model.SupplementalNonSpinGenerators = Set(within=model.ThermalGenerators, initialize=supplemental_nspin_gen_attrs['names'])
 
-    model.GeneratorsInSupplementalReserveZone = Set(model.SupplementalReserveZones, initialize=gens_in_reserve_zone_getter)
+    model.GeneratorsInSupplementalReserveZone = Set(model.SupplementalReserveZones, initialize=gens_in_reserve_zone_getter())
 
     ## begin supplemental reserve
 
     # Thirty-minute supplemental reserves, for generators which can start in 30 minutes
     def validate_nonspin_bid(m,v,g):
         return v <= value(m.MaximumPowerOutput[g])
-    def validate_spin_bid(m,v,g):
-        return v <= (m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g])
-    def get_spin_bid(m,g):
-        return m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g]
-
     model.SupplementalReserveCapabilityNonSpin = Param(model.SupplementalNonSpinGenerators, within=NonNegativeReals, default=0.0, 
                                                         validate=validate_nonspin_bid, initialize=supplemental_nspin_gen_attrs.get('supplemental_non_spinning_capacity'))
 
-    model.SupplementalReserveCapabilitySpin = Param(model.ThermalGenerators, within=NonNegativeReals, default=get_spin_bid, validate=validate_spin_bid,
+    ## NOTE: this param is here if the user wants to limit this beyond the nominal ramping limits
+    model.SupplementalReserveCapabilitySpin = Param(model.ThermalGenerators, within=NonNegativeReals, default=float('inf'),
                                                         initialize=thermal_gen_attrs.get('supplemental_spinning_capacity'))
 
     model.SupplementalReservePrice = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0, initialize=thermal_gen_attrs.get('supplemental_cost'))
@@ -813,13 +822,6 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.SystemSupplementalReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, default=0.0, 
                                                         initialize=TimeMapper(system.get('supplemental_reserve_requirement')))
 
-    model.SupplementalReservePenalty = Param(within=NonNegativeReals, mutable=True)
-
-    def set_supplemental_reserve_penalty(m):
-        if m.SupplementalReservePenalty(exception=False) is None:
-            m.SupplementalReservePenalty = value(m.NonSpinningReservePenalty+m.ReserveShortfallPenalty)/2.
-    model.SetSupplementalReservePenalty = BuildAction(rule=set_supplemental_reserve_penalty)
-
     def zonal_op_bounds(m,rz,t):
         return (0, m.ZonalSupplementalReserveRequirement[rz,t])
     model.ZonalSupplementalReserveShortfall = Var(model.SupplementalReserveZones, model.TimePeriods, within=NonNegativeReals, bounds=zonal_op_bounds)
@@ -827,13 +829,13 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return (0, m.SystemSupplementalReserveRequirement[t])
     model.SystemSupplementalReserveShortfall = Var(model.TimePeriods, within=NonNegativeReals, bounds=system_op_bounds)
     
-    def op_bounds(m,g,t):
+    def op_bounds_nspin(m,g,t):
         return (0,m.SupplementalReserveCapabilityNonSpin[g])
-    model.SupplementalNonSpinReserveDispatched = Var(model.SupplementalNonSpinGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds)
+    model.SupplementalNonSpinReserveDispatched = Var(model.SupplementalNonSpinGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds_nspin)
 
-    def op_bound_spin(m,g,t):
+    def op_bounds_spin(m,g,t):
         return (0,m.SupplementalReserveCapabilitySpin[g])
-    model.SupplementalSpinReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds)
+    model.SupplementalSpinReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds_spin)
 
     nspin_reserves = hasattr(model, 'non_spinning_reserve')
     # thirty-minute supplemental reserve, for units which are off
@@ -863,7 +865,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.SupplementalReserveDispatched = Expression(model.ThermalGenerators, model.TimePeriods, rule=supplemental_reserve_expr_rule)
 
     def operational_zonal_reserves_provided(m,rz,t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SupplementalReserveDispatched[g,t] for g in m.ThermalGeneratorsInReserveZone[rz]) + m.ZonalSupplementalReserveShortfall[rz,t]
+        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SupplementalReserveDispatched[g,t] for g in m.GeneratorsInSupplementalReserveZone[rz]) + m.ZonalSupplementalReserveShortfall[rz,t]
     model.SupplementalZonalReservesProvided = Expression(model.SupplementalReserveZones, model.TimePeriods, rule=operational_zonal_reserves_provided)
 
     def enforce_zonal_supplemental_reserve_requirement_rule(m, rz, t):
@@ -884,7 +886,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SupplementalReserveDispatched[g,t] for g in m.ThermalGenerators) \
                 + sum(m.ZonalSupplementalReserveShortfall[rz,t] for rz in m.SupplementalReserveZones) \
                 + m.SystemSupplementalReserveShortfall[t]
-    model.SystemSupplementalReserveProvided = Expression(model.TimePeriods, rule=nspin_reserves_provided)
+    model.SystemSupplementalReserveProvided = Expression(model.TimePeriods, rule=operational_reserves_provided)
 
     def enforce_system_supplemental_reserve_requirement(m, t):
         return m.SystemSupplementalReserveProvided[t] \
@@ -928,7 +930,7 @@ def flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_
                   or ('flexible_ramp_down_requirement' in e_dict) )
     model.FlexRampZones = Set(initialize=zone_initializer_builder(_check_flex))
 
-    model.ThermalGeneratorsInFlexRampZone = Set(model.FlexRampZones, initialize=gens_in_reserve_zone_getter)
+    model.ThermalGeneratorsInFlexRampZone = Set(model.FlexRampZones, initialize=gens_in_reserve_zone_getter())
 
     ## begin flexible_ramp
     model.FlexRampMinutes = Param(within=PositiveReals, default=20.)
@@ -955,12 +957,6 @@ def flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_
         return (0, m.SystemFlexDnRequirement[t])
     model.SystemFlexDnShortfall = Var(model.TimePeriods, within=NonNegativeReals, bounds=system_flex_dn_bounds)
 
-    model.FlexRampPenalty = Param(within=NonNegativeReals, mutable=True)
-
-    def set_flex_ramp_penalty(m):
-        if m.FlexRampPenalty(exception=False) is None:
-            m.FlexRampPenalty = value(m.NonSpinningReservePenalty+m.SpinningReservePenalty)/2.
-    model.SetFlexRampPenalty = BuildAction(rule=set_flex_ramp_penalty)
 
     model.FlexUpProvided = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
     model.FlexDnProvided = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
@@ -975,12 +971,12 @@ def flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_
 
     def zonal_flex_up_requirement_rule(m, rz, t):
         return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexUpProvided[g,t] for g in m.ThermalGeneratorsInFlexRampZone[rz]) \
-                    + m.ZonalFlexUpShortfall[rz,t] >= m.ZonalFlexUpRequirement[t]
+                    + m.ZonalFlexUpShortfall[rz,t] >= m.ZonalFlexUpRequirement[rz,t]
     model.ZonalFlexUpRequirementConstr = Constraint(model.FlexRampZones, model.TimePeriods, rule=zonal_flex_up_requirement_rule)
 
     def zonal_flex_dn_requirement_rule(m, rz, t):
         return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexDnProvided[g,t] for g in m.ThermalGeneratorsInFlexRampZone[rz]) \
-                    + m.ZonalFlexDnShortfall[rz,t] >= m.ZonalFlexDnRequirement[t]
+                    + m.ZonalFlexDnShortfall[rz,t] >= m.ZonalFlexDnRequirement[rz,t]
     model.ZonalFlexDnRequirementConstr = Constraint(model.FlexRampZones, model.TimePeriods, rule=zonal_flex_dn_requirement_rule)
 
     def system_flex_up_requirement_rule(m, t):
