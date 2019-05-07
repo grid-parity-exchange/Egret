@@ -167,7 +167,7 @@ def storage_services(model):
 ##       [3] Califonia ISO. Technical Bulletin 2009-06-05: Market Optimization Details. Revised Nov 19, 2009.
 
 @add_model_attr('ancillary_service', requires = {'data_loader': None,
-                                                  'status_vars': ['garver_3bin_vars','garver_2bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars'],
+                                                  'status_vars': None,
                                                   'power_vars': None,
                                                  })
 def ancillary_services(model):
@@ -228,7 +228,11 @@ def ancillary_services(model):
     no_reserves = not (add_spinning_reserve or add_non_spinning_reserve or add_regulation_reserve or add_supplemental_reserve or add_flexi_ramp_reserve)
     if no_reserves:
         return
-    
+
+    ## check this here to avoid exceptions when the model has no ancillary services
+    if model.status_vars not in ['garver_3bin_vars','garver_2bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
+        raise Exception('Exception adding ancillary_services! ancillary_services requires one of: garver_3bin_vars, garver_2bin_vars, garver_3bin_relaxed_stop_vars, ALS_state_transition_vars, to be used for the status_vars.')
+
     ## set these penalties in relation to each other, from higher quality service to lower
     model.RegulationPenalty = Param(within=NonNegativeReals,
                                     default=value(model.LoadMismatchPenalty+model.ReserveShortfallPenalty)/2.,
