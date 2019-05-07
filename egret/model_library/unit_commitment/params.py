@@ -229,7 +229,7 @@ def load_params(model, model_data):
         load_time = TimeMapper(load['p_load'])
         load_in_service = TimeMapper(load['in_service'])
         for t in model.TimePeriods:
-            bus_loads[bus, t] += load_time(None,t) if load_in_service(None,t) else 0.
+            bus_loads[bus, t] += load_in_service(None,t)*load_time(None,t)
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
@@ -966,7 +966,7 @@ def load_params(model, model_data):
             return None
         in_service_time_mapper = TimeMapper(in_service_attrs)
         def initialize_forced_outage(m, e, t):
-            return not in_service_time_mapper(m,e,t)
+            return (1 - in_service_time_mapper(m,e,t))
         return initialize_forced_outage
     
     model.ThermalGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
@@ -974,7 +974,7 @@ def load_params(model, model_data):
                                         initialize=_get_forced_outage_initilizer(thermal_gen_attrs.get('in_service')))
 
     model.NondispatchableGeneratorForcedOutage = Param(model.AllNondispatchableGenerators, model.TimePeriods,
-                                        within=Binary, default=False, 
+                                        within=UnitInterval, default=0, 
                                         initialize=_get_forced_outage_initilizer(renewable_gen_attrs.get('in_service')))
     
     model.StorageForceOutage = Param(model.Storage, model.TimePeriods,
