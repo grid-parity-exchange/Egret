@@ -391,6 +391,8 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             load_dict = {"bus": BUS_I, "in_service":True}
             load_dict["p_load"] = PD
             load_dict["q_load"] = QD
+            load_dict["area"] = "Area"+BUS_AREA
+            load_dict["zone"] = ZONE
             elements["load"]['load_'+BUS_I] = load_dict
 
         if GS != 0 or BS != 0:
@@ -531,6 +533,8 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             gen_dict["ramp_q"] = RAMP_Q
             gen_dict["fuel"] = FUEL
             gen_dict["unit_type"] = UNIT_TYPE
+            gen_dict["area"] = elements["bus"][gen_dict["bus"]]["area"]
+            gen_dict["zone"] = elements["bus"][gen_dict["bus"]]["zone"]
 
             # after this is only really needed for thermal units
             if UNIT_TYPE in RENEWABLE_TYPES:
@@ -607,6 +611,9 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             gen_dict["qc1_max"] = QC1MAX
             gen_dict["qc2_min"] = QC2MIN
             gen_dict["qc2_max"] = QC2MAX
+            gen_dict["agc_capable"] = True
+            gen_dict["p_min_agc"] = gen_dict["p_min"]
+            gen_dict["p_max_agc"] = gen_dict["p_max"]
             gen_dict["ramp_agc"] = RAMP_AGC
             gen_dict["ramp_10"] = RAMP_10
             gen_dict["ramp_30"] = RAMP_30
