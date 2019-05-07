@@ -514,14 +514,20 @@ def _set_options(solver, mipgap, timelimit, other_options):
             solver.options.TimeLimit = timelimit
     elif 'cplex' in solver_name:
         solver.options.mip_tolerances_mipgap = mipgap
+        if timelimit is not None:
+            solver.options.timelimit = timelimit
     elif 'glpk' in solver_name:
         solver.options.mipgap = mipgap
+        if timelimit is not None:
+            solver.options.tmlim = timelimit
     elif 'cbc' in solver_name:
         solver.options.ratioGap = mipgap
+        if timelimit is not None:
+            solver.options.sec = timelimit
     else:
         raise Exception('Solver {0} not recognized'.format(solver_name))
 
-    for key, opt in other_options:
+    for key, opt in other_options.items():
         solver.options[key] = opt
 
 def _time_series_dict(values):
@@ -599,9 +605,9 @@ def solve_unit_commitment(model_data,
 
     if isinstance(solver, PersistentSolver):
         solver.set_instance(m, symbolic_solver_labels=symbolic_solver_labels)
-        results = solver.solve(m, timelimit=timelimit, tee=solver_tee)
+        results = solver.solve(m, tee=solver_tee)
     else:
-        results = solver.solve(m, timelimit=timelimit, tee=solver_tee, \
+        results = solver.solve(m, tee=solver_tee, \
                               symbolic_solver_labels=symbolic_solver_labels)
 
     if results.solver.termination_condition not in safe_termination_conditions:
