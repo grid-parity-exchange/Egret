@@ -92,7 +92,12 @@ def create_psv_acopf_model(model_data):
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    s_lbub = {k: (-s_max[k],s_max[k]) for k in branches.keys()}
+    s_lbub = dict()
+    for k in branches.keys():
+        if s_max[k] is None:
+            s_lbub[k] = (None, None)
+        else:
+            s_lbub[k] = (-s_max[k],s_max[k])
     pf_bounds = s_lbub
     pt_bounds = s_lbub
     qf_bounds = s_lbub
@@ -274,7 +279,12 @@ def create_rsv_acopf_model(model_data):
 
     ### declare the current flows in the branches
     s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    s_lbub = {k: (-s_max[k],s_max[k]) for k in branches.keys()}
+    s_lbub = dict()
+    for k in branches.keys():
+        if s_max[k] is None:
+            s_lbub[k] = (None, None)
+        else:
+            s_lbub[k] = (-s_max[k],s_max[k])
     pf_bounds = s_lbub
     pt_bounds = s_lbub
     qf_bounds = s_lbub
@@ -599,3 +609,4 @@ def create_riv_acopf_model(model_data):
     model.obj = pe.Objective(expr=obj_expr)
 
     return model
+
