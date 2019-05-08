@@ -527,8 +527,9 @@ def _set_options(solver, mipgap, timelimit, other_options):
     else:
         raise Exception('Solver {0} not recognized'.format(solver_name))
 
-    for key, opt in other_options.items():
-        solver.options[key] = opt
+    if other_options is not None:
+        for key, opt in other_options.items():
+            solver.options[key] = opt
 
 def _time_series_dict(values):
     return {'data_type':'time_series', 'values':values}
@@ -539,7 +540,7 @@ def solve_unit_commitment(model_data,
                           timelimit = None,
                           solver_tee = True,
                           symbolic_solver_labels = False,
-                          options = dict(),
+                          options = None,
                           uc_model_generator=create_tight_unit_commitment_model,
                           relaxed=False,
                           return_model=False):
