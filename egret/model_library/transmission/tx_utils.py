@@ -257,12 +257,12 @@ scaled_attributes = {
                    }
 
 
-def scale_ModelData_to_pu(model_data):
-    return _convert_modeldata_pu(model_data, _divide_by_baseMVA)
+def scale_ModelData_to_pu(model_data, inplace=False):
+    return _convert_modeldata_pu(model_data, _divide_by_baseMVA, inplace)
 
 
-def unscale_ModelData_to_pu(model_data):
-    return _convert_modeldata_pu(model_data, _multiply_by_baseMVA)
+def unscale_ModelData_to_pu(model_data, inplace=False):
+    return _convert_modeldata_pu(model_data, _multiply_by_baseMVA, inplace)
 
 
 def _multiply_by_baseMVA(element, attr_name, attr, baseMVA):
@@ -297,9 +297,12 @@ def _divide_by_baseMVA(element, attr_name, attr, baseMVA):
 ## NOTE: ideally this would be done in the definitions of
 ##       these constraints. Futher, it is not obvious that
 ##       the baseMVA provides the best scaling
-def _convert_modeldata_pu(model_data, transform_func):
+def _convert_modeldata_pu(model_data, transform_func, inplace):
 
-    md = model_data.clone()
+    if inplace:
+        md = model_data
+    else:
+        md = model_data.clone()
     baseMVA = float(md.data['system']['baseMVA'])
 
     for (attr_type, element_type), attributes in scaled_attributes.items():
@@ -319,5 +322,8 @@ def _convert_modeldata_pu(model_data, transform_func):
                     if attr_name in attributes:
                         transform_func(element, attr_name, attr, baseMVA)
 
-    return md
+    if inplace:
+        return
+    else:
+        return md
 
