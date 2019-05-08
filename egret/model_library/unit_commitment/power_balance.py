@@ -23,8 +23,9 @@ import egret.model_library.transmission.gen as libgen
 from egret.model_library.defn import CoordinateType, ApproximationType
 from math import pi
 
+component_name = 'power_balance'
 
-def btheta_dcopf_network_model(md,block):
+def _btheta_dcopf_network_model(md,block):
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
@@ -132,16 +133,19 @@ def btheta_dcopf_network_model(md,block):
 
 
 
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'power_vars': None,
+                                            'non_dispatchable_vars': None
+                                            })
+def b_theta_power_flow(model):
+
+    md = model.model_data
 
 
 
 
 
 
-
-
-
-component_name = 'power_balance'
 
 #TODO: this doesn't check if storage_services is added first, 
 #      but this will only happen when there are storage_services!
