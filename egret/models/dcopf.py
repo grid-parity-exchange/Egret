@@ -25,7 +25,8 @@ from math import pi
 
 
 def create_btheta_dcopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))

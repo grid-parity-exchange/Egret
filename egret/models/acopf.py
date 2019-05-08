@@ -26,7 +26,8 @@ from math import pi
 
 
 def create_psv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -212,7 +213,8 @@ def create_psv_acopf_model(model_data):
 
 
 def create_rsv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -399,7 +401,8 @@ def create_rsv_acopf_model(model_data):
 
 
 def create_riv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -609,4 +612,3 @@ def create_riv_acopf_model(model_data):
     model.obj = pe.Objective(expr=obj_expr)
 
     return model
-
