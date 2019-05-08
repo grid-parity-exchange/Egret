@@ -18,6 +18,7 @@ import os.path
 import logging
 import warnings
 import egret.data.model_data as md
+import numpy as np
 
 logger = logging.getLogger('egret.parsers.matpower_parser')
 
@@ -312,10 +313,20 @@ def create_model_data_dict(matpower_filename):
                     gen_dict['in_service'] = True
                 else:
                     gen_dict['in_service'] = False
+
                 gen_dict['p_min'] = PMIN
                 gen_dict['p_max'] = PMAX
                 gen_dict['q_min'] = QMIN
                 gen_dict['q_max'] = QMAX
+
+                if np.isnan(PMIN) or np.isinf(PMIN):
+                    gen_dict['p_min'] = -9999.99 # TODO Make sure number is always smaller than gen limit
+                if np.isnan(PMAX) or np.isinf(PMAX):
+                    gen_dict['p_max'] = 9999.99 # TODO Make sure number is always larger than gen limit
+                if np.isnan(QMIN) or np.isinf(QMIN):
+                    gen_dict['q_min'] = -9999.99 # TODO Make sure number is always smaller than gen limit
+                if np.isnan(QMAX) or np.isinf(QMAX):
+                    gen_dict['q_max'] = 9999.99 # TODO Make sure number is always larger than gen limit
 
                 # Assume all generators are of type thermal
                 gen_dict['generator_type'] = 'thermal'
