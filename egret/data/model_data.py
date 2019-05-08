@@ -253,6 +253,18 @@ class ModelData(object):
         """
         return ModelData(cp.deepcopy(self.data))
 
+    def clone_in_service(self):
+        """
+        Create a copy of this ModelData object using a deep copy on the underlying dictionary,
+        only returning the elements for which the in_service flag is not set to False
+
+        Returns
+        -------
+            ModelData
+        """
+        return ModelData(_copy_only_in_service(self.data))
+
+
     def clone_at_timestamp(self, timestamp):
         """
         Creae a copy of the ModelData object using values from a single timestamp.
@@ -307,3 +319,23 @@ def map_items(func, d):
 
 def zip_items(dict_lb, dict_ub):
     return {k: (dict_lb[k], dict_ub[k]) for k in dict_lb.keys()}
+
+def _copy_only_in_service(data_dict):
+    new_dd = dict()
+    for key, value in data_dict.items():
+        if key == 'elements':
+            ## value is the elements dictionary
+            new_dd[key] = dict()
+            new_elements = new_dd[key]
+            for elements_name, elements in value.items():
+                new_elements[elements_name] = dict()
+                new_element_dict = new_elements[elements_name]
+                for element_name, element in elements.items():
+                    if 'in_service' in element and (not element['in_service']):
+                        continue
+                    else:
+                        new_element_dict[element_name] = cp.deepcopy(element)
+        else:
+            new_dd[key] = cp.deepcopy(value)
+    return new_dd
+
