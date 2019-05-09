@@ -26,7 +26,7 @@ setuptools_kwargs = {
     'install_requires': [],
     'scripts': [],
     'include_package_data': True,
-#    'install_requires' : ['networkx', 'scipy', 'numpy']
+    'install_requires' : ['pyomo>=5.6', 'numpy', 'pytest']
 }
 
 setup(name=DISTNAME,
