@@ -67,6 +67,7 @@ def load_params(model, model_data):
     warn_neg_load = False
 
     md = model_data
+    model.model_data = model_data
 
     system = md.data['system']
     elements = md.data['elements']
