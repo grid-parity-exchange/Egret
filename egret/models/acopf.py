@@ -612,3 +612,93 @@ def create_riv_acopf_model(model_data):
     model.obj = pe.Objective(expr=obj_expr)
 
     return model
+
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+    import time
+    import json
+
+    path = os.path.dirname(__file__)
+
+    results_dict = dict()
+
+    directory = os.path.join(path, '../../download/pglib-opf/sad/')
+    for filename in os.listdir(directory):
+        if filename.endswith(".m"):
+            matpower_file = os.path.join(path, '../../download/pglib-opf/sad/', filename)
+
+            md = create_ModelData(matpower_file)
+            model_name = md.data["system"]["model_name"]
+            print(model_name)
+            # filename_results = model_name + '.json'
+            # with open(filename_results, 'w') as fp:
+            #     json.dump(md.data, fp)
+            results_dict[md.data["system"]["model_name"]] = dict()
+            tmp = results_dict[md.data["system"]["model_name"]]
+
+            start = time.time()
+            model = create_rsv_acopf_model(md)
+            end = time.time()
+
+            solver = pe.SolverFactory('ipopt')
+            solver.options['halt_on_ampl_error'] = "yes"
+
+            results = solver.solve(model, tee=True, keepfiles=True, symbolic_solver_labels=True)
+
+            print('rsv')
+            tmp['rsv_acopf'] = dict()
+            tmp['rsv_acopf']['objective'] = model.obj.value()
+            if results['Solver']:
+                tmp['rsv_acopf']['termination_condition'] = print(results['Solver'][0]['Termination condition'])
+                tmp['rsv_acopf']['time'] = results['Solver'][0]['Time']
+            else:
+                tmp['rsv_acopf']['termination_condition'] = 'solver issues'
+                tmp['rsv_acopf']['time'] = 999.99
+            tmp['rsv_acopf']['model_build_time'] = end - start
+
+
+            start = time.time()
+            model = create_riv_acopf_model(md)
+            end = time.time()
+
+            solver = pe.SolverFactory('ipopt')
+            solver.options['halt_on_ampl_error'] = "yes"
+            results = solver.solve(model, tee=True, keepfiles=True, symbolic_solver_labels=True)
+
+            print('riv')
+            tmp['riv_acopf'] = dict()
+            tmp['riv_acopf']['objective'] = model.obj.value()
+            if results['Solver']:
+                tmp['riv_acopf']['termination_condition'] = print(results['Solver'][0]['Termination condition'])
+                tmp['riv_acopf']['time'] = results['Solver'][0]['Time']
+            else:
+                tmp['riv_acopf']['termination_condition'] = 'solver issues'
+                tmp['riv_acopf']['time'] = 999.99
+            tmp['riv_acopf']['model_build_time'] = end - start
+
+
+            start = time.time()
+            model = create_psv_acopf_model(md)
+            end = time.time()
+
+            solver = pe.SolverFactory('ipopt')
+            solver.options['halt_on_ampl_error'] = "yes"
+
+            results = solver.solve(model, tee=True, keepfiles=True, symbolic_solver_labels=True)
+
+            print('psv')
+            tmp['psv_acopf'] = dict()
+            tmp['psv_acopf']['objective'] = model.obj.value()
+            if results['Solver']:
+                tmp['psv_acopf']['termination_condition'] = print(results['Solver'][0]['Termination condition'])
+                tmp['psv_acopf']['time'] = results['Solver'][0]['Time']
+            else:
+                tmp['psv_acopf']['termination_condition'] = 'solver issues'
+                tmp['psv_acopf']['time'] = 999.99
+            tmp['psv_acopf']['model_build_time'] = end - start
+
+            # filename_results = 'acopf_results_pglib_opf_sad_v19_01.json'
+            # with open(filename_results, 'w') as fp:
+            #     json.dump(results_dict, fp)
+    print(results_dict)
