@@ -27,8 +27,17 @@ def _verify_must_run_t0_state_consistency(model):
             min_down_time = value(m.MinimumDownTime[g])
             if abs(t0_state) < min_down_time:
                 for t in range(m.TimePeriods.first(), min_down_time+t0_state+m.TimePeriods.first()+1):
-                    if value(m.MustRun[g, t]):
+                    fixed_commitment = value(m.FixedCommitment[g,t])
+                    if (fixed_commitment is not None) and (fixed_commitment == 1):
                         print("DATA ERROR: The generator %s has been flagged as must-run at time %d, but its T0 state=%d is inconsistent with its minimum down time=%d" % (g, t, t0_state, min_down_time))
+                        return False
+        else: # t0_state > 0
+            min_up_time = value(m.MinimumUpTime[g])
+            if abs(t0_state) < min_up_time:
+                for t in range(m.TimePeriods.first(), min_up_time+t0_state+m.TimePeriods.first()+1):
+                    fixed_commitment = value(m.FixedCommitment[g,t])
+                    if (fixed_commitment is not None) and (fixed_commitment == 0):
+                        print("DATA ERROR: The generator %s has been flagged as off at time %d, but its T0 state=%d is inconsistent with its minimum up time=%d" % (g, t, t0_state, min_down_time))
                         return False
         return True
     
@@ -158,8 +167,8 @@ def load_params(model, model_data):
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term')) # max flow across the line
 
-    model.LineInService = Param(model.TransmissionLines, model.TimePeriods, within=Boolean, default=True,
-                                    initialize=TimeMapper(branch_attrs.get('in_service')))
+    model.LineOutOfService = Param(model.TransmissionLines, model.TimePeriods, within=Boolean, default=False,
+                                    initialize=TimeMapper(branch_attrs.get('planned_outage')))
 
     ## Interfaces
     ## NOTE: Lines in iterfaces should be all go "from" the
@@ -196,13 +205,13 @@ def load_params(model, model_data):
     
     model.QuickStartGenerators = Set(within=model.ThermalGenerators, initialize=init_quick_start_generators)
     
-    # optionally force a unit to be on.
-    model.MustRun = Param(model.ThermalGenerators, model.TimePeriods, within=Boolean,
-                            default=False, initialize=TimeMapper(thermal_gen_attrs.get('must_run')))
-
+    # optionally force a unit to be on/off
     model.FixedCommitmentTypes = Set(initialize=[0,1,None])
-    model.FixedCommitment = Param(model.ThermalGenerators, model.TimePeriods, within=model.FixedCommitmentTypes,
-                                    default=None, initialize=TimeMapper(thermal_gen_attrs.get('fixed_commitment')))
+    model.FixedCommitment = Param(model.ThermalGenerators,
+                                  model.TimePeriods,
+                                  within=model.FixedCommitmentTypes,
+                                  default=None,
+                                  initialize=TimeMapper(thermal_gen_attrs.get('fixed_commitment')),)
     
     model.NondispatchableGeneratorsAtBus = Set(model.Buses, initialize=renewable_gens_by_bus)
     
@@ -951,34 +960,4 @@ def load_params(model, model_data):
     
     model.FailureProbability = Param(model.ThermalGenerators, validate=probability_failure_validator, default=0.0)
     
-    #####################################################################################
-    # a binary indicator as to whether or not each generator is on-line during a given  #
-    # time period. intended to represent a sampled realization of the generator failure #
-    # probability distributions. strictly speaking, we interpret this parameter value   #
-    # as indicating whether or not the generator is contributing (injecting) power to   #
-    # the PowerBalance constraint. this parameter is not intended to be used in the     #
-    # context of ramping or time up/down constraints.                                   # 
-    #####################################################################################
-
-    ## simple function builder to invert in service to forced outage
-    def _get_forced_outage_initilizer(in_service_attrs):
-        if in_service_attrs is None:
-            return None
-        in_service_time_mapper = TimeMapper(in_service_attrs)
-        def initialize_forced_outage(m, e, t):
-            return (1 - in_service_time_mapper(m,e,t))
-        return initialize_forced_outage
-    
-    model.ThermalGeneratorForcedOutage = Param(model.ThermalGenerators, model.TimePeriods,
-                                        within=Binary, default=False, 
-                                        initialize=_get_forced_outage_initilizer(thermal_gen_attrs.get('in_service')))
-
-    model.NondispatchableGeneratorForcedOutage = Param(model.AllNondispatchableGenerators, model.TimePeriods,
-                                        within=UnitInterval, default=0, 
-                                        initialize=_get_forced_outage_initilizer(renewable_gen_attrs.get('in_service')))
-    
-    model.StorageForceOutage = Param(model.Storage, model.TimePeriods,
-                                        within=Binary, default=False,
-                                        initialize=_get_forced_outage_initilizer(storage_attrs.get('in_service')))
-
     return model

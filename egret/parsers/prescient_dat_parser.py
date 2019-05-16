@@ -122,7 +122,7 @@ def create_model_data_dict(dat_file):
         g_d['bus'] = gen_bus_dict[g]
         g_d['fuel'] = params.ThermalGeneratorType[g]
         g_d['quickstart_capable'] = params.QuickStart[g]
-        g_d['must_run'] = params.MustRun[g]
+        g_d['fixed_commitment'] = (1 if params.MustRun[g] else None)
         g_d['in_service'] = True
         g_d['zone'] = params.ReserveZoneLocation[g]
         g_d['failure_rate'] = params.FailureProbability[g]

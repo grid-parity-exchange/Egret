@@ -52,17 +52,17 @@ def CA_reserve_constraints(model):
     
     def enforce_reserve_requirements_rule(m, t):
         if m.storage_services:
-            return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
-                 + sum((1-m.NondispatchableGeneratorForcedOutage[g,t])*m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
-                 + sum((1-m.StorageForceOutage[s,t])*m.PowerOutputStorage[s,t] for s in m.Storage) \
-                 - sum((1-m.StorageForceOutage[s,t])*m.PowerInputStorage[s,t] for s in m.Storage) \
+            return sum(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
+                 + sum(m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
+                 + sum(m.PowerOutputStorage[s,t] for s in m.Storage) \
+                 - sum(m.PowerInputStorage[s,t] for s in m.Storage) \
                  + sum(m.LoadGenerateMismatch[b,t] for b in m.Buses) \
                  + m.ReserveShortfall[t] \
                  >= \
                  m.TotalDemand[t] + m.ReserveRequirement[t]
         else:
-            return (sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
-                 + sum((1-m.NondispatchableGeneratorForcedOutage[g,t])*m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
+            return (sum(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
+                 + sum(m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
                  + sum(m.LoadGenerateMismatch[b,t] for b in m.Buses) \
                  + m.ReserveShortfall[t]) \
                  >= \
@@ -78,7 +78,7 @@ def CA_reserve_constraints(model):
 def _MLR_reserve_constraint(model):
 
     def enforce_reserve_requirements_rule(m, t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.ReserveProvided[g, t] for g in m.ThermalGenerators) \
+        return sum(m.ReserveProvided[g, t] for g in m.ThermalGenerators) \
                  + m.ReserveShortfall[t] \
                  >= \
                  m.ReserveRequirement[t]

@@ -21,7 +21,8 @@ from egret.model_library.transmission.tx_utils import \
 
 def _get_uc_model(model_data, formulation_list, relax_binaries):
     formulation = UCFormulation(*formulation_list)
-    md = scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    md = scale_ModelData_to_pu(md, inplace=True)
     return generate_model(md, formulation, relax_binaries)
 
 def create_tight_unit_commitment_model(model_data,
