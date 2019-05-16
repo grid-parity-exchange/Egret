@@ -170,19 +170,6 @@ def gens_by_bus(buses, gens):
 
     return gens_by_bus
 
-
-def gens_in_service_by_bus(buses, gens):
-    """
-    Return a dictionary of the generators attached to each bus
-    """
-    gens_by_bus = {k: list() for k in buses.keys()}
-    for gen_name, gen in gens.items():
-        if gen['in_service']:
-            gens_by_bus[gen['bus']].append(gen_name)
-
-    return gens_by_bus
-
-
 ## attributes which are scaled for power flow models
 ancillary_service_stack = [
                             'reserve_requirement',
@@ -405,5 +392,5 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
 
     if inplace:
         return
-    return md
-
+    else:
+        return md

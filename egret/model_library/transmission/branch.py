@@ -133,8 +133,6 @@ def declare_eq_branch_current(model, index_set, branches, coordinate_type=Coordi
     m.eq_itj_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
-        if not branch['in_service']:
-            continue
 
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -196,8 +194,6 @@ def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate
     m.eq_qt_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
-        if not branch['in_service']:
-            continue
 
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -276,8 +272,6 @@ def declare_eq_branch_power_dc_approx(model, index_set, branches, approximation_
     m.eq_pf_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
-        if not branch['in_service']:
-            continue
 
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -312,11 +306,11 @@ def declare_ineq_s_branch_thermal_limit(model, index_set,
 
     if flow_type == FlowType.CURRENT:
         for branch_name in con_set:
-            if not branches[branch_name]['in_service']:
+            if s_thermal_limits[branch_name] is None:
                 continue
+
             from_bus = branches[branch_name]['from_bus']
             to_bus = branches[branch_name]['to_bus']
-
             m.ineq_sf_branch_thermal_limit[branch_name] = \
                 (m.vr[from_bus] ** 2 + m.vj[from_bus] ** 2) * (m.ifr[branch_name] ** 2 + m.ifj[branch_name] ** 2) \
                 <= s_thermal_limits[branch_name] ** 2
@@ -325,7 +319,7 @@ def declare_ineq_s_branch_thermal_limit(model, index_set,
                 <= s_thermal_limits[branch_name] ** 2
     elif flow_type == FlowType.POWER:
         for branch_name in con_set:
-            if not branches[branch_name]['in_service']:
+            if s_thermal_limits[branch_name] is None:
                 continue
 
             m.ineq_sf_branch_thermal_limit[branch_name] = \
@@ -352,7 +346,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
 
     if approximation_type == ApproximationType.BTHETA:
         for branch_name in con_set:
-            if not branches[branch_name]['in_service']:
+            if p_thermal_limits[branch_name] is None:
                 continue
 
             m.ineq_pf_branch_thermal_lb[branch_name] = \
@@ -378,8 +372,6 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
 
     if coordinate_type == CoordinateType.POLAR:
         for branch_name in con_set:
-            if not branches[branch_name]['in_service']:
-                continue
             from_bus = branches[branch_name]['from_bus']
             to_bus = branches[branch_name]['to_bus']
 
@@ -389,8 +381,6 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
                 m.va[from_bus] - m.va[to_bus] <= branches[branch_name]['angle_diff_max']
     elif coordinate_type == CoordinateType.RECTANGULAR:
         for branch_name in con_set:
-            if not branches[branch_name]['in_service']:
-                continue
             from_bus = branches[branch_name]['from_bus']
             to_bus = branches[branch_name]['to_bus']
 

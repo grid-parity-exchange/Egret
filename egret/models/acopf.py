@@ -26,7 +26,8 @@ from math import pi
 
 
 def create_psv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -42,7 +43,7 @@ def create_psv_acopf_model(model_data):
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-    gens_by_bus = tx_utils.gens_in_service_by_bus(buses, gens)
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
 
@@ -92,7 +93,12 @@ def create_psv_acopf_model(model_data):
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    s_lbub = {k: (-s_max[k],s_max[k]) for k in branches.keys()}
+    s_lbub = dict()
+    for k in branches.keys():
+        if s_max[k] is None:
+            s_lbub[k] = (None, None)
+        else:
+            s_lbub[k] = (-s_max[k],s_max[k])
     pf_bounds = s_lbub
     pt_bounds = s_lbub
     qf_bounds = s_lbub
@@ -207,7 +213,8 @@ def create_psv_acopf_model(model_data):
 
 
 def create_rsv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -223,7 +230,7 @@ def create_rsv_acopf_model(model_data):
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-    gens_by_bus = tx_utils.gens_in_service_by_bus(buses, gens)
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
 
@@ -274,7 +281,12 @@ def create_rsv_acopf_model(model_data):
 
     ### declare the current flows in the branches
     s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    s_lbub = {k: (-s_max[k],s_max[k]) for k in branches.keys()}
+    s_lbub = dict()
+    for k in branches.keys():
+        if s_max[k] is None:
+            s_lbub[k] = (None, None)
+        else:
+            s_lbub[k] = (-s_max[k],s_max[k])
     pf_bounds = s_lbub
     pt_bounds = s_lbub
     qf_bounds = s_lbub
@@ -389,7 +401,8 @@ def create_rsv_acopf_model(model_data):
 
 
 def create_riv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -405,7 +418,7 @@ def create_riv_acopf_model(model_data):
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-    gens_by_bus = tx_utils.gens_in_service_by_bus(buses, gens)
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
 
