@@ -21,8 +21,12 @@ def _add_initial(model):
         if value(m.InitialTimePeriodsOnLine[g]) == 0:
             return
         for t in range(m.TimePeriods.first(), value(m.InitialTimePeriodsOnLine[g])+m.TimePeriods.first()):
-            m.UnitOn[g,t].value = 1
-            m.UnitOn[g,t].fix()
+            if m.status_vars == 'ALS_state_transition_vars':
+                m.UnitStayOn[g,t].value = 1
+                m.UnitStayOn[g,t].fix()
+            else:
+                m.UnitOn[g,t].value = 1
+                m.UnitOn[g,t].fix()
     
     model.EnforceUpTimeConstraintsInitial = BuildAction(model.ThermalGenerators, rule=enforce_up_time_constraints_initial)
 
@@ -31,8 +35,12 @@ def _add_initial(model):
         if value(m.InitialTimePeriodsOffLine[g]) == 0:
             return
         for t in range(m.TimePeriods.first(), value(m.InitialTimePeriodsOffLine[g])+m.TimePeriods.first()):
-            m.UnitOn[g,t].value = 0
-            m.UnitOn[g,t].fix()
+            if m.status_vars == 'ALS_state_transition_vars':
+                m.UnitStayOn[g,t].value = 0
+                m.UnitStayOn[g,t].fix()
+            else:
+                m.UnitOn[g,t].value = 0
+                m.UnitOn[g,t].fix()
     
     model.EnforceDownTimeConstraintsInitial = BuildAction(model.ThermalGenerators, rule=enforce_down_time_constraints_initial)
 
@@ -41,8 +49,12 @@ def _add_fixed_and_initial(model):
     # Fixed commitment constraints
     def enforce_fixed_commitments_rule(m,g,t):
         if value(m.FixedCommitment[g,t]) is not None:
-            m.UnitOn[g,t].value = value(m.FixedCommitment[g,t])
-            m.UnitOn[g,t].fix()
+            if m.status_vars == 'ALS_state_transition_vars':
+                m.UnitStayOn[g,t].value = value(m.FixedCommitment[g,t])
+                m.UnitStayOn[g,t].fix()
+            else:
+                m.UnitOn[g,t].value = value(m.FixedCommitment[g,t])
+                m.UnitOn[g,t].fix()
     model.EnforceFixedCommitments = BuildAction(model.ThermalGenerators, model.TimePeriods, rule=enforce_fixed_commitments_rule)
 
     _add_initial(model)
