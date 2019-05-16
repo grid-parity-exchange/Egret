@@ -38,13 +38,6 @@ def _add_initial(model):
 
 def _add_fixed_and_initial(model):
 
-    # Must run constraint 
-    def enforce_must_run_rule(m,g,t):
-        if value(m.MustRun[g,t]):
-            m.UnitOn[g,t].value = 1
-            m.UnitOn[g,t].fix()
-    model.EnforceMustRun = BuildAction(model.ThermalGenerators, model.TimePeriods, rule=enforce_must_run_rule)
-
     # Fixed commitment constraints
     def enforce_fixed_commitments_rule(m,g,t):
         if value(m.FixedCommitment[g,t]) is not None:
