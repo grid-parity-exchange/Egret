@@ -47,7 +47,7 @@ platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0<br/>
 rootdir: /home/some-user/egret<br/>
 collected 14 items<br/>
 <br/>
-test_unit_commitment.py s.............                                                                                                                    [100%]  <br/>
+test_unit_commitment.py s.............                                                                                                                    [100%]<br/>
 <br/>
 ============================================================ 13 passed, 1 skipped in 125.02 seconds =============================================================<br/>
 
