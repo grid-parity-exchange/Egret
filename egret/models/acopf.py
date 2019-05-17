@@ -26,7 +26,8 @@ from math import pi
 
 
 def create_psv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -42,7 +43,7 @@ def create_psv_acopf_model(model_data):
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-    gens_by_bus = tx_utils.gens_in_service_by_bus(buses, gens)
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
 
@@ -212,7 +213,8 @@ def create_psv_acopf_model(model_data):
 
 
 def create_rsv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -228,7 +230,7 @@ def create_rsv_acopf_model(model_data):
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-    gens_by_bus = tx_utils.gens_in_service_by_bus(buses, gens)
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
 
@@ -399,7 +401,8 @@ def create_rsv_acopf_model(model_data):
 
 
 def create_riv_acopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -415,7 +418,7 @@ def create_riv_acopf_model(model_data):
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-    gens_by_bus = tx_utils.gens_in_service_by_bus(buses, gens)
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
 
@@ -609,4 +612,3 @@ def create_riv_acopf_model(model_data):
     model.obj = pe.Objective(expr=obj_expr)
 
     return model
-

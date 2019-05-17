@@ -111,7 +111,11 @@ def test_CA_uc_model():
     lp_obj_list = [4185855.30972, 5423650.80043, 5965411.93718, 5439434.94733, 6029118.03019]
     _test_uc_model(create_CA_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
+def test_uc_runner():
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', 'tiny_uc_1.json')
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+    md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0)
 
-
-
-
+    reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', 'tiny_uc_1_results.json')
+    md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])

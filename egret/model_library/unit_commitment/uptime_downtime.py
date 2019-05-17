@@ -18,27 +18,44 @@ def _add_initial(model):
 
     # constraint due to initial conditions.
     def enforce_up_time_constraints_initial(m, g):
-       if value(m.InitialTimePeriodsOnLine[g]) == 0:
-          return Constraint.Skip
-       return sum((1 - m.UnitOn[g, t]) for t in m.TimePeriods if t <= value(m.InitialTimePeriodsOnLine[g])) == 0.0
+        if value(m.InitialTimePeriodsOnLine[g]) == 0:
+            return
+        for t in range(m.TimePeriods.first(), value(m.InitialTimePeriodsOnLine[g])+m.TimePeriods.first()):
+            if m.status_vars == 'ALS_state_transition_vars':
+                m.UnitStayOn[g,t].value = 1
+                m.UnitStayOn[g,t].fix()
+            else:
+                m.UnitOn[g,t].value = 1
+                m.UnitOn[g,t].fix()
     
-    model.EnforceUpTimeConstraintsInitial = Constraint(model.ThermalGenerators, rule=enforce_up_time_constraints_initial)
+    model.EnforceUpTimeConstraintsInitial = BuildAction(model.ThermalGenerators, rule=enforce_up_time_constraints_initial)
 
     # constraint due to initial conditions.
     def enforce_down_time_constraints_initial(m, g):
-       if value(m.InitialTimePeriodsOffLine[g]) == 0:
-          return Constraint.Skip
-       return sum(m.UnitOn[g, t] for t in m.TimePeriods if t <= value(m.InitialTimePeriodsOffLine[g])) == 0.0
+        if value(m.InitialTimePeriodsOffLine[g]) == 0:
+            return
+        for t in range(m.TimePeriods.first(), value(m.InitialTimePeriodsOffLine[g])+m.TimePeriods.first()):
+            if m.status_vars == 'ALS_state_transition_vars':
+                m.UnitStayOn[g,t].value = 0
+                m.UnitStayOn[g,t].fix()
+            else:
+                m.UnitOn[g,t].value = 0
+                m.UnitOn[g,t].fix()
     
-    model.EnforceDownTimeConstraintsInitial = Constraint(model.ThermalGenerators, rule=enforce_down_time_constraints_initial)
+    model.EnforceDownTimeConstraintsInitial = BuildAction(model.ThermalGenerators, rule=enforce_down_time_constraints_initial)
 
-def _add_must_run_and_initial(model):
+def _add_fixed_and_initial(model):
 
-    # Must run constraint 
-    def enforce_must_run_rule(m,g,t):
-        return m.UnitOn[g,t] == 1
-        
-    model.EnforceMustRun = Constraint(model.MustRunGenerators, model.TimePeriods, rule=enforce_must_run_rule)
+    # Fixed commitment constraints
+    def enforce_fixed_commitments_rule(m,g,t):
+        if value(m.FixedCommitment[g,t]) is not None:
+            if m.status_vars == 'ALS_state_transition_vars':
+                m.UnitStayOn[g,t].value = value(m.FixedCommitment[g,t])
+                m.UnitStayOn[g,t].fix()
+            else:
+                m.UnitOn[g,t].value = value(m.FixedCommitment[g,t])
+                m.UnitOn[g,t].fix()
+    model.EnforceFixedCommitments = BuildAction(model.ThermalGenerators, model.TimePeriods, rule=enforce_fixed_commitments_rule)
 
     _add_initial(model)
 
@@ -84,7 +101,7 @@ def TKW_UT_DT(model):
     problem. Operations Research, 48(2):268–280, 2000.
     '''
 
-    _add_must_run_and_initial(model)
+    _add_fixed_and_initial(model)
 
     def enforce_up_time_constraints(m, g, t, t_prime):
         if t+1 <= t_prime <= t+value(m.ScaledMinimumUpTime[g])-1:
@@ -127,7 +144,7 @@ def CA_UT_DT(model):
     on Power Systems, Vol. 21, No. 3, Aug 2006.
     '''
 
-    _add_must_run_and_initial(model)
+    _add_fixed_and_initial(model)
 
     # constraint for each time period after that not involving the initial condition.
     def enforce_up_time_constraints_subsequent(m, g, t):
@@ -209,7 +226,7 @@ def DEKT_UT_DT(model):
     paper and in Ostrowski et. al (2012).
     '''
 
-    _add_must_run_and_initial(model)
+    _add_fixed_and_initial(model)
 
     # constraint for each time period after that not involving the initial condition.
     def enforce_up_time_constraints_subsequent(m, g, t):
@@ -259,7 +276,7 @@ def rajan_takriti_UT_DT(model):
     problem with start-up costs. IBM Res. Rep, 2005.
     '''
 
-    _add_must_run_and_initial(model)
+    _add_fixed_and_initial(model)
     
     #######################
     # up-time constraints #
@@ -299,7 +316,7 @@ def rajan_takriti_UT_DT_2bin(model):
     problem with start-up costs. IBM Res. Rep, 2005.
     '''
 
-    _add_must_run_and_initial(model)
+    _add_fixed_and_initial(model)
     
     #######################
     # up-time constraints #
