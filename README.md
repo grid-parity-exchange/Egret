@@ -18,10 +18,30 @@ EGRET is available under the BDS License (see LICENSE.txt)
 * EGRET is a Pythonb package and requires a python installation. We recommend using Anaconda with the latest Python (https://www.anaconda.com/distribution/).
 * These installation instructions assume that you have a recent version of Pyomo installed with the required solvers (see www.pyomo.org).
 * Download (or clone) EGRET from this GitHub site
-* From the main egret folder (folder containing setup.py), use a terminal (or the Anaconda prompt for Windows users), and run setup.py to install EGRET into your Python installation.
+* From the main egret folder (folder containing setup.py), use a terminal (or the Anaconda prompt for Windows users), and run setup.py to install EGRET into your Python installation - as follows:
 
    python setup.py install
 
 ### Requirements
+
 * Pyomo version 5.6 or later
+* pytest
 * Optimization solvers for Pyomo - specific requirements depends on the models being solved, however, EGRET is tested with GUROBI or CPLEX for MIP-based problems (e.g., unit commitment) and IPOPT (with HSL linear solvers) for NLP problems.
+
+We recommend that Egret users additionally install the open source CBC MIP solver. The specific mechanics of installing CBC are highly platform-specific. When using Anaconda, this can be accomplished simply by:
+
+   conda install -c conda-forge coincbc
+
+### Testing the Installation
+
+To test the functionality of the unit commitment aspects of Egret, execute the following command from the models/test sub-directory:
+
+   pytest test_unit_commitment.py
+
+
+
+
+
+
+
+
