@@ -39,6 +39,9 @@ def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
         else:
             model = uc_model(md)
             opt = SolverFactory('gurobi')
+            if opt == None:
+                # one of gurobi or cplex should be available, per the check for existence below
+                opt = SolverFactory('cplex')
             opt.options['mipgap'] = 0.0
 
         result = opt.solve(model, tee=False)
