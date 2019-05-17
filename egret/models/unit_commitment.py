@@ -670,66 +670,42 @@ def solve_unit_commitment(model_data,
             flex_dn_supp = {}
 
         for dt, mt in zip(data_time_periods,m.TimePeriods):
-            if value(m.ThermalGeneratorForcedOutage[g,mt]):
-                pg_dict[dt] = 0.
-                if reserve_requirement:
-                    rg_dict[dt] = 0.
-                spin_g_dict[dt] = 0.
-                commitment_dict[dt] = 0
-                commitment_cost_dict[dt] = 0.
-                production_cost_dict[dt] = 0.
-                if regulation:
+            pg_dict[dt] = value(m.PowerGenerated[g,mt])
+            if reserve_requirement:
+                rg_dict[dt] = value(m.ReserveProvided[g,mt])
+            commitment_dict[dt] = value(m.UnitOn[g,mt])
+            commitment_cost_dict[dt] = value(m.StartupCost[g,mt]+m.ShutdownCost[g,mt]+\
+                                    m.MinimumProductionCost[g]*m.UnitOn[g,mt]*m.TimePeriodLengthHours)
+            production_cost_dict[dt] = value(m.ProductionCost[g,mt])
+
+            if regulation:
+                if g in m.AGC_Generators:
+                    reg_prov[dt] = value(m.RegulationOn[g,mt])
+                    reg_up_supp[dt] = value(m.RegulationReserveUp[g,mt])
+                    reg_dn_supp[dt] = value(m.RegulationReserveDn[g,mt])
+                    commitment_cost_dict[dt] += value(m.RegulationCostCommitment[g,mt])
+                    production_cost_dict[dt] += value(m.RegulationCostGeneration[g,mt])
+                else:
                     reg_prov[dt] = 0.
                     reg_up_supp[dt] = 0.
                     reg_dn_supp[dt] = 0.
-                if spin:
-                    spin_supp[dt] = 0.
-                if nspin:
+
+            if spin:
+                spin_supp[dt] = value(m.SpinningReserveDispatched[g,mt])
+                production_cost_dict[dt] += value(m.SpinningReserveCostGeneration[g,mt])
+
+            if nspin:
+                if g in m.NonSpinGenerators:
+                    nspin_supp[dt] = value(m.NonSpinningReserveDispatched[g,mt])
+                    production_cost_dict[dt] += value(m.NonSpinningReserveCostGeneration[g,mt])
+                else:
                     nspin_supp[dt] = 0.
-                if supp:
-                    supp_supp[dt] = 0.
-                if flex:
-                    flex_up_supp[dt] = 0.
-                    flex_dn_supp[dt] = 0.
-
-            else:
-                pg_dict[dt] = value(m.PowerGenerated[g,mt])
-                if reserve_requirement:
-                    rg_dict[dt] = value(m.ReserveProvided[g,mt])
-                commitment_dict[dt] = value(m.UnitOn[g,mt])
-                commitment_cost_dict[dt] = value(m.StartupCost[g,mt]+m.ShutdownCost[g,mt]+\
-                                        m.MinimumProductionCost[g]*m.UnitOn[g,mt]*m.TimePeriodLengthHours)
-                production_cost_dict[dt] = value(m.ProductionCost[g,mt])
-
-                ## TODO: grab and report reserve costs
-                if regulation:
-                    if g in m.AGC_Generators:
-                        reg_prov[dt] = value(m.RegulationOn[g,mt])
-                        reg_up_supp[dt] = value(m.RegulationReserveUp[g,mt])
-                        reg_dn_supp[dt] = value(m.RegulationReserveDn[g,mt])
-                        commitment_cost_dict[dt] += value(m.RegulationCostCommitment[g,mt])
-                        production_cost_dict[dt] += value(m.RegulationCostGeneration[g,mt])
-                    else:
-                        reg_prov[dt] = 0.
-                        reg_up_supp[dt] = 0.
-                        reg_dn_supp[dt] = 0.
-
-                if spin:
-                    spin_supp[dt] = value(m.SpinningReserveDispatched[g,mt])
-                    production_cost_dict[dt] += value(m.SpinningReserveCostGeneration[g,mt])
-
-                if nspin:
-                    if g in m.NonSpinGenerators:
-                        nspin_supp[dt] = value(m.NonSpinningReserveDispatched[g,mt])
-                        production_cost_dict[dt] += value(m.NonSpinningReserveCostGeneration[g,mt])
-                    else:
-                        nspin_supp[dt] = 0.
-                if supp:
-                    supp_supp[dt] = value(m.SupplementalReserveDispatched[g,mt])
-                    production_cost_dict[dt] += value(m.SupplementalReserveCostGeneration[g,mt])
-                if flex:
-                    flex_up_supp[dt] = value(m.FlexUpProvided[g,mt])
-                    flex_dn_supp[dt] = value(m.FlexDnProvided[g,mt])
+            if supp:
+                supp_supp[dt] = value(m.SupplementalReserveDispatched[g,mt])
+                production_cost_dict[dt] += value(m.SupplementalReserveCostGeneration[g,mt])
+            if flex:
+                flex_up_supp[dt] = value(m.FlexUpProvided[g,mt])
+                flex_dn_supp[dt] = value(m.FlexDnProvided[g,mt])
 
 
 
@@ -756,10 +732,7 @@ def solve_unit_commitment(model_data,
     for g,g_dict in renewable_gens.items():
         pg_dict = {}
         for dt, mt in zip(data_time_periods,m.TimePeriods):
-            if value(m.NondispatchableGeneratorForcedOutage[g,mt]):
-                pg_dict[dt] = 0.
-            else:
-                pg_dict[dt] = value(m.NondispatchablePowerUsed[g,mt])
+            pg_dict[dt] = value(m.NondispatchablePowerUsed[g,mt])
         g_dict['pg'] = _time_series_dict(pg_dict)
 
     for s,s_dict in storage.items():
@@ -768,18 +741,10 @@ def solve_unit_commitment(model_data,
         p_charge_dict = {}
         operational_cost_dict = {}
         for dt, mt in zip(data_time_periods,m.TimePeriods):
-            if value(m.StorageForceOutage[g,mt]):
-                p_discharge_dict[dt] = 0.
-                p_charge_dict[dt] = 0.
-                operational_cost_dict[dt] = 0.
-                # NOTE: if it goes offline, we'll assume it reverts to its minimum SOC 
-                # TODO: Is this reasonable? 
-                state_of_charge_dict[dt] = s_dict['minimum_state_of_charge']
-            else:
-                p_discharge_dict[dt] = value(m.PowerOutputStorage[s,mt])
-                p_charge_dict[dt] = value(m.PowerInputStorage[s,mt])
-                operational_cost_dict[dt] = value(m.StorageCost[s,mt])
-                state_of_charge_dict[dt] = value(m.SocStorage[s.mt])
+            p_discharge_dict[dt] = value(m.PowerOutputStorage[s,mt])
+            p_charge_dict[dt] = value(m.PowerInputStorage[s,mt])
+            operational_cost_dict[dt] = value(m.StorageCost[s,mt])
+            state_of_charge_dict[dt] = value(m.SocStorage[s.mt])
 
         s_dict['p_discharge'] = _time_series_dict(p_discharge_dict)
         s_dict['p_charge'] = _time_series_dict(p_charge_dict)

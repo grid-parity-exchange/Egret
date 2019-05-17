@@ -48,23 +48,17 @@ def build_uc_time_mapping(md_timeperiods):
         if _data is None:
             return None
         def init_rule(m, *key):
-            if not isinstance(key, tuple):
-                ## time indexed
-                pm_t = key
-                att = _data
-                return self.get_time_attr(att, pm_t)
+            ## last key is time
+            pm_t = key[-1]
+            key = key[:-1]
+            if len(key) == 0:
+                return get_time_attr(_data, pm_t)
+            if len(key) == 1:
+                key = key[0]
+            if key in _data:
+                return get_time_attr(_data[key], pm_t)
             else:
-                ## last key is time
-                pm_t = key[-1]
-                key = key[:-1]
-                if len(key) == 0:
-                    att = _data
-                elif len(key) == 1:
-                    key = key[0]
-                    att = _data[key]
-                else:
-                    att = _data[key]
-                return get_time_attr(att, pm_t)
+                return None
 
         def get_time_attr(att, pm_t):
             if isinstance(att, dict):

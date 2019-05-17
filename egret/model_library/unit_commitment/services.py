@@ -302,12 +302,12 @@ def ancillary_services(model):
             if az_n[:5] == 'zone_':
                 z_n = az_n[5:]
                 for g in gen_attrs['names']:
-                    if gen_attrs['zone'][g] == z_n:
+                    if g in gen_attrs['area'] and gen_attrs['zone'][g] == z_n:
                         yield g
             elif az_n[:5] == 'area_':
                 a_n = az_n[5:]
                 for g in gen_attrs['names']:
-                    if gen_attrs['area'][g] == a_n:
+                    if g in gen_attrs['area'] and gen_attrs['area'][g] == a_n:
                         yield g
             else:
                 raise Exception('Unexpected case in instance of gens_in_reserve_zone_getter')
@@ -540,7 +540,7 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     model.EnforceRegulationDnBound = Constraint(model.AGC_Generators, model.TimePeriods, rule=reg_dn_rule)
 
     def zonal_reg_up_provided(m,rz,t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.RegulationReserveUp[g,t] for g in m.AGC_GeneratorsInRegulationZone[rz]) + m.ZonalRegulationUpShortfall[rz,t] 
+        return sum(m.RegulationReserveUp[g,t] for g in m.AGC_GeneratorsInRegulationZone[rz]) + m.ZonalRegulationUpShortfall[rz,t] 
     model.ZonalRegulationUpProvided = Expression(model.RegulationZones, model.TimePeriods, rule=zonal_reg_up_provided)
 
     def enforce_zonal_reg_up_requirement_rule(m, rz, t):
@@ -548,13 +548,13 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     model.EnforceZonalRegulationUpRequirements = Constraint(model.RegulationZones, model.TimePeriods, rule=enforce_zonal_reg_up_requirement_rule)
 
     def enforce_zonal_reg_dn_requirement_rule(m, rz, t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.RegulationReserveDn[g,t] for g in m.AGC_GeneratorsInRegulationZone[rz]) + \
+        return sum(m.RegulationReserveDn[g,t] for g in m.AGC_GeneratorsInRegulationZone[rz]) + \
                 m.ZonalRegulationDnShortfall[rz,t] >= m.ZonalRegulationDnRequirement[rz,t]
     model.EnforceZonalRegulationDnRequirements = Constraint(model.RegulationZones, model.TimePeriods, rule=enforce_zonal_reg_dn_requirement_rule)
 
     ## NOTE: making sure not to double count the shortfall
     def system_reg_up_provided(m,t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.RegulationReserveUp[g,t] for g in m.AGC_Generators) + \
+        return sum(m.RegulationReserveUp[g,t] for g in m.AGC_Generators) + \
                 m.SystemRegulationUpShortfall[t] + sum(m.ZonalRegulationUpShortfall[rz,t] for rz in m.RegulationZones) 
     model.SystemRegulationUpProvided = Expression(model.TimePeriods, rule=system_reg_up_provided)
 
@@ -563,7 +563,7 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     model.EnforceSystemRegulationUpRequirement = Constraint(model.TimePeriods, rule=enforce_system_regulation_up_requirement_rule)
 
     def enforce_system_regulation_dn_requirement_rule(m, t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.RegulationReserveDn[g,t] for g in m.AGC_Generators) + \
+        return sum(m.RegulationReserveDn[g,t] for g in m.AGC_Generators) + \
                 m.SystemRegulationDnShortfall[t] + sum(m.ZonalRegulationDnShortfall[rz,t] for rz in m.RegulationZones) \
                 >= m.SystemRegulationDnRequirement[t]
     model.EnforceSystemRegulationDnRequirement = Constraint(model.TimePeriods, rule=enforce_system_regulation_dn_requirement_rule)
@@ -642,7 +642,7 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
     model.SpinningReserveAvailableConstr = Constraint(model.ThermalGenerators, model.TimePeriods, rule=spinning_reserve_available)
 
     def zonal_spinning_reserve_provided(m, rz, t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SpinningReserveDispatched[g, t] for g in m.ThermalGeneratorsInSpinningReserveZone[rz])\
+        return sum(m.SpinningReserveDispatched[g, t] for g in m.ThermalGeneratorsInSpinningReserveZone[rz])\
                 + m.ZonalSpinningReserveShortfall[rz,t]
     model.ZonalSpinningReserveProvided = Expression(model.SpinningReserveZones, model.TimePeriods, rule=zonal_spinning_reserve_provided)
 
@@ -655,7 +655,7 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
     model.EnforceZonalSpinningReserveRequirement = Constraint(model.SpinningReserveZones, model.TimePeriods, rule=enforce_zonal_spinning_reserve_requirement)
 
     def system_spinning_reserve_provided(m,t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SpinningReserveDispatched[g,t] for g in m.ThermalGenerators) \
+        return sum(m.SpinningReserveDispatched[g,t] for g in m.ThermalGenerators) \
                 + sum(m.ZonalSpinningReserveShortfall[rz,t] for rz in m.SpinningReserveZones) \
                 + m.SystemSpinningReserveShortfall[t]
     model.SystemSpinningReserveProvided = Expression(model.TimePeriods, rule=system_spinning_reserve_provided)
@@ -735,7 +735,7 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.CalculateNonSpinningReserveLimit = Constraint(model.NonSpinGenerators, model.TimePeriods, rule=calculate_non_spinning_reserve_limit_rule)
 
     def nspin_zonal_reserves_provided(m,rz,t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.NonSpinningReserveDispatched[g,t] for g in m.NonSpinGeneratorsInNonSpinZone[rz]) \
+        return sum(m.NonSpinningReserveDispatched[g,t] for g in m.NonSpinGeneratorsInNonSpinZone[rz]) \
                     + m.ZonalNonSpinningReserveShortfall[rz,t]
     model.NonSpinningZonalReservesProvided = Expression(model.NonSpinReserveZones, model.TimePeriods, rule=nspin_zonal_reserves_provided)
 
@@ -754,7 +754,7 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.EnforceNonSpinningZonalReserveRequirement = Constraint(model.NonSpinReserveZones, model.TimePeriods, rule=enforce_zonal_non_spinning_reserve_rule)
 
     def nspin_reserves_provided(m,t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.NonSpinningReserveDispatched[g,t] for g in m.NonSpinGenerators) \
+        return sum(m.NonSpinningReserveDispatched[g,t] for g in m.NonSpinGenerators) \
                 + sum(m.ZonalNonSpinningReserveShortfall[rz,t] for rz in m.NonSpinReserveZones) \
                 + m.SystemNonSpinningReserveShortfall[t]
     model.SystemNonSpinningReserveProvided = Expression(model.TimePeriods, rule=nspin_reserves_provided)
@@ -869,7 +869,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.SupplementalReserveDispatched = Expression(model.ThermalGenerators, model.TimePeriods, rule=supplemental_reserve_expr_rule)
 
     def operational_zonal_reserves_provided(m,rz,t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SupplementalReserveDispatched[g,t] for g in m.GeneratorsInSupplementalReserveZone[rz]) + m.ZonalSupplementalReserveShortfall[rz,t]
+        return sum(m.SupplementalReserveDispatched[g,t] for g in m.GeneratorsInSupplementalReserveZone[rz]) + m.ZonalSupplementalReserveShortfall[rz,t]
     model.SupplementalZonalReservesProvided = Expression(model.SupplementalReserveZones, model.TimePeriods, rule=operational_zonal_reserves_provided)
 
     def enforce_zonal_supplemental_reserve_requirement_rule(m, rz, t):
@@ -887,7 +887,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.EnforceZonalSupplementalReserveRequirement = Constraint(model.SupplementalReserveZones, model.TimePeriods, rule=enforce_zonal_supplemental_reserve_requirement_rule)
 
     def operational_reserves_provided(m,t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.SupplementalReserveDispatched[g,t] for g in m.ThermalGenerators) \
+        return sum(m.SupplementalReserveDispatched[g,t] for g in m.ThermalGenerators) \
                 + sum(m.ZonalSupplementalReserveShortfall[rz,t] for rz in m.SupplementalReserveZones) \
                 + m.SystemSupplementalReserveShortfall[t]
     model.SystemSupplementalReserveProvided = Expression(model.TimePeriods, rule=operational_reserves_provided)
@@ -974,24 +974,24 @@ def flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_
     model.FlexDnLimit = Constraint(model.ThermalGenerators, model.TimePeriods, rule=flex_down_limit_rule)
 
     def zonal_flex_up_requirement_rule(m, rz, t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexUpProvided[g,t] for g in m.ThermalGeneratorsInFlexRampZone[rz]) \
+        return sum(m.FlexUpProvided[g,t] for g in m.ThermalGeneratorsInFlexRampZone[rz]) \
                     + m.ZonalFlexUpShortfall[rz,t] >= m.ZonalFlexUpRequirement[rz,t]
     model.ZonalFlexUpRequirementConstr = Constraint(model.FlexRampZones, model.TimePeriods, rule=zonal_flex_up_requirement_rule)
 
     def zonal_flex_dn_requirement_rule(m, rz, t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexDnProvided[g,t] for g in m.ThermalGeneratorsInFlexRampZone[rz]) \
+        return sum(m.FlexDnProvided[g,t] for g in m.ThermalGeneratorsInFlexRampZone[rz]) \
                     + m.ZonalFlexDnShortfall[rz,t] >= m.ZonalFlexDnRequirement[rz,t]
     model.ZonalFlexDnRequirementConstr = Constraint(model.FlexRampZones, model.TimePeriods, rule=zonal_flex_dn_requirement_rule)
 
     def system_flex_up_requirement_rule(m, t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexUpProvided[g,t] for g in m.ThermalGenerators) \
+        return sum(m.FlexUpProvided[g,t] for g in m.ThermalGenerators) \
                  + sum(m.ZonalFlexUpShortfall[rz,t] for rz in m.FlexRampZones) \
                  + m.SystemFlexUpShortfall[t] \
                  >= m.SystemFlexUpRequirement[t]
     model.SystemFlexUpRequirementConstr = Constraint(model.TimePeriods, rule=system_flex_up_requirement_rule)
 
     def system_flex_dn_requirement_rule(m, t):
-        return sum((1-m.ThermalGeneratorForcedOutage[g,t])*m.FlexDnProvided[g,t] for g in m.ThermalGenerators) \
+        return sum(m.FlexDnProvided[g,t] for g in m.ThermalGenerators) \
                  + sum(m.ZonalFlexDnShortfall[rz,t] for rz in m.FlexRampZones) \
                  + m.SystemFlexDnShortfall[t] \
                  >= m.SystemFlexDnRequirement[t]
