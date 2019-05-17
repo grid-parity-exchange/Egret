@@ -36,20 +36,35 @@ The COIN-OR organization - who developers CBC - also provides pre-built binaries
 
 ### Testing the Installation
 
-To test the functionality of the unit commitment aspects of EGRET, execute the following command from the models/test sub-directory:
+To test the functionality of the unit commitment aspects of EGRET, execute the following command from the EGRET models/test sub-directory:
 
    pytest test_unit_commitment.py
 
 By default, the unit commitment tests will only execute on LP relaxations of the full MIP. This default allows for tests to execute more quickly. The output from this command should look something like:
 
-====================================================================== test session starts ======================================================================
-platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0
-rootdir: /home/some-user/egret
-collected 14 items
+====================================================================== test session starts ======================================================================  
+platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0  
+rootdir: /home/some-user/egret  
+collected 14 items  
+  
+test_unit_commitment.py s.............                                                                                                                    [100%]  
+  
+============================================================ 13 passed, 1 skipped in 125.02 seconds =============================================================  
 
-test_unit_commitment.py s.............                                                                                                                    [100%]
+To run the full test suite, without LP relaxations of the unit commitment MIPs, execute the following command from the EGRET models/test sub-directory:
 
-============================================================ 13 passed, 1 skipped in 125.02 seconds =============================================================
+   pytest --runmip test_unit_commitment
+
+The output from this command should look something like:
+
+====================================================================== test session starts ======================================================================  
+platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0  
+rootdir: /Users/jwatson/sp/egret-public-jpw  
+collected 14 items  
+  
+test_unit_commitment.py ..............                                                                                                                    [100%]  
+  
+================================================================== 14 passed in 352.67 seconds ==================================================================  
 
 ### How to Cite EGRET in Your Research
 
