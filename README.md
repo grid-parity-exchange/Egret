@@ -40,6 +40,17 @@ To test the functionality of the unit commitment aspects of EGRET, execute the f
 
    pytest test_unit_commitment.py
 
+By default, the unit commitment tests will only execute on LP relaxations of the full MIP. This default allows for tests to execute more quickly. The output from this command should look something like:
+
+====================================================================== test session starts ======================================================================
+platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0
+rootdir: /home/some-user/egret
+collected 14 items
+
+test_unit_commitment.py s.............                                                                                                                    [100%]
+
+============================================================ 13 passed, 1 skipped in 125.02 seconds =============================================================
+
 ### How to Cite EGRET in Your Research
 
 If you are using the unit commitment functionality of EGRET, please cite the following paper: http://www.optimization-online.org/DB_HTML/2018/11/6930.html.
