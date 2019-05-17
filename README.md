@@ -42,14 +42,14 @@ To test the functionality of the unit commitment aspects of EGRET, execute the f
 
 By default, the unit commitment tests will only execute on LP relaxations of the full MIP. This default allows for tests to execute more quickly. The output from this command should look something like:
 
-====================================================================== test session starts ======================================================================  
-platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0  
-rootdir: /home/some-user/egret  
-collected 14 items  
-  
-test_unit_commitment.py s.............                                                                                                                    [100%]  
-  
-============================================================ 13 passed, 1 skipped in 125.02 seconds =============================================================  
+====================================================================== test session starts ======================================================================<br/>
+platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0<br/>
+rootdir: /home/some-user/egret<br/>
+collected 14 items<br/>
+<br/>
+test_unit_commitment.py s.............                                                                                                                    [100%]  <br/>
+<br/>
+============================================================ 13 passed, 1 skipped in 125.02 seconds =============================================================<br/>
 
 To run the full test suite, without LP relaxations of the unit commitment MIPs, execute the following command from the EGRET models/test sub-directory:
 
@@ -57,14 +57,14 @@ To run the full test suite, without LP relaxations of the unit commitment MIPs, 
 
 The output from this command should look something like:
 
-====================================================================== test session starts ======================================================================  
-platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0  
-rootdir: /Users/jwatson/sp/egret-public-jpw  
-collected 14 items  
-  
-test_unit_commitment.py ..............                                                                                                                    [100%]  
-  
-================================================================== 14 passed in 352.67 seconds ==================================================================  
+====================================================================== test session starts ======================================================================<br/>
+platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0<br/>  
+rootdir: /home/some-user/egret<br/>
+collected 14 items<br/>
+<br/>  
+test_unit_commitment.py ..............                                                                                                                    [100%]<br/>
+<br/>
+================================================================== 14 passed in 352.67 seconds ==================================================================<br/>
 
 ### How to Cite EGRET in Your Research
 
