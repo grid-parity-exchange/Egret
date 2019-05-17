@@ -22,13 +22,23 @@ def _verify_must_run_t0_state_consistency(model):
     # sure that the unit has satisifed its minimum down time condition if UnitOnT0 is negative.
     
     def verify_must_run_t0_state_consistency_rule(m, g):
-        if value(m.MustRun[g]):
-            t0_state = value(m.UnitOnT0State[g])
-            if t0_state < 0:
-                min_down_time = value(m.MinimumDownTime[g])
-                if abs(t0_state) < min_down_time:
-                    print("DATA ERROR: The generator %s has been flagged as must-run, but its T0 state=%d is inconsistent with its minimum down time=%d" % (g, t0_state, min_down_time))
-                    return False
+        t0_state = value(m.UnitOnT0State[g])
+        if t0_state < 0:
+            min_down_time = value(m.MinimumDownTime[g])
+            if abs(t0_state) < min_down_time:
+                for t in range(m.TimePeriods.first(), min_down_time+t0_state+m.TimePeriods.first()+1):
+                    fixed_commitment = value(m.FixedCommitment[g,t])
+                    if (fixed_commitment is not None) and (fixed_commitment == 1):
+                        print("DATA ERROR: The generator %s has been flagged as must-run at time %d, but its T0 state=%d is inconsistent with its minimum down time=%d" % (g, t, t0_state, min_down_time))
+                        return False
+        else: # t0_state > 0
+            min_up_time = value(m.MinimumUpTime[g])
+            if abs(t0_state) < min_up_time:
+                for t in range(m.TimePeriods.first(), min_up_time+t0_state+m.TimePeriods.first()+1):
+                    fixed_commitment = value(m.FixedCommitment[g,t])
+                    if (fixed_commitment is not None) and (fixed_commitment == 0):
+                        print("DATA ERROR: The generator %s has been flagged as off at time %d, but its T0 state=%d is inconsistent with its minimum up time=%d" % (g, t, t0_state, min_down_time))
+                        return False
         return True
     
     model.VerifyMustRunT0StateConsistency = BuildAction(model.ThermalGenerators, rule=verify_must_run_t0_state_consistency_rule)
@@ -82,10 +92,6 @@ def load_params(model, model_data):
         elements['interface'] = dict()
     if 'storage' not in elements:
         elements['storage'] = dict()
-    if 'zone' not in elements:
-        elements['zone'] = dict()
-    if 'area' not in elements:
-        elements['area'] = dict()
 
     ## NOTE: generator, bus, and load should be in here for a well-defined problem
 
@@ -104,8 +110,6 @@ def load_params(model, model_data):
     interface_attrs = md.attributes(element_type='interface')
     storage_attrs = md.attributes(element_type='storage')
 
-    zone_attrs = md.attributes(element_type='zone')
-    area_attrs = md.attributes(element_type='area')
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
@@ -159,12 +163,12 @@ def load_params(model, model_data):
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    ## NOTE: we take care of p.u. here
-    def _get_impedence(m, l):
-        return branch_attrs['reactance'][l]/system['baseMVA']
-    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=_get_impedence)
+    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs.get('reactance'))
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term')) # max flow across the line
+
+    model.LineOutOfService = Param(model.TransmissionLines, model.TimePeriods, within=Boolean, default=False,
+                                    initialize=TimeMapper(branch_attrs.get('planned_outage')))
 
     ## Interfaces
     ## NOTE: Lines in iterfaces should be all go "from" the
@@ -201,13 +205,13 @@ def load_params(model, model_data):
     
     model.QuickStartGenerators = Set(within=model.ThermalGenerators, initialize=init_quick_start_generators)
     
-    # optionally force a unit to be on.
-    model.MustRun = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('must_run'))
-    
-    def init_must_run_generators(m):
-        return [g for g in m.ThermalGenerators if value(m.MustRun[g]) == 1]
-    
-    model.MustRunGenerators = Set(within=model.ThermalGenerators, initialize=init_must_run_generators)
+    # optionally force a unit to be on/off
+    model.FixedCommitmentTypes = Set(initialize=[0,1,None])
+    model.FixedCommitment = Param(model.ThermalGenerators,
+                                  model.TimePeriods,
+                                  within=model.FixedCommitmentTypes,
+                                  default=None,
+                                  initialize=TimeMapper(thermal_gen_attrs.get('fixed_commitment')),)
     
     model.NondispatchableGeneratorsAtBus = Set(model.Buses, initialize=renewable_gens_by_bus)
     
@@ -216,60 +220,6 @@ def load_params(model, model_data):
     model.NondispatchableGeneratorType = Param(model.AllNondispatchableGenerators, within=Any, default='W', 
                                                 initialize=renewable_gen_attrs.get('fuel'))
     
-    ######################
-    #   Reserve Zones    #
-    ######################
-    
-    # Generators are grouped in zones to provide zonal reserve requirements. #
-    # All generators can contribute to global reserve requirements           #
-
-    # The same kinds of constraints can handle "reserves by area" and "reserves
-    # by zone" as defined in model_data. So we carefully combine them here
-
-    def _init_reserve_zones(m):
-        for name in zone_attrs['names']:
-            yield 'zone_'+name
-        for name in area_attrs['names']:
-            yield 'area_'+name
-    model.ReserveZones = Set(initialize=_init_reserve_zones)
-
-    if 'spinning_reserve_requirement' in zone_attrs:
-        zone_spin_time = TimeMapper(zone_attrs['spinning_reserve_requirement'])
-    if 'spinning_reserve_requirement' in area_attrs:
-        area_spin_time = TimeMapper(area_attrs['spinning_reserve_requirement'])
-
-    def _init_zonal_reserve_requirement(m,z,t):
-        z_name = str(z)
-        if z_name[:5] == 'zone_':
-            name = z_name[5:]
-            if name in zone_attrs['spinning_reserve_requirement']:
-                return zone_spin_time(m,name,t)
-            else:
-                return 0.0
-        elif z_name[:5] == 'area_':
-            name = z_name[5:]
-            if name in area_attrs['spinning_reserve_requirement']:
-                return area_spin_time(m,name,t)
-            else:
-                return 0.0
-        else:
-            raise Exception("Unexpected case in _init_zonal_reserve_requirement")
-
-    model.ZonalReserveRequirement = Param(model.ReserveZones, model.TimePeriods, default=0.0, within=NonNegativeReals,
-                                            initialize=_init_zonal_reserve_requirement)
-
-    def _init_reserve_zone_location(m,g):
-        zone = thermal_gen_attrs[g].get('zone')
-        if zone is not None:
-            yield 'zone_'+zone
-        area = thermal_gen_attrs[g].get('area')
-        if area is not None:
-            yield 'area_'+area
-    model.ReserveZoneLocation = Param(model.ThermalGenerators, initialize=_init_reserve_zone_location)
-    
-    def form_thermal_generator_reserve_zones(m,rz):
-        return (g for g in m.ThermalGenerators if m.ReserveZoneLocation[g]==rz)
-    model.ThermalGeneratorsInReserveZone = Set(model.ReserveZones, initialize=form_thermal_generator_reserve_zones)
     
     #################################################################
     # the global system demand, for each time period. units are MW. #
@@ -286,8 +236,9 @@ def load_params(model, model_data):
     for lname, load in loads.items():
         bus = load['bus']
         load_time = TimeMapper(load['p_load'])
+        load_in_service = TimeMapper(load['in_service'])
         for t in model.TimePeriods:
-            bus_loads[bus, t] += load_time(None,t)
+            bus_loads[bus, t] += load_in_service(None,t)*load_time(None,t)
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
@@ -307,31 +258,11 @@ def load_params(model, model_data):
     # the global system reserve, for each time period. units are MW. #
     ##################################################################
 
-    reserve_requirement = system.get("spinning_reserve_requirement", 0.)
+    reserve_requirement = system.get("reserve_requirement", 0.)
     model.ReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, 
                                         initialize=TimeMapper(reserve_requirement), mutable=True)
     
-    ##############################################################
-    # failure probability for each generator, in any given hour. #
-    # not used within the model itself at present, but rather    #
-    # used by scripts that read / manipulate the model.          #
-    ##############################################################
     
-    def probability_failure_validator(m, v, g):
-       return v >= 0.0 and v <= 1.0
-    
-    model.FailureProbability = Param(model.ThermalGenerators, validate=probability_failure_validator, default=0.0)
-    
-    #####################################################################################
-    # a binary indicator as to whether or not each generator is on-line during a given  #
-    # time period. intended to represent a sampled realization of the generator failure #
-    # probability distributions. strictly speaking, we interpret this parameter value   #
-    # as indicating whether or not the generator is contributing (injecting) power to   #
-    # the PowerBalance constraint. this parameter is not intended to be used in the     #
-    # context of ramping or time up/down constraints.                                   # 
-    #####################################################################################
-    
-    model.GeneratorForcedOutage = Param(model.ThermalGenerators * model.TimePeriods, within=Binary, default=False)
     
     ####################################################################################
     # minimum and maximum generation levels, for each thermal generator. units are MW. #
@@ -978,6 +909,9 @@ def load_params(model, model_data):
     model.RetentionRate          = Param(model.Storage, within=PercentFraction, default=1.0,
                                             initialize=storage_attrs.get('retention_rate_60min')) ## assumed to be %/hr
 
+    model.ChargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('charge_cost'))
+    model.DischargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('discharge_cost'))
+
     ## this will be multiplied by itself 1/m.TimePeriodLengthHours times, so this is the scaling to
     ## get us back to %/hr
     def scaled_retention_rate(m,s):
@@ -1015,4 +949,15 @@ def load_params(model, model_data):
     model.StorageSocOnT0         = Param(model.Storage, within=PercentFraction,
                                             default=0.5, initialize=storage_attrs.get('initial_state_of_charge'))
 
+    ##############################################################
+    # failure probability for each generator, in any given hour. #
+    # not used within the model itself at present, but rather    #
+    # used by scripts that read / manipulate the model.          #
+    ##############################################################
+    
+    def probability_failure_validator(m, v, g):
+       return v >= 0.0 and v <= 1.0
+    
+    model.FailureProbability = Param(model.ThermalGenerators, validate=probability_failure_validator, default=0.0)
+    
     return model

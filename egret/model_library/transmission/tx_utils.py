@@ -171,14 +171,43 @@ def gens_by_bus(buses, gens):
     return gens_by_bus
 
 ## attributes which are scaled for power flow models
+ancillary_service_stack = [
+                            'reserve_requirement',
+                            'spinning_reserve_requirement',
+                            'non_spinning_reserve_requirement',
+                            'regulation_up_requirement',
+                            'regulation_down_requirement',
+                            'flexible_ramp_up_requirement',
+                            'flexible_ramp_down_requirement',
+                            'supplemental_reserve_requirement',
+                            'reserve_shortfall',
+                            'spinning_reserve_shortfall',
+                            'non_spinning_reserve_shortfall',
+                            'regulation_up_shortfall',
+                            'regulation_down_shortfall',
+                            'flexible_ramp_up_shortfall',
+                            'flexible_ramp_down_shortfall',
+                            'supplemental_shortfall',
+                            'reserve_price',
+                            'spinning_reserve_price',
+                            'non_spinning_reserve_price',
+                            'regulation_up_price',
+                            'regulation_down_price',
+                            'flexible_ramp_up_price',
+                            'flexible_ramp_down_price',
+                            'supplemental_price',
+                        ]
+
+## TODO?: break apart by data that needed to be scaled down (capacity limits, power),
+## vs. scaled up (costs, prices, etc)
 scaled_attributes = {
                          ('element_type','generator'): [
                                                           'p_min',
                                                           'p_max',
+                                                          'p_min_agc',
+                                                          'p_max_agc',
                                                           'q_min',
                                                           'q_max',
-                                                          'p_cost',
-                                                          'q_cost',
                                                           'startup_capacity',
                                                           'shutdown_capacity',
                                                           'ramp_up_60min',
@@ -195,9 +224,26 @@ scaled_attributes = {
                                                           'ramp_10',
                                                           'ramp_30',
                                                           'ramp_q',
-                                                          'power_factor',
                                                           'pg',
                                                           'qg',
+                                                          'rg',
+                                                          'reg_up_supplied',
+                                                          'reg_down_supplied',
+                                                          'spin_supplied',
+                                                          'flex_up_supplied',
+                                                          'flex_down_supplied',
+                                                          'non_spinning_supplied',
+                                                          'supplemental_supplied',
+                                                          'p_cost',
+                                                          'q_cost',
+                                                          'agc_marginal_cost',
+                                                          'spinning_cost',
+                                                          'non_spinning_cost',
+                                                          'supplemental_cost',
+                                                          'spinning_capacity',
+                                                          'non_spinning_capacity',
+                                                          'supplemental_spinning_capacity',
+                                                          'supplemental_non_spinning_capacity',
                                                        ],
                        ('element_type','storage'): [
                                                         'energy_capacity',
@@ -209,15 +255,25 @@ scaled_attributes = {
                                                         'ramp_down_input_60min',
                                                         'ramp_up_output_60min',
                                                         'ramp_down_output_60min',
-                                                       ],
+                                                        'p_discharge',
+                                                        'p_charge',
+                                                        'charge_cost',
+                                                        'discharge_cost',
+                                                   ],
                        ('element_type','load') : [
                                                       'p_load',
                                                       'q_load',
+                                                      'p_load_shed',
+                                                      'q_load_shed',
                                                      ],
                        ('element_type','branch') : [
                                                        'rating_long_term',
                                                         'rating_short_term',
                                                         'rating_emergency',
+                                                        'pf',
+                                                        'qf',
+                                                        'pt',
+                                                        'qt',
                                                         ],
                        ('element_type', 'shunt') : [
                                                       'bs',
@@ -228,19 +284,30 @@ scaled_attributes = {
                                                       'gs_max',
                                                      ],
                        ('element_type', 'area') : [
-                                                        'spinning_reserve_requirement',
-                                                        'regulation_up_requirement',
-                                                        'regulation_down_requirement',
-                                                        'flexible_ramp_up_requirement',
-                                                        'flexible_ramp_down_requirement',
-                                                      ],  
+                                                      ] + \
+                                                  ancillary_service_stack,
+                       ('element_type', 'zone') : [
+                                                      ] + \
+                                                  ancillary_service_stack,
+                       ('element_type', 'interface') : [ 
+                                                         'interface_from_limit',
+                                                         'interface_to_limit',
+                                                         'pf',
+                                                         'qf',
+                                                         'pt',
+                                                         'qt',
+                                                       ],
+                       ('element_type', 'bus') : [ 
+                                                    'p_balance_violation',
+                                                    'q_balance_violation',
+                                                    'lmp',
+                                                    'q_lmp',
+                                                 ],
                        ('system_attributes', None ) : [
-                                                        'spinning_reserve_requirement',
-                                                        'regulation_up_requirement',
-                                                        'regulation_down_requirement',
-                                                        'flexible_ramp_up_requirement',
-                                                        'flexible_ramp_down_requirement',
-                                                     ],
+                                                        'load_mismatch_cost',
+                                                        'reserve_shortfall_cost',
+                                                     ] + \
+                                                     ancillary_service_stack,
                    }
 
 
@@ -253,37 +320,51 @@ def unscale_ModelData_to_pu(model_data, inplace=False):
 
 
 def _multiply_by_baseMVA(element, attr_name, attr, baseMVA):
-    _divide_by_baseMVA(element, attr_name, attr, 1./baseMVA)
-
-
+    _scale_by_baseMVA(_mul, _div, element, attr_name, attr, baseMVA)
 def _divide_by_baseMVA(element, attr_name, attr, baseMVA):
+    _scale_by_baseMVA(_div, _mul, element, attr_name, attr, baseMVA)
+
+def _mul(a,b):
+    return a*b
+def _div(a,b):
+    return a/b
+
+def _get_op(normal_op, inverse_op, attr_name):
+    if ('cost' in attr_name) or ('price' in attr_name) or ('lmp' in attr_name):
+        return inverse_op 
+    return normal_op
+
+def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
     if attr is None:
         return
     if isinstance(attr, dict):
         if 'data_type' in attr and attr['data_type'] == 'time_series':
+            op = _get_op(normal_op, inverse_op, attr_name)
             values_dict = attr['values']
             for time, value in values_dict.items():
-                values_dict[time] = value / baseMVA
+                values_dict[time] = op( value , baseMVA )
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
             if attr['cost_curve_type'] == 'polynomial':
                 values_dict = attr['values']
                 new_values = dict()
                 for power, coeff in values_dict.items():
-                    new_values[int(power)] = coeff*baseMVA**int(power)
+                    new_values[int(power)] = coeff*(inverse_op(1.,baseMVA)**int(power))
                 attr['values'] = new_values
             elif attr['cost_curve_type'] == 'piecewise':
                 values_list_of_tuples = attr['values']
                 new_values = list()
                 for point, cost in values_list_of_tuples:
-                    new_values.append((point / baseMVA, cost))
+                    new_values.append(( normal_op(point,baseMVA), cost))
                 attr['values'] = new_values
     else:
-        element[attr_name] = attr / baseMVA
+        op = _get_op(normal_op, inverse_op, attr_name)
+        element[attr_name] = op( attr , baseMVA )
 
 
 ## NOTE: ideally this would be done in the definitions of
 ##       these constraints. Futher, it is not obvious that
 ##       the baseMVA provides the best scaling
+## NOTE: specifying inplace returns None
 def _convert_modeldata_pu(model_data, transform_func, inplace):
 
     if inplace:
@@ -313,4 +394,3 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
         return
     else:
         return md
-
