@@ -106,7 +106,7 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
                        'Area2',
                        'Area3'])
 
-    timeseries_pointer_df = pd.read_table(os.path.join(base_dir, "timeseries_pointers.csv"), header=0, sep=',')
+    timeseries_pointer_df = pd.read_csv(os.path.join(base_dir, "timeseries_pointers.csv"), header=0, sep=',')
 
     time_delta = end_time - begin_time
 
@@ -280,7 +280,7 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
 
     ## get this from the same place the prescient reader does
     if t0_state is None:
-        unit_on_time_df = pd.read_table(os.path.join(base_dir ,"../FormattedData/PLEXOS/PLEXOS_Solution/DAY_AHEAD Solution Files/noTX/on_time_7.12.csv"),
+        unit_on_time_df = pd.read_csv(os.path.join(base_dir ,"../FormattedData/PLEXOS/PLEXOS_Solution/DAY_AHEAD Solution Files/noTX/on_time_7.12.csv"),
                                         header=0,
                                         sep=",")
         unit_on_time_df_as_dict = unit_on_time_df.to_dict(orient="split")
@@ -642,14 +642,14 @@ def _read_rts_gmlc_table(file_name, simulation):
         _date_parser = lambda *columns: datetime(*map(int,columns[0:3]),\
                                                     (int(columns[3])-1)//hour_divisor,
                                                     minute_mutli*((int(columns[3])-1)%hour_divisor))
-    return pd.read_table(file_name, 
+    return pd.read_csv(file_name, 
                          header=0, 
                          sep=',', 
                          parse_dates=[[0, 1, 2, 3]],
                          date_parser=_date_parser)
 
 def _read_rts_gmlc_reserve_table(file_name, begin_time, end_time, simulation):
-    table_dict = pd.read_table(file_name, header=0, sep=',').T.to_dict()
+    table_dict = pd.read_csv(file_name, header=0, sep=',').T.to_dict()
 
     if simulation == "DAY_AHEAD":
         hour_divisor = 1
