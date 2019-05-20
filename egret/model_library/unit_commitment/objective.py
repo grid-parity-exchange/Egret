@@ -12,6 +12,7 @@ from pyomo.environ import *
 import math
 
 from .uc_utils import add_model_attr 
+from .reserve_vars import check_reserve_requirement
 component_name = 'objective'
 
 def _compute_1bin_shutdown_costs(model):
@@ -90,12 +91,30 @@ def basic_objective(model):
     # 
     # Cost computations
     #
+
+    # gather ancillary services added
+    regulation = False
+    spin = False
+    nspin = False
+    supp = False
+    flex = False
+    if model.ancillary_services:
+        if hasattr(model, 'regulation_service'):
+            regulation = True
+        if hasattr(model, 'spinning_reserve'):
+            spin = True
+        if hasattr(model, 'non_spinning_reserve'):
+            nspin = True
+        if hasattr(model, 'supplemental_reserve'):
+            supp = True
+        if hasattr(model, 'flexible_ramping'):
+            flex = True
     
     def commitment_stage_cost_expression_rule(m, st):
         cc = sum(m.StartupCost[g,t] + m.ShutdownCost[g,t] for g in m.ThermalGenerators for t in m.CommitmentTimeInStage[st]) + \
              sum(m.TotalNoLoadCost[t] for t in m.CommitmentTimeInStage[st])
-        if m.ancillary_services:
-            cc += sum(m.RegulationCostCommitment[g,t] for g in m.ThermalGenerators for t in m.CommitmentTimeInStage[st])
+        if regulation:
+            cc += sum(m.RegulationCostCommitment[g,t] for g in m.AGC_Generators for t in m.CommitmentTimeInStage[st])
         return cc
     
     model.CommitmentStageCost = Expression(model.StageSet, rule=commitment_stage_cost_expression_rule)
@@ -113,20 +132,22 @@ def basic_objective(model):
         cc = sum(m.ProductionCost[g, t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) + \
               sum(m.LoadMismatchCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st])
-        if m.ancillary_services:
-            cc += sum(m.RegulationCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
-                + sum(m.RegulationCostPenalty[t] for t in m.GenerationTimeInStage[st]) \
-                + \
-                  sum(m.SpinningReserveCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
-                + sum(m.SpinningReserveCostPenalty[t] for t in m.GenerationTimeInStage[st]) \
-                + \
-                  sum(m.NonSpinningReserveCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
-                + sum(m.NonSpinningReserveCostPenalty[t] for t in m.GenerationTimeInStage[st]) \
-                + \
-                  sum(m.OperatingReserveCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
-                + sum(m.OperatingReserveCostPenalty[t] for t in m.GenerationTimeInStage[st]) \
-                + \
-                  sum(m.FlexibleRampingCostPenalty[t] for t in m.GenerationTimeInStage[st])
+        if m.storage_services:
+            cc += sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
+        if regulation:
+            cc += sum(m.RegulationCostGeneration[g,t] for g in m.AGC_Generators for t in m.GenerationTimeInStage[st]) \
+                + sum(m.RegulationCostPenalty[t] for t in m.GenerationTimeInStage[st])
+        if spin:
+            cc += sum(m.SpinningReserveCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
+                + sum(m.SpinningReserveCostPenalty[t] for t in m.GenerationTimeInStage[st])
+        if nspin:
+            cc += sum(m.NonSpinningReserveCostGeneration[g,t] for g in m.NonSpinGenerators for t in m.GenerationTimeInStage[st]) \
+                + sum(m.NonSpinningReserveCostPenalty[t] for t in m.GenerationTimeInStage[st])
+        if supp:
+            cc += sum(m.SupplementalReserveCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
+                + sum(m.SupplementalReserveCostPenalty[t] for t in m.GenerationTimeInStage[st])
+        if flex:
+            cc += sum(m.FlexibleRampingCostPenalty[t] for t in m.GenerationTimeInStage[st])
         return cc
     model.GenerationStageCost = Expression(model.StageSet, rule=generation_stage_cost_expression_rule)
     

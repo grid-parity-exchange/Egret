@@ -13,6 +13,7 @@ from pyomo.environ import *
 import math
 
 from .uc_utils import add_model_attr 
+from .reserve_vars import check_reserve_requirement
 component_name = 'reserve_requirement'
 
 #TODO: this doesn't check if storage_services is added first, 
@@ -29,6 +30,10 @@ def CA_reserve_constraints(model):
     Liner Formulation for the Thermal Unit Commitment Problem. IEEE Transactions
     on Power Systems, Vol. 21, No. 3, Aug 2006.
     '''
+
+    if not check_reserve_requirement(model):
+        model.ReserveShortfall = Param(model.TimePeriods, default=0.)
+        return
 
     model.ReserveShortfall = Var(model.TimePeriods, within=NonNegativeReals)
 
@@ -49,7 +54,7 @@ def CA_reserve_constraints(model):
         if m.storage_services:
             return sum(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
                  + sum(m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
-                 + sum(m.PowerOutputStorage[s,t]*m.OutputEfficiencyEnergy[s] for s in m.Storage) \
+                 + sum(m.PowerOutputStorage[s,t] for s in m.Storage) \
                  - sum(m.PowerInputStorage[s,t] for s in m.Storage) \
                  + sum(m.LoadGenerateMismatch[b,t] for b in m.Buses) \
                  + m.ReserveShortfall[t] \
@@ -93,6 +98,11 @@ def MLR_reserve_constraints(model):
     formulation for the thermal unit commitment problem. IEEE Transactions on
     Power Systems, 28(4):4897–4908, 2013.
     '''
+
+    if not check_reserve_requirement(model):
+        model.ReserveShortfall = Param(model.TimePeriods, default=0.)
+        return
+
     model.ReserveShortfall = Var(model.TimePeriods, within=NonNegativeReals)
 
     # the reserve shortfall can't be less than the reserve requirement in any given time period.
