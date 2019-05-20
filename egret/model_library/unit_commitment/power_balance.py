@@ -149,13 +149,13 @@ def _get_pg_expr_rule(t):
         m = block.model()
         # bus b, time t (S)
         if m.storage_services:
-            return sum((1 - m.GeneratorForcedOutage[g,t]) * m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
+            return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
                 + sum(m.PowerOutputStorage[s, t]*m.OutputEfficiencyEnergy[s] for s in m.StorageAtBus[b])\
                 - sum(m.PowerInputStorage[s, t] for s in m.StorageAtBus[b])\
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
                 + m.LoadGenerateMismatch[b,t]
         else:
-            return sum((1 - m.GeneratorForcedOutage[g,t]) * m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
+            return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
                 + m.LoadGenerateMismatch[b,t]
     return pg_expr_rule
