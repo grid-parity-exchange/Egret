@@ -275,7 +275,7 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
         demand_by_hour += load_array
     
     ## This is to make it so the step graph covers the total dispatch levels as expected.
-    demand_indices = np.arange(25) - 1/2
+    demand_indices = np.arange(len(time_labels)+1) - 1/2
     demand_by_hour = np.append(demand_by_hour, demand_by_hour[-1])
     
     ax.step(demand_indices, demand_by_hour, linewidth=3, color='#000000', where='post')
