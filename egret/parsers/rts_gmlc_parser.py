@@ -92,22 +92,19 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
 
 
     TimeSeriesPointer = namedtuple('TimeSeriesPointer',
-                               ['Object',
-                                'Simulation',
-                                'Parameter',
-                                'DataFile'],
-                               verbose=False)
+                                   ['Object',
+                                    'Simulation',
+                                    'Parameter',
+                                    'DataFile'])
 
     DateTimeValue = namedtuple('DateTimeValue',
-                           ['DateTime', 'Value'],
-                           verbose=False)
+                               ['DateTime', 'Value'])
 
     Load = namedtuple('Load',
-                  ['DateTime',
-                   'Area1',
-                   'Area2',
-                   'Area3'],
-                  verbose=False)
+                      ['DateTime',
+                       'Area1',
+                       'Area2',
+                       'Area3'])
 
     timeseries_pointer_df = pd.read_table(os.path.join(base_dir, "timeseries_pointers.csv"), header=0, sep=',')
 
