@@ -39,6 +39,9 @@ def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
         else:
             model = uc_model(md)
             opt = SolverFactory('gurobi')
+            if opt == None:
+                # one of gurobi or cplex should be available, per the check for existence below
+                opt = SolverFactory('cplex')
             opt.options['mipgap'] = 0.0
 
         result = opt.solve(model, tee=False)
@@ -46,8 +49,8 @@ def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
         assert result.solver.termination_condition == TerminationCondition.optimal
         assert math.isclose(ref_objval, result.problem.upper_bound)
 
-## definitely skip if we don't have gurobi
-@unittest.skipUnless(SolverFactory('gurobi').available(), "Solver gurobi unavailabe")
+## definitely skip MIP tests if we don't have one of gurobi or cplex available
+@unittest.skipUnless(SolverFactory('gurobi').available() or SolverFactory('cplex').available(), "Neither Gurobi or CPLEX solver is available")
 @pytest.mark.mip
 def test_int_all_uc_models():
     _test_uc_model(create_tight_unit_commitment_model)

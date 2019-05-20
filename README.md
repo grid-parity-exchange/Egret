@@ -15,10 +15,10 @@ EGRET is available under the BDS License (see LICENSE.txt)
 
 ### Installation
 
-* EGRET is a Pythonb package and requires a python installation. We recommend using Anaconda with the latest Python (https://www.anaconda.com/distribution/).
-* These installation instructions assume that you have a recent version of Pyomo installed with the required solvers (see www.pyomo.org).
-* Download (or clone) EGRET from this GitHub site
-* From the main egret folder (folder containing setup.py), use a terminal (or the Anaconda prompt for Windows users), and run setup.py to install EGRET into your Python installation - as follows:
+* EGRET is a Python package and therefore requires a Python installation. We recommend using Anaconda with the latest Python (https://www.anaconda.com/distribution/).
+* These installation instructions assume that you have a recent version of Pyomo installed, in addition to a suite of relevant solvers (see www.pyomo.org for additional details).
+* Download (or clone) EGRET from this GitHub site.
+* From the main EGRET folder (i.e., the folder containing setup.py), use a terminal (or the Anaconda prompt for Windows users) to run setup.py to install EGRET into your Python installation - as follows:
 
    python setup.py install
 
@@ -26,17 +26,53 @@ EGRET is available under the BDS License (see LICENSE.txt)
 
 * Pyomo version 5.6 or later
 * pytest
-* Optimization solvers for Pyomo - specific requirements depends on the models being solved, however, EGRET is tested with GUROBI or CPLEX for MIP-based problems (e.g., unit commitment) and IPOPT (with HSL linear solvers) for NLP problems.
+* Optimization solvers for Pyomo - specific requirements depends on the models being solved. EGRET is tested with Gurobi or CPLEX for MIP-based problems (e.g., unit commitment) and Ipopt (with HSL linear solvers) for NLP problems.
 
-We recommend that Egret users additionally install the open source CBC MIP solver. The specific mechanics of installing CBC are highly platform-specific. When using Anaconda, this can be accomplished simply by:
+We additionally recommend that EGRET users install the open source CBC MIP solver. The specific mechanics of installing CBC are platform-specific. When using Anaconda on Linux and Mac platforms, this can be accomplished simply by:
 
    conda install -c conda-forge coincbc
 
+The COIN-OR organization - who developers CBC - also provides pre-built binaries for a full range of platforms on https://bintray.com/coin-or/download.
+
 ### Testing the Installation
 
-To test the functionality of the unit commitment aspects of Egret, execute the following command from the models/test sub-directory:
+To test the functionality of the unit commitment aspects of EGRET, execute the following command from the EGRET models/test sub-directory:
 
    pytest test_unit_commitment.py
+
+By default, the unit commitment tests will only execute on LP relaxations of the full MIP. This default allows for tests to execute more quickly. The output from this command should look something like:
+
+====================================================================== test session starts ======================================================================<br/>
+platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0<br/>
+rootdir: /home/some-user/egret<br/>
+collected 14 items<br/>
+<br/>
+test_unit_commitment.py s.............                                                                                                                    [100%]<br/>
+<br/>
+============================================================ 13 passed, 1 skipped in 125.02 seconds =============================================================<br/>
+
+To run the full test suite, without LP relaxations of the unit commitment MIPs, execute the following command from the EGRET models/test sub-directory:
+
+   pytest --runmip test_unit_commitment
+
+The output from this command should look something like:
+
+====================================================================== test session starts ======================================================================<br/>
+platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0<br/>  
+rootdir: /home/some-user/egret<br/>
+collected 14 items<br/>
+<br/>  
+test_unit_commitment.py ..............                                                                                                                    [100%]<br/>
+<br/>
+================================================================== 14 passed in 352.67 seconds ==================================================================<br/>
+
+### How to Cite EGRET in Your Research
+
+If you are using the unit commitment functionality of EGRET, please cite the following paper: http://www.optimization-online.org/DB_HTML/2018/11/6930.html.
+
+
+
+
 
 
 
