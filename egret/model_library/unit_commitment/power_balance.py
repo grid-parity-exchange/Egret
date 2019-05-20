@@ -12,6 +12,8 @@ from pyomo.environ import *
 import math
 
 from .uc_utils import add_model_attr
+from .power_vars import _add_reactive_power_vars
+from .generation_limits import _add_reactive_limits
 
 import pyomo.environ as pe
 import egret.model_library.transmission.tx_utils as tx_utils
@@ -140,10 +142,44 @@ def _add_load_mismatch(model):
        return sum((m.negLoadGenerateMismatch[b,t] for t in m.TimePeriods)) >= 0.0
     model.NegLoadGenerateMismatchTolerance = Constraint(model.Buses, rule=neg_load_generate_mismatch_tolerance_rule)
 
+def _add_q_load_mismatch(model):
+
+    #####################################################
+    # load "shedding" can be both positive and negative #
+    #####################################################
+    model.LoadGenerateMismatchReactive = Var(model.Buses, model.TimePeriods, within=Reals)
+    model.posLoadGenerateMismatchReactive = Var(model.Buses, model.TimePeriods, within=NonNegativeReals) # load shedding
+    model.negLoadGenerateMismatchReactive = Var(model.Buses, model.TimePeriods, within=NonNegativeReals) # over generation
+    
+    def define_pos_neg_load_generate_mismatch_rule_reactive(m, b, t):
+        return m.posLoadGenerateMismatchReactive[b, t] - m.negLoadGenerateMismatchReactive[b, t] \
+                == m.LoadGenerateMismatchReactive[b, t]
+    model.DefinePosNegLoadGenerateMismatchReactive = Constraint(model.Buses, model.TimePeriods, rule = define_pos_neg_load_generate_mismatch_rule_reactive)
+
+    # the following constraints are necessarily, at least in the case of CPLEX 12.4, to prevent
+    # the appearance of load generation mismatch component values in the range of *negative* e-5.
+    # what these small negative values do is to cause the optimal objective to be a very large negative,
+    # due to obviously large penalty values for under or over-generation. JPW would call this a heuristic
+    # at this point, but it does seem to work broadly. we tried a single global constraint, across all
+    # buses, but that failed to correct the problem, and caused the solve times to explode.
+    
+    def pos_load_generate_mismatch_tolerance_rule_reactive(m, b):
+       return sum((m.posLoadGenerateMismatchReactive[b,t] for t in m.TimePeriods)) >= 0.0
+    model.PosLoadGenerateMismatchToleranceReactive = Constraint(model.Buses, 
+                                                                rule=pos_load_generate_mismatch_tolerance_rule_reactive)
+    
+    def neg_load_generate_mismatch_tolerance_rule_reactive(m, b):
+       return sum((m.negLoadGenerateMismatchReactive[b,t] for t in m.TimePeriods)) >= 0.0
+    model.NegLoadGenerateMismatchToleranceReactive = Constraint(model.Buses,
+                                                                rule=neg_load_generate_mismatch_tolerance_rule_reactive)
+
 def _add_blank_load_mismatch(model):
     model.LoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
 
-## helper for interfacing with egret transmission models
+def _add_blank_q_load_mismatch(model):
+    model.LoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
+
+## helper defining real power injection at a bus
 def _get_pg_expr_rule(t):
     def pg_expr_rule(block,b):
         m = block.model()
@@ -160,16 +196,30 @@ def _get_pg_expr_rule(t):
                 + m.LoadGenerateMismatch[b,t]
     return pg_expr_rule
 
-@add_model_attr(component_name, requires = {'data_loader': None,
-                                            'power_vars': None,
-                                            'non_dispatchable_vars': None
-                                            })
-def btheta_power_flow(model, slacks=True):
+## helper defining reacative power injection at a bus
+def _get_qg_expr_rule(t):
+    def qg_expr_rule(block,b):
+        m = block.model()
+        # bus b, time t (S)
+        return sum(m.ReactivePowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
+            + m.LoadGenerateMismatchReactive[b,t]
+    return qg_expr_rule
+
+## Defines generic interface for egret tramsmission models
+def _add_egret_power_flow(model, network_model_builder, reactive_power=False, slacks=True):
 
     if slacks:
         _add_load_mismatch(model)
     else:
         _add_blank_load_mismatch(model)
+
+    if reactive_power:
+        _add_reactive_power_vars(model)
+        _add_reactive_limits(model)
+        if slacks:
+            _add_q_load_mismatch(model)
+        else:
+            _add_blank_q_load_mistmatch(model)
 
     md = model.model_data
 
@@ -182,9 +232,19 @@ def btheta_power_flow(model, slacks=True):
         ## appropriate injection/withdraws from the unit commitment
         ## model
         b.pg = Expression(model.Buses, rule=_get_pg_expr_rule(tm))
+        if reactive_power:
+            b.qg = Expression(model.Buses, rule=_get_qg_expr_rule(tm))
         b.gens_by_bus = {bus : [bus] for bus in model.Buses}
         md_t = md.clone_at_timestamp(td)
-        _btheta_dcopf_network_model(md_t,b)
+        network_model_builder(md_t,b)
+
+
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'power_vars': None,
+                                            'non_dispatchable_vars': None
+                                            })
+def btheta_power_flow(model, slacks=True):
+    _add_egret_power_flow(model, _btheta_dcopf_network_model, reactive_power=False, slacks=slacks)
 
 
 #TODO: this doesn't check if storage_services is added first, 
@@ -193,7 +253,7 @@ def btheta_power_flow(model, slacks=True):
                                             'power_vars': None,
                                             'non_dispatchable_vars': None
                                             })
-def power_balance_constraints(model):
+def power_balance_constraints(model, slacks=True):
     '''
     adds the demand and network constraints to the model
     '''
@@ -227,7 +287,10 @@ def power_balance_constraints(model):
         return sum(m.LinePower[l,t] for l in m.InterfaceLines[i]) >= -m.InterfaceToLimit[i]
     model.InterfaceToLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_to_limit_rule)
     
-    _add_load_mismatch(model) 
+    if slacks:
+        _add_load_mismatch(model)
+    else:
+        _add_blank_load_mismatch(model)
     
     # Power balance at each node (S)
     def power_balance(m, b, t):

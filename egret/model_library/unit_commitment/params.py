@@ -283,6 +283,17 @@ def load_params(model, model_data):
                                         validate=maximum_power_output_validator, 
                                         initialize=thermal_gen_attrs['p_max'],
                                         default=0.0)
+
+    model.MinimumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
+                                                initialize=thermal_gen_attrs['q_min'],
+                                                default=0.0)
+
+    def maximum_reactive_output_validator(m, v, g):
+        return v >= value(m.MinimumReactivePowerOutput[g])
+
+    model.MaximumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
+                                                initialize=thermal_gen_attrs['q_max'],
+                                                default=0.0)
     
     # wind is similar, but max and min will be equal for non-dispatchable wind
     
