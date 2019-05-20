@@ -7,16 +7,15 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-import pandas as pd
 
 # Seaborn/matplotlib plot settings
 sns.set()
-sns.set_context('paper', font_scale=2.15)
+sns.set_context('paper', font_scale=2.00)
 
-plt.rcParams["figure.figsize"] = (12,6)
+
 font = {'family' : 'sans-serif',
         'weight' : 'regular',
-        'size'   : 18
+        'size'   : 14
         }
 mpl.rc('font', **font)
 
@@ -26,7 +25,7 @@ GenerationType = namedtuple('GenerationType',
                            'color',
                             ]
                            )
-# Colors from MAGMA (R color names)
+
 GENERATION_TYPES = {
     'Z': GenerationType('Battery', '#42F1F4'),  # no color assigned
     'N': GenerationType('Nuclear', '#b22222'),
@@ -41,6 +40,7 @@ GENERATION_TYPES = {
     'SC': GenerationType('SynchCond', '#fff68f')
 }
 
+
 FUEL_TO_CODE = {
     'Oil': 'O',
     'Coal': 'C',
@@ -52,247 +52,17 @@ FUEL_TO_CODE = {
     'Sync_Cond': 'SC',
                }
 
+
 def _fuel_type_to_code(x):
+    """Converts the fuel type string to its generation type code equivalent."""
     code = FUEL_TO_CODE.get(x, '')
     
     return code
 
 
-def generate_stack_graph(thermal_data, renewables_data, hourly_summary, gen_summary, bar_width=0.9, title='', 
-                         plot_individual_generators=False,
-                         show_individual_components=False):
-    """Creates a stack graph."""    
-    def _compute_total_dispatch_per_hour(gen_type):
-        """Computes the total dispatch for gen_type generation for each hour in the data set."""
-        total_output_by_hour = []
-        
-        if gen_type in {'S', 'W', 'H'}:
-            gen_details = renewables_data
-            
-            for h in gen_details['Hour'].unique():
-                total_hour_output = gen_details.loc[(gen_details['gen type'] == gen_type) & (gen_details['Hour'] == h)]['Output'].sum()
-                total_output_by_hour.append(total_hour_output)
-        else:
-            gen_details = thermal_data
-            
-            for h in gen_details['Hour'].unique():
-                total_hour_output = gen_details.loc[(gen_details['gen type'] == gen_type) & (gen_details['Hour'] == h)]['Dispatch'].sum()
-                total_output_by_hour.append(total_hour_output)
-                
-        return total_output_by_hour
-
-    def _plot_generation_stack_components():
-        """
-        Plots the stack graph components for generation. 
-        If plot_individual_generators is True, each individual generator's output will be keyed.
-        If show_individual_components is True, components of each generation type will be broken out. This option is only relevant when plot_individual_generators is False.
-        """
-        if plot_individual_generators and show_individual_components:
-            raise Exception('plot_individual_generators and show_individual_components cannot be simultaneously True.')
-            return
-        
-        bottom = np.zeros(len(indices))
-        
-        if plot_individual_generators:      
-            for gen_type, gen_type_tuple in GENERATION_TYPES.items():
-                if gen_type in {'S', 'W', 'H'}:
-                    gen_details = renewables_data
-                    output_field_name = 'Output'
-                else:
-                    gen_details = thermal_data
-                    output_field_name = 'Dispatch'
-
-                generator_list = gen_details.loc[gen_details['gen type'] == gen_type]['Generator'].unique()
-
-                for ix, gen in enumerate(generator_list, start=0):
-                    gen_hourly_output = gen_details.loc[(gen_details['Generator'] == gen)][output_field_name].values
-
-                    ax.bar(indices, gen_hourly_output, bar_width, bottom=bottom, 
-                           edgecolor=None, linewidth=0, 
-                           label=gen)
-
-                    # Update "bottom" position for each stack. 
-                    bottom += gen_hourly_output        
-        elif show_individual_components:
-            # Plot by individual generator in groups of generation type.
-            for gen_type, gen_type_tuple in GENERATION_TYPES.items():
-                component_color = gen_type_tuple.color
-                vals = _compute_total_dispatch_per_hour(gen_type)
-
-                if sum(vals) <= 0.0:
-                    continue
-
-                if gen_type in {'S', 'W', 'H'}:
-                    gen_details = renewables_data
-                    output_field_name = 'Output'
-                else:
-                    gen_details = thermal_data
-                    output_field_name = 'Dispatch'
-
-                generator_list = gen_details.loc[gen_details['gen type'] == gen_type]['Generator'].unique()
-
-                for ix, gen in enumerate(generator_list, start=0):
-                    gen_hourly_output = gen_details.loc[(gen_details['Generator'] == gen)][output_field_name].values
-
-                    # Plot set of bar stack component.
-                    if ix == 0:
-                        ax.bar(indices, gen_hourly_output, bar_width, bottom=bottom, color=component_color, label=gen_type_tuple.label,
-                              edgecolor='#FFFFFF', linewidth=0.5)
-                    else:
-                        ax.bar(indices, gen_hourly_output, bar_width, bottom=bottom, color=component_color,
-                              edgecolor='#FFFFFF', linewidth=0.5)
-
-                    # Update "bottom" position for each stack. 
-                    bottom += gen_hourly_output
-        else:    
-            for gen_type, gen_type_tuple in GENERATION_TYPES.items():
-                component_color = gen_type_tuple.color
-                vals = _compute_total_dispatch_per_hour(gen_type)
-
-                # Skip if none of the generation type is present.
-                if sum(vals) <= 0.0:
-                    continue
-
-                # Plot set of bar stack component.
-                ax.bar(indices, vals, bar_width, bottom=bottom, color=component_color, label=gen_type_tuple.label,
-                      linewidth=0)
-
-                # Update "bottom" position for each stack. 
-                bottom += vals
-        
-        return bottom
-
-    fig, ax = plt.subplots(figsize=(16, 10))
-
-    indices = np.arange(24)
-
-    def _generate_time_labels():    
-        thermal_data['delta'] = thermal_data['Hour'].apply(lambda x: datetime.timedelta(hours=x))
-        thermal_data['dt'] = pd.to_datetime(thermal_data['Date']) + thermal_data['delta']
-        labels = thermal_data['dt'].unique()
-        time_labels = [textwrap.fill(pd.to_datetime(x).strftime('%b %d %H:%M'), 6) for x in labels]
-
-        # labels = [str(ix+1) for ix in indices]
-
-        return time_labels
-    
-    time_labels = _generate_time_labels()
-                
-    # Plot generation dispatch/output.
-    total_dispatch_levels = _plot_generation_stack_components()
-    bottom = total_dispatch_levels
-    
-    # Plot load shedding, if applicable.    
-    load_shed_by_hour = hourly_summary[' LoadShedding '].values
-    
-    if sum(load_shed_by_hour) > 0.0:
-        component_color = '#ffff00'
-        ax.bar(indices, load_shed_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0,                
-               label='Load Shedding')
-        bottom += load_shed_by_hour   
-
-    # Plot demand.
-    demand_by_hour = hourly_summary[' Demand '].values
-    
-    ## This is to make it so the step graph covers the total dispatch levels as expected.
-    demand_indices = np.arange(25) - 1/2
-    demand_by_hour = np.append(demand_by_hour, demand_by_hour[-1])
-    
-    ax.step(demand_indices, demand_by_hour, linewidth=3, color='#000000', where='post')
-    
-    # Add reserve requirements, if applicable.
-    # TODO: Don't have this explicitly in the output files
-    reserve_requirements_by_hour = np.zeros(len(indices))
-    #reserve_requirements_by_hour = [0.15*hour_demand for hour_demand in demand_by_hour]
-    
-    if sum(reserve_requirements_by_hour) > 0.0:
-        component_color = '#00c2ff'
-        ax.bar(indices, reserve_requirements_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Required Reserve')
-        bottom += reserve_requirements_by_hour
-    
-    # Add reserve shortfalls, if applicable.
-    reserve_shortfall_by_hour = hourly_summary[' ReserveShortfall '].values
-    #reserve_shortfall_by_hour = np.random.randint(0, 500, size=len(indices))
-    
-    if sum(reserve_shortfall_by_hour) > 0.0:
-        component_color = '#ff00ff'
-        ax.bar(indices, reserve_shortfall_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Reserve Shortfall')
-        bottom += reserve_shortfall_by_hour
-    
-    # Add implicit reserves, if applicable.
-    # TODO:
-    reserve_available_by_hour = gen_summary['Available reserves'].values
-    implicit_reserves_by_hour = [max(0.0, reserve_available_by_hour[ix] - reserve_requirements_by_hour[ix]) for ix in range(len(reserve_available_by_hour))]
-
-    if sum(reserve_requirements_by_hour) > 0.0:
-        component_color = '#00ffc7'
-        ax.bar(indices, implicit_reserves_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Implicit Reserve')
-        bottom += implicit_reserves_by_hour
-    
-    # Add quick-start capacity, if applicable.
-    # TODO:
-    quickstart_capacity_by_hour = np.zeros(len(indices))
-    #quickstart_capacity_by_hour = np.random.randint(0, 500, size=len(indices))
-    
-    if sum(quickstart_capacity_by_hour) > 0.0:
-        component_color = '#494949'
-        ax.bar(indices, quickstart_capacity_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Available Quick Start')
-        bottom += quickstart_capacity_by_hour
-    
-    # TODO:
-    quickstart_additional_power_by_hour = np.zeros(len(indices))
-    #quickstart_additional_power_by_hour = np.random.randint(0, 400, size=len(indices))
-    
-    if sum(quickstart_additional_power_by_hour) > 0.0:
-        component_color = '#0061ff'
-        ax.bar(indices, quickstart_additional_power_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor='#000000', linewidth=0, hatch='xxx', 
-               label='Quick-Start Generator Output')
-        bottom += quickstart_additional_power_by_hour
-        
-        # mpl.rcParams['hatch.color'] = 'red'
-        # mpl.rcParams['hatch.linewidth'] = 1.0
-    
-    # Add renewable curtailment.
-    renewable_curtailment_by_hour = np.zeros(len(indices))
-    renewable_curtailment_by_hour = hourly_summary[' RenewablesCurtailed '].values
-    
-    if sum(renewable_curtailment_by_hour) > 0.0:
-        component_color = '#ff0000'
-        ax.bar(indices, renewable_curtailment_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Renewables Curtailed')
-        bottom += renewable_curtailment_by_hour
-    
-    # Labels and such.
-    tick_frequency = 4
-    plt.xticks(indices[::tick_frequency], time_labels[::tick_frequency], rotation=0)
-    ax.set_yticklabels(['{:,}'.format(int(x)) for x in ax.get_yticks().tolist()])
-    
-    sns.despine(offset=10, trim=True)
-
-    # Put legend outside on the right.
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-
-    ax.set_title(title)
-    ax.set_ylabel('Power [MW]')
-    ax.set_xlabel('Hour')
-    ax.yaxis.grid(True)
-
-    plt.savefig(title+'.png', format='png')
-
-    return fig, ax
+def _indexed_dict_to_array(indexed_dict):
+    """Converts dictionary with keys of time series indices and values of time series values to a NumPy array."""
+    return np.array([p[-1] for p in sorted(indexed_dict.items(), key=lambda x: x[0])])
 
 
 def generate_stack_graph_egret(egret_model_data, bar_width=0.9, 
@@ -300,40 +70,29 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
                                 title='', 
                                 plot_individual_generators=False,
                                 show_individual_components=False):
-    """Creates a stack graph."""
-    def _indexed_dict_to_array(indexed_dict):
-        """Converts dictionary with keys of time indices and values of time series values to a NumPy array."""
-        return np.array([p[-1] for p in sorted(indexed_dict.items(), key=lambda x: int(x[-1]))])
+    '''
+    Creates a stack graph using an egret ModelData object solved using the egret.models.unit_commitment.solve_unit_commitment() function.
 
-    def _compute_total_dispatch_per_hour():
-        """Computes the total dispatch for gen_type generation for each hour in the data set."""
-        total_output_by_hour = []
+    Parameters
+    ----------
+    egret_model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded and the model solved.
+    bar_width : float
+        The width of each bar stack in the time series in (0, 1]; default is 0.9
+    x_tick_frequency : int
+        Indicates the frequency of labeling the time axis; default is 1
+    title : str (optional)
+        Title to put on the resulting graph; default is ''
+    plot_individual_generators : bool (optional)
+        If True, individual generator output will be plotted and labeled. Raises a ValueError if there are more than 5 generators in the model. Raises a ValueError if show_individual_components is simultaneously True; default is False
+    show_individual_components : bool (optional)
+        If True, individual generator output within a generation type will be discretely indicated. Raises a ValueError if plot_individual_generators is simultaneously True; default is False 
 
-
-        
-        if gen_type in {'S', 'W', 'H'}:
-            gen_details = renewables_data
-            
-            for h in gen_details['Hour'].unique():
-                total_hour_output = gen_details.loc[(gen_details['gen type'] == gen_type) & (gen_details['Hour'] == h)]['Output'].sum()
-                total_output_by_hour.append(total_hour_output)
-        else:
-            gen_details = thermal_data
-            
-            for h in gen_details['Hour'].unique():
-                total_hour_output = gen_details.loc[(gen_details['gen type'] == gen_type) & (gen_details['Hour'] == h)]['Dispatch'].sum()
-                total_output_by_hour.append(total_hour_output)
-                
-        return total_output_by_hour
+    '''
 
     def _plot_generation_stack_components():
-        """
-        Plots the stack graph components for generation. 
-        If plot_individual_generators is True, each individual generator's output will be keyed.
-        If show_individual_components is True, components of each generation type will be broken out. This option is only relevant when plot_individual_generators is False.
-        """
         if plot_individual_generators and show_individual_components:
-            raise Exception('plot_individual_generators and show_individual_components cannot be simultaneously True.')
+            raise ValueError('plot_individual_generators and show_individual_components cannot be simultaneously True.')
             return
         
         bottom = np.zeros(len(indices))
@@ -342,7 +101,7 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
             INDIVIDUAL_GEN_PLOT_UPPER_LIMIT = 5
 
             if len(egret_model_data.data['elements']['generator']) > INDIVIDUAL_GEN_PLOT_UPPER_LIMIT:
-                raise Exception('There are too many generators in the system to support plotting output individually. (maximum: {0})'.format(INDIVIDUAL_GEN_PLOT_UPPER_LIMIT))
+                raise ValueError('There are too many generators in the system to support plotting output individually. (maximum: {0})'.format(INDIVIDUAL_GEN_PLOT_UPPER_LIMIT))
 
             for generator, generator_data in egret_model_data.data['elements']['generator'].items():
                 is_quickstart = generator_data.get('quickstart_capable', False)
@@ -390,12 +149,12 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
                 try:
                     component_label = GENERATION_TYPES[fuel_type].label
                 except KeyError:
-                    component_label = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].label
+                    component_label = GENERATION_TYPES[FUEL_TO_CODE[fuel_type]].label
                 
                 try:
                     component_color = GENERATION_TYPES[fuel_type].color
                 except KeyError:
-                    component_color = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].color
+                    component_color = GENERATION_TYPES[FUEL_TO_CODE[fuel_type]].color
 
                 if len(generator_output_levels) < 1:
                     continue
@@ -482,34 +241,29 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
 
     fig, ax = plt.subplots(figsize=(16, 10))
 
-    indices = np.arange(24)
-
-    def _generate_time_labels():    
-        # thermal_data['delta'] = thermal_data['Hour'].apply(lambda x: datetime.timedelta(hours=x))
-        # thermal_data['dt'] = pd.to_datetime(thermal_data['Date']) + thermal_data['delta']
-        # labels = thermal_data['dt'].unique()
-        # time_labels = [textwrap.fill(pd.to_datetime(x).strftime('%b %d %H:%M'), 6) for x in labels]
-
-        time_labels = [str(ix+1) for ix in indices]
-
-        return time_labels
-    
-    time_labels = _generate_time_labels()
+    time_labels = [textwrap.fill(time_index, 10) for time_index in egret_model_data.data['system']['time_indices']]
+    indices = np.arange(len(time_labels))
                 
     # Plot generation dispatch/output.
     total_dispatch_levels = _plot_generation_stack_components()
     bottom = total_dispatch_levels
     
     # Plot load shedding, if applicable.    
-    # TODO:
-    load_shed_by_hour = np.zeros(len(indices))
+    bus_dict = egret_model_data.data['elements']['bus']
+    total_load_shed_by_hour = np.zeros(len(indices))
+
+    for bus, bus_data in bus_dict.items():
+        p_balance_violation = _indexed_dict_to_array(bus_data['p_balance_violation']['values'])
+        load_shed = np.maximum(0, p_balance_violation)
+
+        total_load_shed_by_hour += load_shed
     
-    if sum(load_shed_by_hour) > 0.0:
+    if sum(total_load_shed_by_hour) > 0.0:
         component_color = '#ffff00'
-        ax.bar(indices, load_shed_by_hour, bar_width, bottom=bottom, color=component_color, 
+        ax.bar(indices, total_load_shed_by_hour, bar_width, bottom=bottom, color=component_color, 
                edgecolor=None, linewidth=0,                
-               label='Load Shedding')
-        bottom += load_shed_by_hour   
+               label='Load Shed')
+        bottom += total_load_shed_by_hour   
 
     # Plot demand.
     demand_by_hour = np.zeros(len(indices))
@@ -527,7 +281,7 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
     ax.step(demand_indices, demand_by_hour, linewidth=3, color='#000000', where='post')
     
     # Add reserve requirements, if applicable.
-    reserve_requirements_by_hour = egret_model_data.data['system']['reserve_requirement']['values']
+    reserve_requirements_by_hour = egret_model_data.data['system'].get('reserve_requirement', {}).get('values', {})
     reserve_requirements_array = _indexed_dict_to_array(reserve_requirements_by_hour)
     
     if sum(reserve_requirements_array) > 0.0:
@@ -538,7 +292,7 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
         bottom += reserve_requirements_array
     
     # Add reserve shortfalls, if applicable.
-    reserve_shortfall_by_hour = egret_model_data.data['system']['reserve_shortfall']['values']
+    reserve_shortfall_by_hour = egret_model_data.data['system'].get('reserve_shortfall', {}).get('values', {})
     reserve_shortfall_array = _indexed_dict_to_array(reserve_shortfall_by_hour)
     
     if sum(reserve_shortfall_array) > 0.0:
@@ -560,48 +314,55 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
 #                label='Implicit Reserve')
 #         bottom += implicit_reserves_by_hour
     
-#     # Add quick-start capacity, if applicable.
-#     # TODO:
-#     quickstart_capacity_by_hour = np.zeros(len(indices))
-# #     quickstart_capacity_by_hour = np.random.randint(0, 500, size=len(indices))
+    # Add quick-start capacity, if applicable.
+    generators_dict = egret_model_data.data['elements']['generator']
+    total_quickstart_capacity_by_hour = np.zeros(len(indices))
+
+    for gen, gen_data in generators_dict.items():
+        is_quickstart = gen_data.get('quickstart_capable', False)
+
+        if is_quickstart:
+            p_max = _indexed_dict_to_array(gen_data['p_max']['values'])
+            pg = _indexed_dict_to_array(gen_data['pg']['values'])
+
+            quickstart_capacity_available = np.maximum(p_max - pg, 0)
+
+            total_quickstart_capacity_by_hour += quickstart_capacity_available
     
-#     if sum(quickstart_capacity_by_hour) > 0.0:
-#         component_color = '#494949'
-#         ax.bar(indices, quickstart_capacity_by_hour, bar_width, bottom=bottom, color=component_color, 
-#                edgecolor=None, linewidth=0, 
-#                label='Available Quick Start')
-#         bottom += quickstart_capacity_by_hour
+    if sum(total_quickstart_capacity_by_hour) > 0.0:
+        component_color = '#494949'
+        ax.bar(indices, total_quickstart_capacity_by_hour, bar_width, bottom=bottom, color=component_color, 
+               edgecolor=None, linewidth=0, 
+               hatch='//',
+               label='Available Quick Start')
+        bottom += total_quickstart_capacity_by_hour
     
-#     # TODO:
-#     quickstart_additional_power_by_hour = np.zeros(len(indices))
-# #     quickstart_additional_power_by_hour = np.random.randint(0, 400, size=len(indices))
+    # Add renewable curtailment.
+    total_renewable_curtailment_by_hour = np.zeros(len(indices))
+
+    for gen, gen_data in generators_dict.items():
+        generator_type = gen_data['generator_type']
+
+        if generator_type == 'renewable':
+            p_max = _indexed_dict_to_array(gen_data['p_max']['values'])
+            pg = _indexed_dict_to_array(gen_data['pg']['values'])
+
+            p_curtailed = np.maximum(p_max - pg, 0)
+
+            total_renewable_curtailment_by_hour += p_curtailed
     
-#     if sum(quickstart_additional_power_by_hour) > 0.0:
-#         component_color = '#0061ff'
-#         ax.bar(indices, quickstart_additional_power_by_hour, bar_width, bottom=bottom, color=component_color, 
-#                edgecolor='#000000', linewidth=0, hatch='xxx', 
-#                label='Quick-Start Generator Output')
-#         bottom += quickstart_additional_power_by_hour
-        
-# #         mpl.rcParams['hatch.color'] = 'red'
-# #         mpl.rcParams['hatch.linewidth'] = 1.0
-    
-#     # Add renewable curtailment.
-#     renewable_curtailment_by_hour = np.zeros(len(indices))
-#     renewable_curtailment_by_hour = hourly_summary[' RenewablesCurtailed '].values
-    
-#     if sum(renewable_curtailment_by_hour) > 0.0:
-#         component_color = '#ff0000'
-#         ax.bar(indices, renewable_curtailment_by_hour, bar_width, bottom=bottom, color=component_color, 
-#                edgecolor=None, linewidth=0, 
-#                label='Renewables Curtailed')
-#         bottom += renewable_curtailment_by_hour
+    if sum(total_renewable_curtailment_by_hour) > 0.0:
+        component_color = '#ff0000'
+        ax.bar(indices, total_renewable_curtailment_by_hour, bar_width, bottom=bottom, color=component_color, 
+               edgecolor=None, linewidth=0, 
+               label='Renewables Curtailed')
+        bottom += total_renewable_curtailment_by_hour
     
     # Labels and such.
     plt.xticks(indices[::x_tick_frequency], time_labels[::x_tick_frequency], rotation=0)
     ax.set_yticklabels(['{:,}'.format(int(x)) for x in ax.get_yticks().tolist()])
     
-    sns.despine(offset=10, trim=True)
+    # sns.despine(offset=10, trim=True)
 
     # Put legend outside on the right.
     box = ax.get_position()
@@ -610,9 +371,10 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
 
     ax.set_title(title)
     ax.set_ylabel('Power [MW]')
-    ax.set_xlabel('Hour')
+    ax.set_xlabel('Time')
     ax.yaxis.grid(True)
 
+    # fig.tight_layout()
     # plt.savefig(title+'.png', format='png')
 
     return fig, ax
@@ -620,17 +382,37 @@ def generate_stack_graph_egret(egret_model_data, bar_width=0.9,
 
 def main():
     import json
-    import math
     from egret.models.unit_commitment import solve_unit_commitment, create_tight_unit_commitment_model
-    from egret.data.model_data import ModelData
 
-    case_prefix = 'rts-gmlc_deterministic'
+    ## Test using unit commitment unit test case(s)
+    # from egret.data.model_data import ModelData
 
-    RESULTS_DIR = os.path.join('egret', 'viz', 'data', case_prefix)
+    # test_cases = [os.path.join('egret', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1,6)]
 
-    test_cases = [os.path.join('egret', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1,2)]
-    test_int_objvals = [4201915.017320504, 5454367.7670904165, 5999272.361123627, 5461120.3231092375, 6062406.32677043]
+    # for test_case in test_cases:   
+    #     with open(test_case, 'r') as f:
+    #         md_dict = json.load(f)
+    #     md = ModelData(md_dict)
 
+    #     solved_md = solve_unit_commitment(md,
+    #                     'cbc',
+    #                     mipgap = 0.001,
+    #                     timelimit = None,
+    #                     solver_tee = True,
+    #                     symbolic_solver_labels = False,
+    #                     options = None,
+    #                     uc_model_generator=create_tight_unit_commitment_model,
+    #                     relaxed=False,
+    #                     return_model=False)
+
+    #     fig, ax = generate_stack_graph_egret(
+    #         solved_md, 
+    #         title=repr(test_case),
+    #         show_individual_components=True,
+    #         plot_individual_generators=False,
+    #     )
+    
+    ## Test using RTS-GMLC case
     from egret.parsers.rts_gmlc_parser import create_ModelData
 
     rts_gmlc_dir = os.path.join('..', 'RTS-GMLC')
@@ -658,63 +440,9 @@ def main():
         title=begin_time,
         show_individual_components=False,
         plot_individual_generators=False,
+        x_tick_frequency=4,
     )
 
-    print(solved_md)
-
-    # for test_case, ref_objval in zip(test_cases, test_int_objvals):
-        
-    #     md_dict = json.load(open(test_case,'r'))
-    #     md = ModelData(md_dict)
-
-    #     solved_md = solve_unit_commitment(md,
-    #                       'cbc',
-    #                       mipgap = 0.001,
-    #                       timelimit = None,
-    #                       solver_tee = True,
-    #                       symbolic_solver_labels = False,
-    #                       options = None,
-    #                       uc_model_generator=create_tight_unit_commitment_model,
-    #                       relaxed=False,
-    #                       return_model=False)
-
-    #     fig, ax = generate_stack_graph_egret(
-    #         solved_md, 
-    #         title=repr(test_case),
-    #         show_individual_components=False,
-    #         plot_individual_generators=False,
-    #     )
-
-
-    # # Set the directory to save figures
-    # FIGS_DIR = os.path.join('report', 'figs')
-
-    # RTS_SOURCE_DIR = os.path.join('..', 'RTS-GMLC', 'RTS_DATA', 'SourceData')
-    # gens_table = pd.read_csv(os.path.join(RTS_SOURCE_DIR, 'gen.csv'))
-
-    # gens_table['gen type'] = gens_table['Fuel'].apply(_fuel_type_to_code)
-    # gens_table.set_index('GEN UID', inplace=True)
-    # gens_dict = gens_table.to_dict(orient='index')
-
-    # hourly_summary = pd.read_csv(os.path.join(RESULTS_DIR, 'hourly_summary.csv'))
-    # hourly_gen_summary = pd.read_csv(os.path.join(RESULTS_DIR, 'Hourly_gen_summary.csv'))
-    # thermal_detail = pd.read_csv(os.path.join(RESULTS_DIR, 'thermal_detail.csv'))
-    # renewables_detail = pd.read_csv(os.path.join(RESULTS_DIR, 'renewables_detail.csv'))
-
-    # thermal_detail['gen type'] = thermal_detail['Generator'].apply(lambda x: gens_dict[x]['gen type'])
-    # renewables_detail['gen type'] = renewables_detail['Generator'].apply(lambda x: gens_dict[x]['gen type'])
-
-    # for date in thermal_detail['Date'].unique()[-1:]:
-    #     # Generate sample data for the day
-    #     SAMPLE_THERMAL = thermal_detail.loc[thermal_detail['Date'] == date]
-    #     SAMPLE_RENEWABLES = renewables_detail.loc[renewables_detail['Date'] == date]
-    #     SAMPLE_HOURLY = hourly_summary.loc[hourly_summary['Date '] == date]
-    #     SAMPLE_GENS = hourly_gen_summary.loc[hourly_gen_summary['Date'] == date]
-        
-    #     generate_stack_graph(SAMPLE_THERMAL, SAMPLE_RENEWABLES, SAMPLE_HOURLY, SAMPLE_GENS, 
-    #                         plot_individual_generators=True, show_individual_components=False, 
-    #                         title='Power Generation for {0}'.format(date))
-    
     plt.show()
 
 
