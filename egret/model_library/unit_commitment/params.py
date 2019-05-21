@@ -815,6 +815,7 @@ def load_params(model, model_data):
     BigPenalty = 1e4*system['baseMVA']
     
     model.LoadMismatchPenalty = Param(within=NonNegativeReals, default=BigPenalty, mutable=True, initialize=system.get('load_mismatch_cost'))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, default=BigPenalty/2., mutable=True, initialize=system.get('q_load_mismatch_cost'))
 
     ## END PRODUCTION COST CALCULATIONS
 

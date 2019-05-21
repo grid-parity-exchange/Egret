@@ -175,9 +175,13 @@ def _add_q_load_mismatch(model):
 
 def _add_blank_load_mismatch(model):
     model.LoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
+    model.posLoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
+    model.negLoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
 
 def _add_blank_q_load_mismatch(model):
     model.LoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
+    model.posLoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
+    model.negLoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
 
 ## helper defining real power injection at a bus
 def _get_pg_expr_rule(t):
@@ -207,6 +211,9 @@ def _get_qg_expr_rule(t):
 
 ## Defines generic interface for egret tramsmission models
 def _add_egret_power_flow(model, network_model_builder, reactive_power=False, slacks=True):
+
+    ## save flag for objective
+    m.reactive_power = reactive_power
 
     if slacks:
         _add_load_mismatch(model)
@@ -257,6 +264,7 @@ def power_balance_constraints(model, slacks=True):
     '''
     adds the demand and network constraints to the model
     '''
+    m.reactive_power = False
 
     # system variables
     # amount of power flowing along each line, at each time period
