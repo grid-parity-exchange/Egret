@@ -613,92 +613,97 @@ def create_riv_acopf_model(model_data):
 
     return model
 
+
+def solve_acopf(model_data,
+                solver,
+                timelimit = None,
+                solver_tee = True,
+                symbolic_solver_labels = False,
+                options = None,
+                acopf_model_generator = create_psv_acopf_model,
+                return_model = False):
+    '''
+    Create and solve a new acopf model
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    solver : str or pyomo.opt.base.solvers.OptSolver
+        Either a string specifying a pyomo solver name, or an instantiated pyomo solver
+    timelimit : float (optional)
+        Time limit for dcopf run. Default of None results in no time
+        limit being set.
+    solver_tee : bool (optional)
+        Display solver log. Default is True.
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels. Useful for debugging; default is False.
+    options : dict (optional)
+        Other options to pass into the solver. Default is dict().
+    acopf_model_generator : function (optional)
+        Function for generating the acopf model. Default is
+        egret.models.acopf.create_psv_acopf_model
+    return_model : bool (optional)
+        If True, returns the pyomo model object
+
+    '''
+
+    import pyomo.environ as pe
+    from pyomo.environ import value
+    from egret.common.solver_interface import _solve_model
+    from egret.model_library.transmission.tx_utils import \
+        scale_ModelData_to_pu, unscale_ModelData_to_pu
+
+    m = acopf_model_generator(model_data)
+
+    m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+
+    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+
+    md = model_data
+
+    # save results data to ModelData object
+    gens = dict(md.elements(element_type='generator'))
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+    storage = dict(md.elements(element_type='storage'))
+    zones = dict(md.elements(element_type='zone'))
+    areas = dict(md.elements(element_type='area'))
+
+    md.data['system']['total_cost'] = value(m.obj)
+
+    for g,g_dict in gens.items():
+        g_dict['pg'] = value(m.pg[g])
+        g_dict['qg'] = value(m.qg[g])
+
+
+    for b,b_dict in buses.items():
+        b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
+        b_dict['qlmp'] = value(m.dual[m.eq_q_balance[b]])
+        b_dict['vm'] = value(m.vm[b])
+        b_dict['va'] = value(m.va[b])
+        b_dict['pl'] = value(m.pl[b])
+
+    for k, k_dict in branches.items():
+        k_dict['pf'] = value(m.pf[k])
+        k_dict['pt'] = value(m.pt[k])
+        k_dict['qf'] = value(m.qf[k])
+        k_dict['qt'] = value(m.qt[k])
+
+    unscale_ModelData_to_pu(md, inplace=True)
+
+
+    if return_model:
+        return md, m
+    return md
+
 if __name__ == '__main__':
     import os
     from egret.parsers.matpower_parser import create_ModelData
-    import time
-    import json
 
     path = os.path.dirname(__file__)
-
-    results_dict = dict()
-
-    directory = os.path.join(path, '../../download/pglib-opf/sad/')
-    for filename in os.listdir(directory):
-        if filename.endswith(".m"):
-            matpower_file = os.path.join(path, '../../download/pglib-opf/sad/', filename)
-
-            md = create_ModelData(matpower_file)
-            model_name = md.data["system"]["model_name"]
-            print(model_name)
-            # filename_results = model_name + '.json'
-            # with open(filename_results, 'w') as fp:
-            #     json.dump(md.data, fp)
-            results_dict[md.data["system"]["model_name"]] = dict()
-            tmp = results_dict[md.data["system"]["model_name"]]
-
-            start = time.time()
-            model = create_rsv_acopf_model(md)
-            end = time.time()
-
-            solver = pe.SolverFactory('ipopt')
-            solver.options['halt_on_ampl_error'] = "yes"
-
-            results = solver.solve(model, tee=True, keepfiles=True, symbolic_solver_labels=True)
-
-            print('rsv')
-            tmp['rsv_acopf'] = dict()
-            tmp['rsv_acopf']['objective'] = model.obj.value()
-            if results['Solver']:
-                tmp['rsv_acopf']['termination_condition'] = print(results['Solver'][0]['Termination condition'])
-                tmp['rsv_acopf']['time'] = results['Solver'][0]['Time']
-            else:
-                tmp['rsv_acopf']['termination_condition'] = 'solver issues'
-                tmp['rsv_acopf']['time'] = 999.99
-            tmp['rsv_acopf']['model_build_time'] = end - start
-
-
-            start = time.time()
-            model = create_riv_acopf_model(md)
-            end = time.time()
-
-            solver = pe.SolverFactory('ipopt')
-            solver.options['halt_on_ampl_error'] = "yes"
-            results = solver.solve(model, tee=True, keepfiles=True, symbolic_solver_labels=True)
-
-            print('riv')
-            tmp['riv_acopf'] = dict()
-            tmp['riv_acopf']['objective'] = model.obj.value()
-            if results['Solver']:
-                tmp['riv_acopf']['termination_condition'] = print(results['Solver'][0]['Termination condition'])
-                tmp['riv_acopf']['time'] = results['Solver'][0]['Time']
-            else:
-                tmp['riv_acopf']['termination_condition'] = 'solver issues'
-                tmp['riv_acopf']['time'] = 999.99
-            tmp['riv_acopf']['model_build_time'] = end - start
-
-
-            start = time.time()
-            model = create_psv_acopf_model(md)
-            end = time.time()
-
-            solver = pe.SolverFactory('ipopt')
-            solver.options['halt_on_ampl_error'] = "yes"
-
-            results = solver.solve(model, tee=True, keepfiles=True, symbolic_solver_labels=True)
-
-            print('psv')
-            tmp['psv_acopf'] = dict()
-            tmp['psv_acopf']['objective'] = model.obj.value()
-            if results['Solver']:
-                tmp['psv_acopf']['termination_condition'] = print(results['Solver'][0]['Termination condition'])
-                tmp['psv_acopf']['time'] = results['Solver'][0]['Time']
-            else:
-                tmp['psv_acopf']['termination_condition'] = 'solver issues'
-                tmp['psv_acopf']['time'] = 999.99
-            tmp['psv_acopf']['model_build_time'] = end - start
-
-            # filename_results = 'acopf_results_pglib_opf_sad_v19_01.json'
-            # with open(filename_results, 'w') as fp:
-            #     json.dump(results_dict, fp)
-    print(results_dict)
+    filename = 'pglib_opf_case3_lmbd.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+    md = create_ModelData(matpower_file)
+    solve_acopf(md, "ipopt")
