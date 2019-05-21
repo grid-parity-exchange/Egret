@@ -225,12 +225,12 @@ def solve_dcopf(model_data,
         return md, m
     return md
 
-if __name__ == '__main__':
-    import os
-    from egret.parsers.matpower_parser import create_ModelData
-
-    path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case3_lmbd.m'
-    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-    md = create_ModelData(matpower_file)
-    solve_dcopf(md, "gurobi")
+# if __name__ == '__main__':
+#     import os
+#     from egret.parsers.matpower_parser import create_ModelData
+#
+#     path = os.path.dirname(__file__)
+#     filename = 'pglib_opf_case3_lmbd.m'
+#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+#     md = create_ModelData(matpower_file)
+#     solve_dcopf(md, "gurobi")

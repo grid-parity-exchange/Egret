@@ -847,13 +847,13 @@ def solve_unit_commitment(model_data,
         return md, m
     return md
 
-if __name__ == '__main__':
-    from egret.data.model_data import ModelData
-    import json
-
-    file = "tests/uc_test_instances/test_case_1.json"
-    with open(file) as f:
-        data = json.load(f)
-
-    md = ModelData(data)
-    solve_unit_commitment(md, "gurobi")
+# if __name__ == '__main__':
+#     from egret.data.model_data import ModelData
+#     import json
+#
+#     file = "tests/uc_test_instances/test_case_1.json"
+#     with open(file) as f:
+#         data = json.load(f)
+#
+#     md = ModelData(data)
+#     solve_unit_commitment(md, "gurobi")
