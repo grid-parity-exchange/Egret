@@ -213,7 +213,7 @@ def _get_qg_expr_rule(t):
 def _add_egret_power_flow(model, network_model_builder, reactive_power=False, slacks=True):
 
     ## save flag for objective
-    m.reactive_power = reactive_power
+    model.reactive_power = reactive_power
 
     if slacks:
         _add_load_mismatch(model)
@@ -264,7 +264,7 @@ def power_balance_constraints(model, slacks=True):
     '''
     adds the demand and network constraints to the model
     '''
-    m.reactive_power = False
+    model.reactive_power = False
 
     # system variables
     # amount of power flowing along each line, at each time period
