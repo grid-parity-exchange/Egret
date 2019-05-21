@@ -9,5 +9,7 @@ dependencies:
     - pytest
     - six
     - nose
+    - matplotlib
+    - seaborn
     - pip:
         - coveralls
