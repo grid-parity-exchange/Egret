@@ -12,7 +12,7 @@ from distutils.core import Extension
 
 DISTNAME = 'egret'
 VERSION = '0.1.0'
-PACKAGES = ['egret']
+PACKAGES = find_packages()
 EXTENSIONS = []
 DESCRIPTION = 'EGRET: Electrical Grid Research and Engineering Tools.'
 LONG_DESCRIPTION = open('README.md').read()
@@ -26,7 +26,7 @@ setuptools_kwargs = {
     'install_requires': [],
     'scripts': [],
     'include_package_data': True,
-    'install_requires' : ['pyomo>=5.6', 'numpy', 'pytest']
+    'install_requires' : ['pyomo>=5.6', 'numpy', 'pytest', 'pandas']
 }
 
 setup(name=DISTNAME,

@@ -14,6 +14,23 @@ import math
 from .uc_utils import add_model_attr 
 component_name = 'reserve_vars'
 
+def check_reserve_requirement(model):
+    system = model.model_data.data['system']
+    return ('reserve_requirement' in system)
+
+def _add_zero_reserve_hooks(model):
+
+    def max_power_available_above_min_rule(m, g, t):
+        return m.PowerGeneratedAboveMinimum[g,t]
+    model.MaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=max_power_available_above_min_rule)
+
+    def max_power_available_rule(m,g,t):
+        return m.PowerGenerated[g,t]
+    model.MaximumPowerAvailable = Expression(model.ThermalGenerators, model.TimePeriods, rule=max_power_available_rule)
+
+    model.ReserveProvided = Param(model.ThermalGenerators, model.TimePeriods, default=0.0)
+
+
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'status_vars': None,
                                             'power_vars': None,
@@ -25,6 +42,11 @@ def garver_power_avail_vars(model):
     idea from the Carrion-Arroyo paper for maximum power available 
     to consider maximum power available over minimum
     '''
+
+    ## only add reserves if the user specified them
+    if not check_reserve_requirement(model):
+        _add_zero_reserve_hooks(model)
+        return
 
     # amount of power produced by each generator above minimum, at each time period.
     def garver_power_bounds_rule(m, g, t):
@@ -65,6 +87,16 @@ def rescaled_power_avail_vars(model):
     and Dong (2017) for power available variables, though that paper does not
     explicitly have reserves.
     '''
+
+    ## only add reserves if the user specified them
+    if not check_reserve_requirement(model):
+        _add_zero_reserve_hooks(model)
+
+        def unit_max_power_avail_above_min_rule(m,g,t):
+            return model.UnitPowerGeneratedAboveMinimum[g,t]
+        model.UnitMaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods)
+
+        return
 
     model.UnitMaximumPowerAvailableAboveMinimum = Var(model.ThermalGenerators, model.TimePeriods, within=UnitInterval)
 
@@ -108,6 +140,11 @@ def MLR_reserve_vars(model):
 
     '''
 
+    ## only add reserves if the user specified them
+    if not check_reserve_requirement(model):
+        _add_zero_reserve_hooks(model)
+        return
+
     # amount of power produced by each generator above minimum, at each time period.
     def garver_power_bounds_rule(m, g, t):
         return (0, m.MaximumPowerOutput[g]-m.MinimumPowerOutput[g])
@@ -140,6 +177,11 @@ def CA_power_avail_vars(model):
     Liner Formulation for the Thermal Unit Commitment Problem. IEEE Transactions
     on Power Systems, Vol. 21, No. 3, Aug 2006.
     '''
+
+    ## only add reserves if the user specified them
+    if not check_reserve_requirement(model):
+        _add_zero_reserve_hooks(model)
+        return
 
     # amount of power produced by each generator, at each time period.
     def power_bounds_rule(m, g, t):

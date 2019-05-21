@@ -16,8 +16,8 @@ import pytest
 def pytest_addoption(parser):
     parser.addoption("--runmip", action="store_true", default=False,
                      help="If enabled, this solves the MIP for each unit "
-                          "commitment instance. For now, the solver gurobi "
-                          "is required for this test."
+                          "commitment instance. Either the Gurobi or CPLEX "
+                          " solver is required for this test."
                     )
 
 def pytest_collection_modifyitems(config, items):

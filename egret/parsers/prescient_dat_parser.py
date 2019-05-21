@@ -84,7 +84,7 @@ def create_model_data_dict(dat_file):
     elements['load'] = load_dict
 
     reserve_dict = { str(t) : value(params.ReserveRequirement[t]) for t in params.TimePeriods }
-    system['spinning_reserve_requirement'] = { 'data_type':'time_series', 'values': reserve_dict }
+    system['reserve_requirement'] = { 'data_type':'time_series', 'values': reserve_dict }
 
     branch_dict = dict()
     for l in sorted(params.TransmissionLines):
@@ -111,7 +111,7 @@ def create_model_data_dict(dat_file):
     zone_dict = dict()
     for z in sorted(params.ReserveZones):
         reserve_dict = { t : params.ZonalReserveRequirement[z,t] }
-        z_d = { 'spinning_reserve_requirement' : {'data_type': 'time_series', 'values' : reserve_dict } }
+        z_d = { 'reserve_requirement' : {'data_type': 'time_series', 'values' : reserve_dict } }
         zone_dict[z] = z_d
     elements['zone'] = zone_dict
 
@@ -121,8 +121,8 @@ def create_model_data_dict(dat_file):
         g_d = { 'generator_type':'thermal', }
         g_d['bus'] = gen_bus_dict[g]
         g_d['fuel'] = params.ThermalGeneratorType[g]
-        g_d['quickstart_capable'] = params.QuickStart[g]
-        g_d['must_run'] = params.MustRun[g]
+        g_d['fast_start'] = params.QuickStart[g]
+        g_d['fixed_commitment'] = (1 if params.MustRun[g] else None)
         g_d['in_service'] = True
         g_d['zone'] = params.ReserveZoneLocation[g]
         g_d['failure_rate'] = params.FailureProbability[g]
