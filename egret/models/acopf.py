@@ -688,10 +688,19 @@ def solve_acopf(model_data,
             b_dict['va'] = value(m.va[b])
 
     for k, k_dict in branches.items():
-        k_dict['pf'] = value(m.pf[k])
-        k_dict['pt'] = value(m.pt[k])
-        k_dict['qf'] = value(m.qf[k])
-        k_dict['qt'] = value(m.qt[k])
+        if hasattr(m,'pf'):
+            k_dict['pf'] = value(m.pf[k])
+            k_dict['pt'] = value(m.pt[k])
+            k_dict['qf'] = value(m.qf[k])
+            k_dict['qt'] = value(m.qt[k])
+        if hasattr(m,'irf'):
+            b = k_dict['from_bus']
+            k_dict['pf'] = value(tx_calc.calculate_p(value(m.ifr[k]), value(m.ifj[k]), value(m.vr[b]), value(m.vj[b])))
+            k_dict['qf'] = value(tx_calc.calculate_q(value(m.ifr[k]), value(m.ifj[k]), value(m.vr[b]), value(m.vj[b])))
+            b = k_dict['to_bus']
+            k_dict['pt'] = value(tx_calc.calculate_p(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
+            k_dict['qt'] = value(tx_calc.calculate_q(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
+
 
     unscale_ModelData_to_pu(md, inplace=True)
 
