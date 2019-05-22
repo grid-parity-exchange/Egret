@@ -297,6 +297,36 @@ class ModelData(object):
 
         return gd
 
+    def read_from_json(self, filename):
+        """
+        Reads the json file and overwrites the ModelData object dict.
+
+        Parameters
+        ----------
+        filename : *.json filename
+            The full filename including extension and path.
+        """
+        import json
+
+        with open(filename) as f:
+            data = json.load(f)
+
+        self.data = data
+
+    def write_to_json(self, filename):
+        """
+        Dumps the ModelData object dict to a json file.
+
+        Parameters
+        ----------
+        filename : *.json filename
+            The full filename including extension and path.
+        """
+        import json
+
+        with open(filename,'w') as f:
+            json.dump(self.data, f)
+
     def _replace_timeseries_with_value(self, node, timestamp):
         # loop over the attributes on this dict
         for key, att in node.items():

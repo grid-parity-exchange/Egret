@@ -37,8 +37,6 @@ def create_btheta_dcopf_model(model_data):
     gen_attrs = md.attributes(element_type='generator')
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
-    load_attrs = md.attributes(element_type='load')
-    shunt_attrs = md.attributes(element_type='shunt')
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
@@ -146,3 +144,92 @@ def create_btheta_dcopf_model(model_data):
     return model
 
 
+def solve_dcopf(model_data,
+                solver,
+                timelimit = None,
+                solver_tee = True,
+                symbolic_solver_labels = False,
+                options = None,
+                dcopf_model_generator = create_btheta_dcopf_model,
+                return_model = False,
+                return_results = False):
+    '''
+    Create and solve a new dcopf model
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    solver : str or pyomo.opt.base.solvers.OptSolver
+        Either a string specifying a pyomo solver name, or an instantiated pyomo solver
+    timelimit : float (optional)
+        Time limit for dcopf run. Default of None results in no time
+        limit being set.
+    solver_tee : bool (optional)
+        Display solver log. Default is True.
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels. Useful for debugging; default is False.
+    options : dict (optional)
+        Other options to pass into the solver. Default is dict().
+    dcopf_model_generator : function (optional)
+        Function for generating the dcopf model. Default is
+        egret.models.dcopf.create_btheta_dcopf_model
+    return_model : bool (optional)
+        If True, returns the pyomo model object
+    return_results : bool (optional)
+        If True, returns the pyomo results object
+    '''
+
+    import pyomo.environ as pe
+    from pyomo.environ import value
+    from egret.common.solver_interface import _solve_model
+    from egret.model_library.transmission.tx_utils import \
+        scale_ModelData_to_pu, unscale_ModelData_to_pu
+
+    m = dcopf_model_generator(model_data)
+
+    m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+
+    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+
+    md = model_data.clone_in_service()
+
+    # save results data to ModelData object
+    gens = dict(md.elements(element_type='generator'))
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+
+    md.data['system']['total_cost'] = value(m.obj)
+
+    for g,g_dict in gens.items():
+        g_dict['pg'] = value(m.pg[g])
+
+    for b,b_dict in buses.items():
+        b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
+        b_dict['va'] = value(m.va[b])
+        b_dict['pl'] = value(m.pl[b])
+
+    for k, k_dict in branches.items():
+        k_dict['pf'] = value(m.pf[k])
+
+    unscale_ModelData_to_pu(md, inplace=True)
+
+    if return_model and return_results:
+        return md, m, results
+    elif return_model:
+        return md, m
+    elif return_results:
+        return md, results
+    return md
+
+
+# if __name__ == '__main__':
+#     import os
+#     from egret.parsers.matpower_parser import create_ModelData
+#
+#     path = os.path.dirname(__file__)
+#     filename = 'pglib_opf_case3_lmbd.m'
+#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+#     md = create_ModelData(matpower_file)
+#     md = solve_dcopf(md, "gurobi")

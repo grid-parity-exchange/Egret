@@ -224,3 +224,46 @@ def calculate_vj_from_vm_va(vm, va):
         return vj
     return None
 
+
+def calculate_vm_from_vj_vr(vj,vr):
+    """
+    Compute the value of vm from vj and vr
+
+    Parameters
+    ----------
+    vj : float
+        The value of the imaginary part of the voltage phasor (per)
+    vr : float
+        The value of the real part of the voltage phasor (per)
+
+    Returns
+    -------
+        float : the value of the voltage magnitude vm or None if
+           either vj or vr (or both) is None
+    """
+    if vj is not None and vr is not None:
+        vm = math.sqrt(vj**2 + vr**2)
+        return vm
+    return None
+
+
+def calculate_va_from_vj_vr(vj, vr):
+    """
+    Compute the value of va from vj and vr
+
+    Parameters
+    ----------
+    vj : float
+        The value of the imaginary part of the voltage phasor (per)
+    vr : float
+        The value of the real part of the voltage phasor (per)
+
+    Returns
+    -------
+        float : the value of the voltage angle va in degrees or None if
+           either vj or vr (or both) is None
+    """
+    if vj is not None and vr is not None:
+        va = math.degrees(math.atan(vj/vr))
+        return va
+    return None
