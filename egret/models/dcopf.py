@@ -154,7 +154,8 @@ def solve_dcopf(model_data,
                 symbolic_solver_labels = False,
                 options = None,
                 dcopf_model_generator = create_btheta_dcopf_model,
-                return_model = False):
+                return_model = False,
+                return_results = False):
     '''
     Create and solve a new dcopf model
 
@@ -178,7 +179,8 @@ def solve_dcopf(model_data,
         egret.models.dcopf.create_btheta_dcopf_model
     return_model : bool (optional)
         If True, returns the pyomo model object
-
+    return_results : bool (optional)
+        If True, returns the pyomo results object
     '''
 
     import pyomo.environ as pe
@@ -194,7 +196,7 @@ def solve_dcopf(model_data,
     m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
 
-    md = model_data
+    md = model_data.clone_in_service()
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -216,9 +218,14 @@ def solve_dcopf(model_data,
 
     unscale_ModelData_to_pu(md, inplace=True)
 
-    if return_model:
+    if return_model and return_results:
+        return md, m, results
+    elif return_model:
         return md, m
+    elif return_results:
+        return md, results
     return md
+
 
 # if __name__ == '__main__':
 #     import os
@@ -228,4 +235,4 @@ def solve_dcopf(model_data,
 #     filename = 'pglib_opf_case3_lmbd.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
-#     solve_dcopf(md, "gurobi")
+#     md = solve_dcopf(md, "gurobi")

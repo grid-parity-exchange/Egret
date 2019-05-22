@@ -621,7 +621,8 @@ def solve_acopf(model_data,
                 symbolic_solver_labels = False,
                 options = None,
                 acopf_model_generator = create_psv_acopf_model,
-                return_model = False):
+                return_model = False,
+                return_results = False):
     '''
     Create and solve a new acopf model
 
@@ -645,7 +646,8 @@ def solve_acopf(model_data,
         egret.models.acopf.create_psv_acopf_model
     return_model : bool (optional)
         If True, returns the pyomo model object
-
+    return_results : bool (optional)
+        If True, returns the pyomo results object
     '''
 
     import pyomo.environ as pe
@@ -661,7 +663,7 @@ def solve_acopf(model_data,
     m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
 
-    md = model_data
+    md = model_data.clone_in_service()
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -679,8 +681,8 @@ def solve_acopf(model_data,
         b_dict['qlmp'] = value(m.dual[m.eq_q_balance[b]])
         b_dict['pl'] = value(m.pl[b])
         if hasattr(m, 'vj'):
-            b_dict['vm'] = tx_calc.calculate_vm_from_vj_vr(m.vj[b], m.vr[b])
-            b_dict['va'] = tx_calc.calculate_va_from_vj_vr(m.vj[b], m.vr[b])
+            b_dict['vm'] = tx_calc.calculate_vm_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
+            b_dict['va'] = tx_calc.calculate_va_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
         else:
             b_dict['vm'] = value(m.vm[b])
             b_dict['va'] = value(m.va[b])
@@ -693,8 +695,12 @@ def solve_acopf(model_data,
 
     unscale_ModelData_to_pu(md, inplace=True)
 
-    if return_model:
+    if return_model and return_results:
+        return md, m, results
+    elif return_model:
         return md, m
+    elif return_results:
+        return md, results
     return md
 
 # if __name__ == '__main__':
@@ -705,4 +711,5 @@ def solve_acopf(model_data,
 #     filename = 'pglib_opf_case3_lmbd.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
-#     solve_acopf(md, "ipopt")
+#     md = solve_acopf(md, "ipopt")
+
