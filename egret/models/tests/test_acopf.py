@@ -28,6 +28,13 @@ soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'acopf_so
 class TestPSVACOPF(unittest.TestCase):
     show_output = True
 
+    @classmethod
+    def setUpClass(self):
+        download_dir = os.path.join(current_dir, 'transmission_test_instances')
+        if not os.path.exists(os.path.join(download_dir, 'pglib-opf-master')):
+            from egret.thirdparty.get_pglib import get_pglib
+            get_pglib(download_dir)
+
     @parameterized.expand(zip(test_cases, soln_cases))
     def test_acopf_model(self, test_case, soln_case):
         acopf_model = create_psv_acopf_model
@@ -47,6 +54,13 @@ class TestPSVACOPF(unittest.TestCase):
 class TestRSVACOPF(unittest.TestCase):
     show_output = True
 
+    @classmethod
+    def setUpClass(self):
+        download_dir = os.path.join(current_dir, 'transmission_test_instances')
+        if not os.path.exists(os.path.join(download_dir, 'pglib-opf-master')):
+            from egret.thirdparty.get_pglib import get_pglib
+            get_pglib(download_dir)
+
     @parameterized.expand(zip(test_cases, soln_cases))
     def test_acopf_model(self, test_case, soln_case):
         acopf_model = create_rsv_acopf_model
@@ -65,6 +79,13 @@ class TestRSVACOPF(unittest.TestCase):
 
 class TestRIVACOPF(unittest.TestCase):
     show_output = True
+
+    @classmethod
+    def setUpClass(self):
+        download_dir = os.path.join(current_dir, 'transmission_test_instances')
+        if not os.path.exists(os.path.join(download_dir, 'pglib-opf-master')):
+            from egret.thirdparty.get_pglib import get_pglib
+            get_pglib(download_dir)
 
     @parameterized.expand(zip(test_cases, soln_cases))
     def test_acopf_model(self, test_case, soln_case):
