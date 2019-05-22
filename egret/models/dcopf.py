@@ -200,15 +200,11 @@ def solve_dcopf(model_data,
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
-    storage = dict(md.elements(element_type='storage'))
-    zones = dict(md.elements(element_type='zone'))
-    areas = dict(md.elements(element_type='area'))
 
     md.data['system']['total_cost'] = value(m.obj)
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
-
 
     for b,b_dict in buses.items():
         b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
@@ -219,7 +215,6 @@ def solve_dcopf(model_data,
         k_dict['pf'] = value(m.pf[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
-
 
     if return_model:
         return md, m

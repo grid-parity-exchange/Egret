@@ -849,11 +849,8 @@ def solve_unit_commitment(model_data,
 
 # if __name__ == '__main__':
 #     from egret.data.model_data import ModelData
-#     import json
 #
 #     file = "tests/uc_test_instances/test_case_1.json"
-#     with open(file) as f:
-#         data = json.load(f)
-#
-#     md = ModelData(data)
+#     md = ModelData()
+#     md.read_from_json(file)
 #     solve_unit_commitment(md, "gurobi")

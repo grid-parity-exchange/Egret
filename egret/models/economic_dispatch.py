@@ -134,23 +134,17 @@ def solve_economic_dispatch(model_data,
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
-    branches = dict(md.elements(element_type='branch'))
-    storage = dict(md.elements(element_type='storage'))
-    zones = dict(md.elements(element_type='zone'))
-    areas = dict(md.elements(element_type='area'))
 
     md.data['system']['total_cost'] = value(m.obj)
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
 
-
     for b,b_dict in buses.items():
         b_dict['pl'] = value(m.pl[b])
         b_dict['lmp'] = value(m.dual[m.eq_p_balance['0']])
 
     unscale_ModelData_to_pu(md, inplace=True)
-
 
     if return_model:
         return md, m

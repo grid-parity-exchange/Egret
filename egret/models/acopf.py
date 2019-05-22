@@ -667,9 +667,6 @@ def solve_acopf(model_data,
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
-    storage = dict(md.elements(element_type='storage'))
-    zones = dict(md.elements(element_type='zone'))
-    areas = dict(md.elements(element_type='area'))
 
     md.data['system']['total_cost'] = value(m.obj)
 
@@ -677,13 +674,16 @@ def solve_acopf(model_data,
         g_dict['pg'] = value(m.pg[g])
         g_dict['qg'] = value(m.qg[g])
 
-
     for b,b_dict in buses.items():
         b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
         b_dict['qlmp'] = value(m.dual[m.eq_q_balance[b]])
-        b_dict['vm'] = value(m.vm[b])
-        b_dict['va'] = value(m.va[b])
         b_dict['pl'] = value(m.pl[b])
+        if hasattr(m, 'vj'):
+            b_dict['vm'] = tx_calc.calculate_vm_from_vj_vr(m.vj[b], m.vr[b])
+            b_dict['va'] = tx_calc.calculate_va_from_vj_vr(m.vj[b], m.vr[b])
+        else:
+            b_dict['vm'] = value(m.vm[b])
+            b_dict['va'] = value(m.va[b])
 
     for k, k_dict in branches.items():
         k_dict['pf'] = value(m.pf[k])
@@ -692,7 +692,6 @@ def solve_acopf(model_data,
         k_dict['qt'] = value(m.qt[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
-
 
     if return_model:
         return md, m
