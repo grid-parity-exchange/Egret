@@ -17,10 +17,11 @@ from pyomo.opt import SolverFactory, TerminationCondition
 from egret.models.acopf import *
 from egret.data.model_data import ModelData
 from parameterized import parameterized
+from egret.parsers.matpower_parser import create_ModelData
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee']#,'pglib_opf_case3012wp_k','pglib_opf_case13659_pegase']
-test_cases = [os.path.join(current_dir, 'transmission_test_instances', '{}.json'.format(i)) for i in case_names]
+test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
 soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'acopf_solution_files', '{}_acopf_solution.json'.format(i)) for i in case_names]
 
 
@@ -34,8 +35,7 @@ class TestPSVACOPF(unittest.TestCase):
         md_soln = ModelData()
         md_soln.read_from_json(soln_case)
 
-        md_dict = ModelData()
-        md_dict.read_from_json(test_case)
+        md_dict = create_ModelData(test_case)
 
         md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True)
 
@@ -54,8 +54,7 @@ class TestRSVACOPF(unittest.TestCase):
         md_soln = ModelData()
         md_soln.read_from_json(soln_case)
 
-        md_dict = ModelData()
-        md_dict.read_from_json(test_case)
+        md_dict = create_ModelData(test_case)
 
         md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True)
 
@@ -74,8 +73,7 @@ class TestRIVACOPF(unittest.TestCase):
         md_soln = ModelData()
         md_soln.read_from_json(soln_case)
 
-        md_dict = ModelData()
-        md_dict.read_from_json(test_case)
+        md_dict = create_ModelData(test_case)
 
         md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True)
 
