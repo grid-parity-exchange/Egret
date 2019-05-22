@@ -134,6 +134,8 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     """
     Create the equality constraints for the real power balance
     at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     m = model
     _system_idx = ['0']
@@ -164,6 +166,8 @@ def declare_eq_p_balance_dc_approx(model, index_set,
     """
     Create the equality constraints for the real power balance
     at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     assert (approximation_type == ApproximationType.BTHETA
             and "Only the B-Theta approximation has been implemented.")
@@ -205,6 +209,8 @@ def declare_eq_p_balance(model, index_set,
     """
     Create the equality constraints for the real power balance
     at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
 
     m = model
@@ -245,6 +251,8 @@ def declare_eq_p_balance_with_i_aggregation(model, index_set,
     """
     Create the equality constraints for the real power balance
     at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     m = model
     con_set = decl.declare_set('_con_eq_p_balance', model, index_set)
@@ -280,6 +288,8 @@ def declare_eq_q_balance(model, index_set,
     """
     Create the equality constraints for the reactive power balance
     at a bus using the variables for reactive power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     m = model
     con_set = decl.declare_set('_con_eq_q_balance', model, index_set)
@@ -319,6 +329,8 @@ def declare_eq_q_balance_with_i_aggregation(model, index_set,
     """
     Create the equality constraints for the reactive power balance
     at a bus using the variables for reactive power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     m = model
     con_set = decl.declare_set('_con_eq_q_balance', model, index_set)
