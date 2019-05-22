@@ -46,7 +46,6 @@ install:
     - conda install -c conda-forge ipopt
     - conda install -c conda-forge coincbc
     - python setup.py develop
-    - python -c 'import os;cwd = os.getcwd();print("cwd: ", cwd);download_dir = os.path.join(cwd, "egret", "models", "tests", "transmission_test_instances");from egret.thirdparty.get_pglib import get_pglib;get_pglib(download_dir)'
 
 script:
     # CDL: This command is somehow recursing into Pyomo doctests - let's add doctest manually in the correct folder when
