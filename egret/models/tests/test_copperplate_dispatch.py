@@ -8,13 +8,13 @@
 #  ___________________________________________________________________________
 
 '''
-economic dispatch tester
+copperplate dispatch tester
 '''
 import os
 import math
 import unittest
 from pyomo.opt import SolverFactory, TerminationCondition
-from egret.models.economic_dispatch import *
+from egret.models.copperplate_dispatch import *
 from egret.data.model_data import ModelData
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +23,7 @@ test_cases = [os.path.join(current_dir, 'transmission_test_instances', '{}.json'
 soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'dcopf_solution_files', '{}_dcopf_solution.json'.format(i)) for i in case_names]
 
 
-def _test_economic_dispatch_model(economic_dispatch_model):
+def _test_copperplate_dispatch_model(copperplate_dispatch_model):
     for test_case, soln_case in zip(test_cases, soln_cases):
 
         md_soln = ModelData()
@@ -32,7 +32,7 @@ def _test_economic_dispatch_model(economic_dispatch_model):
         md_dict = ModelData()
         md_dict.read_from_json(test_case)
 
-        md, results = solve_economic_dispatch(md_dict, "gurobi", economic_dispatch_model_generator=economic_dispatch_model, solver_tee=False, return_results=True)
+        md, results = solve_copperplate_dispatch(md_dict, "gurobi", copperplate_dispatch_model_generator=copperplate_dispatch_model, solver_tee=False, return_results=True)
 
         assert results.solver.termination_condition == TerminationCondition.optimal
         assert math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e04)
@@ -41,12 +41,12 @@ def _test_economic_dispatch_model(economic_dispatch_model):
 @unittest.skipUnless(SolverFactory('gurobi').available(), "Gurobi solver is not available")
 
 
-def test_all_economic_dispatch_models():
-    _test_economic_dispatch_model(create_economic_dispatch_approx_model)
+def test_all_copperplate_dispatch_models():
+    _test_copperplate_dispatch_model(create_copperplate_dispatch_approx_model)
 
 
-def test_economic_dispatch_approx_model():
-    _test_economic_dispatch_model(create_economic_dispatch_approx_model)
+def test_copperplate_dispatch_approx_model():
+    _test_copperplate_dispatch_model(create_copperplate_dispatch_approx_model)
 
 # if __name__ == '__main__':
-#     test_all_economic_dispatch_models()
+#     test_all_copperplate_dispatch_models()

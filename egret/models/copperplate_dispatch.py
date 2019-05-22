@@ -8,7 +8,7 @@
 #  ___________________________________________________________________________
 
 """
-This module provides functions that create the modules for typical ACOPF formulations.
+This module provides functions that create the modules for typical copperplate dispatch formulations.
 
 #TODO: document this with examples
 """
@@ -24,7 +24,7 @@ from egret.data.model_data import map_items, zip_items
 from math import pi
 
 
-def create_economic_dispatch_approx_model(model_data):
+def create_copperplate_dispatch_approx_model(model_data):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -36,9 +36,6 @@ def create_economic_dispatch_approx_model(model_data):
 
     gen_attrs = md.attributes(element_type='generator')
     bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
-    load_attrs = md.attributes(element_type='load')
-    shunt_attrs = md.attributes(element_type='shunt')
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
@@ -82,17 +79,17 @@ def create_economic_dispatch_approx_model(model_data):
     return model
 
 
-def solve_economic_dispatch(model_data,
+def solve_copperplate_dispatch(model_data,
                 solver,
                 timelimit = None,
                 solver_tee = True,
                 symbolic_solver_labels = False,
                 options = None,
-                economic_dispatch_model_generator = create_economic_dispatch_approx_model,
+                copperplate_dispatch_model_generator = create_copperplate_dispatch_approx_model,
                 return_model = False,
                 return_results = False):
     '''
-    Create and solve a new economic dispatch model
+    Create and solve a new copperplate dispatch model
 
     Parameters
     ----------
@@ -109,9 +106,9 @@ def solve_economic_dispatch(model_data,
         Use symbolic solver labels. Useful for debugging; default is False.
     options : dict (optional)
         Other options to pass into the solver. Default is dict().
-    economic_dispatch_model_generator : function (optional)
-        Function for generating the economic dispatch model. Default is
-        egret.models.economic_dispatch.create_economic_dispatch_approx_model
+    copperplate_dispatch_model_generator : function (optional)
+        Function for generating the copperplate dispatch model. Default is
+        egret.models.copperplate_dispatch.create_copperplate_dispatch_approx_model
     return_model : bool (optional)
         If True, returns the pyomo model object
     return_results : bool (optional)
@@ -124,7 +121,7 @@ def solve_economic_dispatch(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
-    m = economic_dispatch_model_generator(model_data)
+    m = copperplate_dispatch_model_generator(model_data)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
@@ -165,4 +162,4 @@ def solve_economic_dispatch(model_data,
 #     filename = 'pglib_opf_case3_lmbd.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
-#     md = solve_economic_dispatch(md, "gurobi")
+#     md = solve_copperplate_dispatch(md, "gurobi")

@@ -186,6 +186,10 @@ def create_MLR_unit_commitment_model(model_data,
                                      network_constraints='power_balance_constraints',
                                      relaxed=False):
     '''
+    Create a new unit commitment model based on the formulation from
+    Morales-España, Germán, Jesus M. Latorre, and Andres Ramos. "Tight and
+    compact MILP formulation for the thermal unit commitment problem." IEEE
+    Transactions on Power Systems 28.4 (2013): 4897-4908.
 
     Parameters
     ----------
@@ -464,6 +468,10 @@ def create_CA_unit_commitment_model(model_data,
                                     network_constraints='power_balance_constraints',
                                     relaxed=False):
     '''
+    Create a new unit commitment model based on the formulation from
+    Carrión, Miguel, and José M. Arroyo. "A computationally efficient
+    mixed-integer linear formulation for the thermal unit commitment
+    problem." IEEE Transactions on power systems 21.3 (2006): 1371-1378.
 
     Parameters
     ----------
