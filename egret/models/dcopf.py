@@ -22,7 +22,6 @@ import egret.model_library.transmission.gen as libgen
 from egret.model_library.defn import CoordinateType, ApproximationType
 from egret.data.model_data import map_items, zip_items
 from math import pi
-from egret.common.solver_interface import _set_options
 
 
 def create_btheta_dcopf_model(model_data):
@@ -38,8 +37,6 @@ def create_btheta_dcopf_model(model_data):
     gen_attrs = md.attributes(element_type='generator')
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
-    load_attrs = md.attributes(element_type='load')
-    shunt_attrs = md.attributes(element_type='shunt')
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
