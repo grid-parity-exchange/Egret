@@ -20,7 +20,7 @@ from parameterized import parameterized
 from egret.parsers.matpower_parser import create_ModelData
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee']#,'pglib_opf_case3012wp_k','pglib_opf_case13659_pegase']
+case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee','pglib_opf_case3012wp_k','pglib_opf_case13659_pegase']
 test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
 soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'dcopf_solution_files', '{}_dcopf_solution.json'.format(i)) for i in case_names]
 
