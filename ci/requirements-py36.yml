@@ -9,5 +9,8 @@ dependencies:
     - pytest
     - six
     - nose
+    - matplotlib
+    - seaborn
+    - parameterized
     - pip:
         - coveralls
