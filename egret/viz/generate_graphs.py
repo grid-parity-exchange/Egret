@@ -65,11 +65,11 @@ def _indexed_dict_to_array(indexed_dict):
     return np.array([p[-1] for p in sorted(indexed_dict.items(), key=lambda x: x[0])])
 
 
-def generate_stack_graph_egret(egret_model_data, bar_width=0.9, 
-                                x_tick_frequency=1,
-                                title='', 
-                                plot_individual_generators=False,
-                                show_individual_components=False):
+def generate_stack_graph(egret_model_data, bar_width=0.9, 
+                            x_tick_frequency=1,
+                            title='', 
+                            plot_individual_generators=False,
+                            show_individual_components=False):
     '''
     Creates a stack graph using an egret ModelData object solved using the egret.models.unit_commitment.solve_unit_commitment() function.
 
@@ -384,64 +384,66 @@ def main():
     import json
     from egret.models.unit_commitment import solve_unit_commitment, create_tight_unit_commitment_model
 
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+
     ## Test using unit commitment unit test case(s)
-    # from egret.data.model_data import ModelData
+    from egret.data.model_data import ModelData
 
-    # test_cases = [os.path.join('egret', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1,6)]
+    test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1, 6)]
 
-    # for test_case in test_cases:   
-    #     with open(test_case, 'r') as f:
-    #         md_dict = json.load(f)
-    #     md = ModelData(md_dict)
+    for test_case in test_cases:   
+        with open(test_case, 'r') as f:
+            md_dict = json.load(f)
+        md = ModelData(md_dict)
 
-    #     solved_md = solve_unit_commitment(md,
-    #                     'cbc',
-    #                     mipgap = 0.001,
-    #                     timelimit = None,
-    #                     solver_tee = True,
-    #                     symbolic_solver_labels = False,
-    #                     options = None,
-    #                     uc_model_generator=create_tight_unit_commitment_model,
-    #                     relaxed=False,
-    #                     return_model=False)
+        solved_md = solve_unit_commitment(md,
+                        'cbc',
+                        mipgap = 0.001,
+                        timelimit = None,
+                        solver_tee = True,
+                        symbolic_solver_labels = False,
+                        options = None,
+                        uc_model_generator=create_tight_unit_commitment_model,
+                        relaxed=False,
+                        return_model=False)
 
-    #     fig, ax = generate_stack_graph_egret(
-    #         solved_md, 
-    #         title=repr(test_case),
-    #         show_individual_components=True,
-    #         plot_individual_generators=False,
-    #     )
-    
-    ## Test using RTS-GMLC case
-    from egret.parsers.rts_gmlc_parser import create_ModelData
-
-    rts_gmlc_dir = os.path.join('..', 'RTS-GMLC')
-    begin_time = "2020-07-01"
-    end_time = "2020-07-02"
-
-    md = create_ModelData(
-        rts_gmlc_dir, begin_time, end_time, 
-        # simulation="DAY_AHEAD", t0_state = None,
+        fig, ax = generate_stack_graph(
+            solved_md, 
+            title=repr(test_case),
+            show_individual_components=True,
+            plot_individual_generators=False,
         )
     
-    solved_md = solve_unit_commitment(md,
-                    'cbc',
-                    mipgap = 0.001,
-                    timelimit = None,
-                    solver_tee = True,
-                    symbolic_solver_labels = False,
-                    options = None,
-                    uc_model_generator=create_tight_unit_commitment_model,
-                    relaxed=False,
-                    return_model=False)
+    ## Test using RTS-GMLC case
+    # from egret.parsers.rts_gmlc_parser import create_ModelData
 
-    fig, ax = generate_stack_graph_egret(
-        solved_md, 
-        title=begin_time,
-        show_individual_components=False,
-        plot_individual_generators=False,
-        x_tick_frequency=4,
-    )
+    # rts_gmlc_dir = os.path.join(current_dir, '..', '..', '..', 'RTS-GMLC')
+    # begin_time = "2020-07-01"
+    # end_time = "2020-07-02"
+
+    # md = create_ModelData(
+    #     rts_gmlc_dir, begin_time, end_time, 
+    #     # simulation="DAY_AHEAD", t0_state = None,
+    #     )
+    
+    # solved_md = solve_unit_commitment(md,
+    #                 'cbc',
+    #                 mipgap = 0.001,
+    #                 timelimit = None,
+    #                 solver_tee = True,
+    #                 symbolic_solver_labels = False,
+    #                 options = None,
+    #                 uc_model_generator=create_tight_unit_commitment_model,
+    #                 relaxed=False,
+    #                 return_model=False)
+
+    # fig, ax = generate_stack_graph(
+    #     solved_md, 
+    #     title=begin_time,
+    #     show_individual_components=False,
+    #     plot_individual_generators=False,
+    #     x_tick_frequency=4,
+    # )
 
     plt.show()
 
