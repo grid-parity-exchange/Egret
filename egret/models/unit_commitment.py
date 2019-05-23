@@ -753,25 +753,29 @@ def solve_unit_commitment(model_data,
 
     ## NOTE: UC model currently has no notion of separate loads
 
-    for l,l_dict in branches.items():
-        pf_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
-            pf_dict[dt] = value(m.LinePower[l,mt])
-        l_dict['pf'] = _time_series_dict(pf_dict)
-
-    for b,b_dict in buses.items():
-        va_dict = {}
-        p_balance_violation_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
-            va_dict[dt] = value(m.Angle[b,mt])
-            p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
-        b_dict['va'] = _time_series_dict(va_dict)
-        b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
-        if relaxed:
-            lmp_dict = {}
+    if m.power_balance == 'power_balance_constraints':
+        for l,l_dict in branches.items():
+            pf_dict = {}
             for dt, mt in zip(data_time_periods,m.TimePeriods):
-                lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
-            b_dict['lmp'] = _time_series_dict(lmp_dict)
+                pf_dict[dt] = value(m.LinePower[l,mt])
+            l_dict['pf'] = _time_series_dict(pf_dict)
+
+        for b,b_dict in buses.items():
+            va_dict = {}
+            p_balance_violation_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                va_dict[dt] = value(m.Angle[b,mt])
+                p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
+            b_dict['va'] = _time_series_dict(va_dict)
+            b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
+            if relaxed:
+                lmp_dict = {}
+                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                    lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
+                b_dict['lmp'] = _time_series_dict(lmp_dict)
+    else:
+        ## TODO: for new egret power flow models
+        pass
 
 
     if reserve_requirement:
