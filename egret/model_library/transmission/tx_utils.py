@@ -306,6 +306,9 @@ scaled_attributes = {
                                                     'q_balance_violation',
                                                     'lmp',
                                                     'q_lmp',
+                                                    'qlmp',
+                                                    'pl',
+                                                    'ql',
                                                  ],
                        ('system_attributes', None ) : [
                                                         'load_mismatch_cost',
