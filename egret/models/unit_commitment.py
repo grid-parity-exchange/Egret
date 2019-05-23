@@ -26,7 +26,7 @@ def _get_uc_model(model_data, formulation_list, relax_binaries):
     return generate_model(md, formulation, relax_binaries)
 
 def create_tight_unit_commitment_model(model_data,
-                                       network_constraints='power_balance_constraints',
+                                       network_constraints='btheta_power_flow',
                                        relaxed=False):
     '''
     Create a new unit commitment model based on the "Tight" formulation from
@@ -66,7 +66,7 @@ def create_tight_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_compact_unit_commitment_model(model_data,
-                                         network_constraints='power_balance_constraints',
+                                         network_constraints='btheta_power_flow',
                                          relaxed=False):
     '''
     Create a new unit commitment model based on the "Compact" formulation from
@@ -106,7 +106,7 @@ def create_compact_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_KOW_unit_commitment_model(model_data,
-                                     network_constraints='power_balance_constraints',
+                                     network_constraints='btheta_power_flow',
                                      relaxed=False):
     '''
     Create a new unit commitment model based on the formulation from
@@ -122,6 +122,9 @@ def create_KOW_unit_commitment_model(model_data,
     network_constraints : str (optional)
         Set of network constraints to use. The default option uses a B-\\theta
         "DC" network.
+    relaxed : bool (optional)
+        If True, creates a model with the binary variables relaxed to [0,1].
+        Default is False.
 
     Returns
     -------
@@ -143,7 +146,7 @@ def create_KOW_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_ALS_unit_commitment_model(model_data,
-                                     network_constraints='power_balance_constraints',
+                                     network_constraints='btheta_power_flow',
                                      relaxed=False):
     '''
     Create a new unit commitment model based on the formulation from
@@ -183,7 +186,7 @@ def create_ALS_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_MLR_unit_commitment_model(model_data,
-                                     network_constraints='power_balance_constraints',
+                                     network_constraints='btheta_power_flow',
                                      relaxed=False):
     '''
     Create a new unit commitment model based on the formulation from
@@ -222,7 +225,7 @@ def create_MLR_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_random1_unit_commitment_model(model_data,
-                                         network_constraints='power_balance_constraints',
+                                         network_constraints='btheta_power_flow',
                                          relaxed=False):
     '''
     Create a new unit commitment model based on the "Random1" formulation from
@@ -262,7 +265,7 @@ def create_random1_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_random2_unit_commitment_model(model_data,
-                                         network_constraints='power_balance_constraints',
+                                         network_constraints='btheta_power_flow',
                                          relaxed=False):
     '''
     Create a new unit commitment model based on the "Random2" formulation from
@@ -302,7 +305,7 @@ def create_random2_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_OAV_unit_commitment_model(model_data,
-                                     network_constraints='power_balance_constraints',
+                                     network_constraints='btheta_power_flow',
                                      relaxed=False):
     '''
     Create a new unit commitment model based on the formulation from
@@ -342,7 +345,7 @@ def create_OAV_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_OAV_tighter_unit_commitment_model(model_data,
-                                             network_constraints='power_balance_constraints',
+                                             network_constraints='btheta_power_flow',
                                              relaxed=False):
     '''
     Create a new unit commitment model based on the formulation from
@@ -385,7 +388,7 @@ def create_OAV_tighter_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_OAV_original_unit_commitment_model(model_data,
-                                              network_constraints='power_balance_constraints',
+                                              network_constraints='btheta_power_flow',
                                               relaxed=False):
     '''
     Create a new unit commitment model based on the "original" formulation from
@@ -425,7 +428,7 @@ def create_OAV_original_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_OAV_up_downtime_unit_commitment_model(model_data,
-                                                 network_constraints='power_balance_constraints',
+                                                 network_constraints='btheta_power_flow',
                                                  relaxed=False):
     '''
     Create a new unit commitment model based on the "up/downtime" formulation from
@@ -465,7 +468,7 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 def create_CA_unit_commitment_model(model_data,
-                                    network_constraints='power_balance_constraints',
+                                    network_constraints='btheta_power_flow',
                                     relaxed=False):
     '''
     Create a new unit commitment model based on the formulation from
@@ -695,25 +698,52 @@ def solve_unit_commitment(model_data,
 
     ## NOTE: UC model currently has no notion of separate loads
 
-    for l,l_dict in branches.items():
-        pf_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
-            pf_dict[dt] = value(m.LinePower[l,mt])
-        l_dict['pf'] = _time_series_dict(pf_dict)
-
-    for b,b_dict in buses.items():
-        va_dict = {}
-        p_balance_violation_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
-            va_dict[dt] = value(m.Angle[b,mt])
-            p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
-        b_dict['va'] = _time_series_dict(va_dict)
-        b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
-        if relaxed:
-            lmp_dict = {}
+    if m.power_balance == 'btheta_power_flow':
+        for l,l_dict in branches.items():
+            pf_dict = {}
             for dt, mt in zip(data_time_periods,m.TimePeriods):
-                lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
-            b_dict['lmp'] = _time_series_dict(lmp_dict)
+                pf_dict[dt] = value(m.TransmissionBlock[mt].pf[l])
+            l_dict['pf'] = _time_series_dict(pf_dict)
+
+        for b,b_dict in buses.items():
+            va_dict = {}
+            p_balance_violation_dict = {}
+            pl_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                va_dict[dt] = value(m.TransmissionBlock[mt].va[b])
+                p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
+                pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
+            b_dict['va'] = _time_series_dict(va_dict)
+            b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
+            b_dict['pl'] = _time_series_dict(pl_dict)
+            if relaxed:
+                lmp_dict = {}
+                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                    lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
+                b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+    elif m.power_balance == 'power_balance_constraints':
+        for l,l_dict in branches.items():
+            pf_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                pf_dict[dt] = value(m.LinePower[l,mt])
+            l_dict['pf'] = _time_series_dict(pf_dict)
+
+        for b,b_dict in buses.items():
+            va_dict = {}
+            p_balance_violation_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                va_dict[dt] = value(m.Angle[b,mt])
+                p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
+            b_dict['va'] = _time_series_dict(va_dict)
+            b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
+            if relaxed:
+                lmp_dict = {}
+                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                    lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
+                b_dict['lmp'] = _time_series_dict(lmp_dict)
+    else:
+        raise Exception("Unrecongized network type "+m.power_balance)
 
 
     if reserve_requirement:

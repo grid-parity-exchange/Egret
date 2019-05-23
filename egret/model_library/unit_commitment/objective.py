@@ -123,15 +123,22 @@ def basic_objective(model):
         return m.LoadMismatchPenalty*m.TimePeriodLengthHours*sum(m.posLoadGenerateMismatch[b, t] + m.negLoadGenerateMismatch[b, t] for b in m.Buses) 
     model.LoadMismatchCost = Expression(model.TimePeriods, rule=compute_load_mismatch_cost_rule)
 
+    if model.reactive_power:
+        def compute_q_load_mismatch_cost_rule(m, t):
+            return m.LoadMismatchPenaltyReactive*m.TimePeriodLengthHours*sum(
+                        m.posLoadGenerateMismatchReactive[b, t] + m.negLoadGenerateMismatchReactive[b, t] for b in m.Buses) 
+        model.LoadMismatchCostReactive = Expression(model.TimePeriods, rule=compute_q_load_mismatch_cost_rule)
+
     def compute_reserve_shortfall_cost_rule(m, t):
         return m.ReserveShortfallPenalty*m.TimePeriodLengthHours*m.ReserveShortfall[t]
     model.ReserveShortfallCost = Expression(model.TimePeriods, rule=compute_reserve_shortfall_cost_rule)
     
     def generation_stage_cost_expression_rule(m, st):
-        ## NOTE: Production and Load/Reserve penalites are multiplied by time here, and not when constructed
         cc = sum(m.ProductionCost[g, t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) + \
               sum(m.LoadMismatchCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st])
+        if m.reactive_power:
+            cc += sum(m.LoadMismatchCostReactive[t] for t in m.GenerationTimeInStage[st])
         if m.storage_services:
             cc += sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
         if regulation:

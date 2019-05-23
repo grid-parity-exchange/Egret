@@ -15,6 +15,16 @@ from .uc_utils import add_model_attr
 
 component_name = 'generation_limits'
 
+def _add_reactive_limits(model, grid):
+
+    def reactive_upper_limit(m,g,t):
+        return m.ReactivePowerGenerated[g,t] <= m.MaximumReactivePowerOutput[g]*m.UnitOn[g,t]
+    model.EnforceReactiveUpperLimit = Constraint(model.ThermalGenerators, model.TimePeriods, rule=reactive_upper_limit)
+
+    def reactive_lower_limit(m,g,t):
+        return m.MinimumReactivePowerOutput[g]*m.UnitOn[g,t] <= m.ReactivePowerGenerated[g,t]
+    model.EnforceReactiveLowerLimit = Constraint(model.ThermalGenerators, model.TimePeriods, rule=reactive_lower_limit)
+
 def _CA_lower_limit(model):
 
     def enforce_generator_output_limits_rule_part_a(m, g, t):

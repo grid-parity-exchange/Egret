@@ -77,6 +77,7 @@ def load_params(model, model_data):
     warn_neg_load = False
 
     md = model_data
+    model.model_data = model_data
 
     system = md.data['system']
     elements = md.data['elements']
@@ -282,6 +283,17 @@ def load_params(model, model_data):
                                         validate=maximum_power_output_validator, 
                                         initialize=thermal_gen_attrs['p_max'],
                                         default=0.0)
+
+    model.MinimumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
+                                                initialize=thermal_gen_attrs.get('q_min'),
+                                                default=0.0)
+
+    def maximum_reactive_output_validator(m, v, g):
+        return v >= value(m.MinimumReactivePowerOutput[g])
+
+    model.MaximumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
+                                                initialize=thermal_gen_attrs.get('q_max'),
+                                                default=0.0)
     
     # wind is similar, but max and min will be equal for non-dispatchable wind
     
@@ -803,6 +815,7 @@ def load_params(model, model_data):
     BigPenalty = 1e4*system['baseMVA']
     
     model.LoadMismatchPenalty = Param(within=NonNegativeReals, default=BigPenalty, mutable=True, initialize=system.get('load_mismatch_cost'))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, default=BigPenalty/2., mutable=True, initialize=system.get('q_load_mismatch_cost'))
 
     ## END PRODUCTION COST CALCULATIONS
 

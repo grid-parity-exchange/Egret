@@ -41,8 +41,12 @@ def dict_of_bus_loads(buses, loads):
 
     for load_name, load in loads.items():
         bus_name = load['bus']
-        bus_p_loads[bus_name] += load['p_load']
-        bus_q_loads[bus_name] += load['q_load']
+        ## NOTE: for DC models we may not have q_load defined
+        ##       making this the same for p_load too..?
+        if 'p_load' in load:
+            bus_p_loads[bus_name] += load['p_load']
+        if 'q_load' in load:
+            bus_q_loads[bus_name] += load['q_load']
 
     return bus_p_loads, bus_q_loads
 
@@ -302,6 +306,9 @@ scaled_attributes = {
                                                     'q_balance_violation',
                                                     'lmp',
                                                     'q_lmp',
+                                                    'qlmp',
+                                                    'pl',
+                                                    'ql',
                                                  ],
                        ('system_attributes', None ) : [
                                                         'load_mismatch_cost',
