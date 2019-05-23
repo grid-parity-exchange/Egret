@@ -185,11 +185,10 @@ def create_ALS_unit_commitment_model(model_data,
 def create_MLR_unit_commitment_model(model_data,
                                      network_constraints='power_balance_constraints',
                                      relaxed=False):
-
     '''
     Create a new unit commitment model based on the formulation from
-    Morales-España, Germán, Jesus M. Latorre, and Andres Ramos. "Tight and 
-    compact MILP formulation for the thermal unit commitment problem." IEEE 
+    Morales-España, Germán, Jesus M. Latorre, and Andres Ramos. "Tight and
+    compact MILP formulation for the thermal unit commitment problem." IEEE
     Transactions on Power Systems 28.4 (2013): 4897-4908.
 
     Parameters
@@ -209,7 +208,6 @@ def create_MLR_unit_commitment_model(model_data,
         pyomo.environ.ConcreteModel unit commitment model
 
     '''
-
     formulation_list = [
                          'garver_3bin_vars',
                          'garver_power_vars',
@@ -471,8 +469,8 @@ def create_CA_unit_commitment_model(model_data,
                                     relaxed=False):
     '''
     Create a new unit commitment model based on the formulation from
-    Carrión, Miguel, and José M. Arroyo. "A computationally efficient 
-    mixed-integer linear formulation for the thermal unit commitment 
+    Carrión, Miguel, and José M. Arroyo. "A computationally efficient
+    mixed-integer linear formulation for the thermal unit commitment
     problem." IEEE Transactions on power systems 21.3 (2006): 1371-1378.
 
     Parameters
@@ -506,32 +504,6 @@ def create_CA_unit_commitment_model(model_data,
                        ]
     return _get_uc_model(model_data, formulation_list, relaxed)
 
-def _set_options(solver, mipgap, timelimit, other_options):
-    solver_name = solver.name
-
-    if 'gurobi' in solver_name:
-        solver.options.MIPGap = mipgap
-        if timelimit is not None:
-            solver.options.TimeLimit = timelimit
-    elif 'cplex' in solver_name:
-        solver.options.mip_tolerances_mipgap = mipgap
-        if timelimit is not None:
-            solver.options.timelimit = timelimit
-    elif 'glpk' in solver_name:
-        solver.options.mipgap = mipgap
-        if timelimit is not None:
-            solver.options.tmlim = timelimit
-    elif 'cbc' in solver_name:
-        solver.options.ratioGap = mipgap
-        if timelimit is not None:
-            solver.options.sec = timelimit
-    else:
-        raise Exception('Solver {0} not recognized'.format(solver_name))
-
-    if other_options is not None:
-        for key, opt in other_options.items():
-            solver.options[key] = opt
-
 def _time_series_dict(values):
     return {'data_type':'time_series', 'values':values}
 
@@ -542,9 +514,9 @@ def solve_unit_commitment(model_data,
                           solver_tee = True,
                           symbolic_solver_labels = False,
                           options = None,
-                          uc_model_generator=create_tight_unit_commitment_model,
-                          relaxed=False,
-                          return_model=False):
+                          uc_model_generator = create_tight_unit_commitment_model,
+                          relaxed = False,
+                          return_model = False):
     '''
     Create and solve a new unit commitment model
 
@@ -571,52 +543,24 @@ def solve_unit_commitment(model_data,
         egret.models.unit_commitment.create_tight_unit_commitment_model
     relaxed : bool (optional)
         If True, creates a relaxed unit commitment model
-
+    return_model : bool (optional)
+        If True, returns the pyomo model object
     '''
-    import pyomo.environ as pe
-    from pyomo.opt import SolverFactory, TerminationCondition
-    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
-    ## termination conditions which are acceptable
-    safe_termination_conditions = [ 
-                                   TerminationCondition.maxTimeLimit,
-                                   TerminationCondition.maxIterations,
-                                   TerminationCondition.minFunctionValue,
-                                   TerminationCondition.minStepLength,
-                                   TerminationCondition.globallyOptimal,
-                                   TerminationCondition.locallyOptimal,
-                                   TerminationCondition.feasible,
-                                   TerminationCondition.optimal,
-                                   TerminationCondition.maxEvaluations,
-                                   TerminationCondition.other,
-                                  ]
+    import pyomo.environ as pe
+    from pyomo.environ import value
+    from egret.common.solver_interface import _solve_model
 
     m = uc_model_generator(model_data, relaxed=relaxed)
 
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    if isinstance(solver, str):
-        solver = SolverFactory(solver)
-    elif isinstance(solver, pyomo.opt.base.OptSolver):
-        pass
-    else:
-        raise Exception('solver must be string or an instanciated pyomo solver')
-
-    _set_options(solver, mipgap, timelimit, options) 
-
-    if isinstance(solver, PersistentSolver):
-        solver.set_instance(m, symbolic_solver_labels=symbolic_solver_labels)
-        results = solver.solve(m, tee=solver_tee)
-    else:
-        results = solver.solve(m, tee=solver_tee, \
-                              symbolic_solver_labels=symbolic_solver_labels)
-
-    if results.solver.termination_condition not in safe_termination_conditions:
-        raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.terminataion_condition))
+    m, results = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options)
 
     md = m.model_data
 
+    # save results data to ModelData object
     thermal_gens = dict(md.elements(element_type='generator', generator_type='thermal'))
     renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
     buses = dict(md.elements(element_type='bus'))
@@ -627,9 +571,7 @@ def solve_unit_commitment(model_data,
 
     data_time_periods = md.data['system']['time_indices']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
-    value = pe.value
 
-    
     regulation = False
     spin = False
     nspin = False
@@ -917,3 +859,10 @@ def solve_unit_commitment(model_data,
         return md, m
     return md
 
+# if __name__ == '__main__':
+#     from egret.data.model_data import ModelData
+#
+#     file = "tests/uc_test_instances/test_case_1.json"
+#     md = ModelData()
+#     md.read_from_json(file)
+#     solve_unit_commitment(md, "gurobi")
