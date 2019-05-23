@@ -2,10 +2,20 @@ import os
 import json
 import unittest
 
-from egret.data.model_data import ModelData
-from egret.models.unit_commitment import solve_unit_commitment, create_tight_unit_commitment_model
-from egret.viz.generate_graphs import generate_stack_graph_egret
+try:
+    import matplotlib
+    import seaborn
+except (ImportError, ModuleNotFoundError):
+    viz_packages_installed = False
+else:
+    viz_packages_installed = True
 
+    from egret.viz.generate_graphs import generate_stack_graph
+    from egret.data.model_data import ModelData
+    from egret.models.unit_commitment import solve_unit_commitment, create_tight_unit_commitment_model
+
+
+@unittest.skipUnless(viz_packages_installed, "matplotlib and seaborn packages are both required to run and test the visualization capabilities.")
 class TestStackGraphWithUCTestInstances(unittest.TestCase):
     """Test class for running the unit commitment on the UC test instances and generating stack graphs for each."""
     def setUp(self):
@@ -32,7 +42,7 @@ class TestStackGraphWithUCTestInstances(unittest.TestCase):
                             relaxed=False,
                             return_model=False)
 
-            fig, ax = generate_stack_graph_egret(
+            fig, ax = generate_stack_graph(
                 solved_md, 
                 title=repr(test_case),
                 show_individual_components=False,
@@ -60,7 +70,7 @@ class TestStackGraphWithUCTestInstances(unittest.TestCase):
                             relaxed=False,
                             return_model=False)
 
-            fig, ax = generate_stack_graph_egret(
+            fig, ax = generate_stack_graph(
                 solved_md, 
                 title=repr(test_case),
                 show_individual_components=True,
@@ -90,7 +100,7 @@ class TestStackGraphWithUCTestInstances(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 # The number of generators in the test case exceeds the maximum for this feature.
-                fig, ax = generate_stack_graph_egret(
+                fig, ax = generate_stack_graph(
                     solved_md, 
                     title=repr(test_case),
                     show_individual_components=False,
@@ -120,7 +130,7 @@ class TestStackGraphWithUCTestInstances(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 # You cannot set both options to True simultaneously.
-                fig, ax = generate_stack_graph_egret(
+                fig, ax = generate_stack_graph(
                     solved_md, 
                     title=repr(test_case),
                     show_individual_components=True,

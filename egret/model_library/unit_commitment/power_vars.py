@@ -14,6 +14,12 @@ import math
 from .uc_utils import add_model_attr 
 component_name = 'power_vars'
 
+def _add_reactive_power_vars(model):
+
+    def reactive_power_bounds_rule(m,g,t):
+        return (m.MinimumReactivePowerOutput[g], m.MaximumReactivePowerOutput[g])
+    model.ReactivePowerGenerated = Var(model.ThermalGenerators, model.TimePeriods, within=Reals, bounds=reactive_power_bounds_rule)
+
 ## garver/ME power variables (above minimum)
 @add_model_attr(component_name, requires = {'data_loader': None, 'status_vars': None})
 def garver_power_vars(model):
