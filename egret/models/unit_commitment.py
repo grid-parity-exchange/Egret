@@ -695,7 +695,31 @@ def solve_unit_commitment(model_data,
 
     ## NOTE: UC model currently has no notion of separate loads
 
-    if m.power_balance == 'power_balance_constraints':
+    if m.power_balance == 'btheta_power_flow':
+        for l,l_dict in branches.items():
+            pf_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                pf_dict[dt] = value(m.TransmissionBlock[mt].pf[l])
+            l_dict['pf'] = _time_series_dict(pf_dict)
+
+        for b,b_dict in buses.items():
+            va_dict = {}
+            p_balance_violation_dict = {}
+            pl_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                va_dict[dt] = value(m.TransmissionBlock[mt].va[b])
+                p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
+                pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
+            b_dict['va'] = _time_series_dict(va_dict)
+            b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
+            b_dict['pl'] = _time_series_dict(pl_dict)
+            if relaxed:
+                lmp_dict = {}
+                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                    lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
+                b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+    elif m.power_balance == 'power_balance_constraints':
         for l,l_dict in branches.items():
             pf_dict = {}
             for dt, mt in zip(data_time_periods,m.TimePeriods):
@@ -716,8 +740,7 @@ def solve_unit_commitment(model_data,
                     lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
     else:
-        ## TODO: for new egret power flow models
-        pass
+        raise Exception("Unrecongized network type "+m.power_balance)
 
 
     if reserve_requirement:
