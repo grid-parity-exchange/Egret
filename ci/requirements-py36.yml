@@ -11,5 +11,6 @@ dependencies:
     - nose
     - matplotlib
     - seaborn
+    - parameterized
     - pip:
         - coveralls
