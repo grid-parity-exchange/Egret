@@ -11,7 +11,7 @@ Major features:
 * Generic handling of data across model formulations
 * Declarative model representation to support formulation development
 
-EGRET is available under the BDS License (see LICENSE.txt)
+EGRET is available under the BSD License (see LICENSE.txt)
 
 ### Installation
 
