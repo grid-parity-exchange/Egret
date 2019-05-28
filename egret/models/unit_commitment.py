@@ -599,6 +599,7 @@ def solve_unit_commitment(model_data,
         commitment_dict = {}
         commitment_cost_dict = {}
         production_cost_dict = {}
+        ramp_up_avail_dict = {}
 
         if regulation:
             reg_prov = {}
@@ -651,6 +652,10 @@ def solve_unit_commitment(model_data,
             if flex:
                 flex_up_supp[dt] = value(m.FlexUpProvided[g,mt])
                 flex_dn_supp[dt] = value(m.FlexDnProvided[g,mt])
+
+            ## we can use pe.Constraint.slack() to calculate this...but we need some standard
+            ## constraint names in the unit commitment model library
+            ramp_up_avail_dict[dt] = min(m.
 
 
 
