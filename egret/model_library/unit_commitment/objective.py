@@ -71,6 +71,8 @@ def _add_shutdown_costs(model, add_shutdown_cost_var=True):
                                             'production_costs': None,
                                             'power_balance': None,
                                             'reserve_requirement': None,
+                                            'storage_service': None,
+                                            'ancillary_service': None,
                                             })
 def basic_objective(model):
     '''
@@ -98,17 +100,16 @@ def basic_objective(model):
     nspin = False
     supp = False
     flex = False
-    if model.ancillary_services:
-        if hasattr(model, 'regulation_service'):
-            regulation = True
-        if hasattr(model, 'spinning_reserve'):
-            spin = True
-        if hasattr(model, 'non_spinning_reserve'):
-            nspin = True
-        if hasattr(model, 'supplemental_reserve'):
-            supp = True
-        if hasattr(model, 'flexible_ramping'):
-            flex = True
+    if hasattr(model, 'regulation_service'):
+        regulation = True
+    if hasattr(model, 'spinning_reserve'):
+        spin = True
+    if hasattr(model, 'non_spinning_reserve'):
+        nspin = True
+    if hasattr(model, 'supplemental_reserve'):
+        supp = True
+    if hasattr(model, 'flexible_ramping'):
+        flex = True
     
     def commitment_stage_cost_expression_rule(m, st):
         cc = sum(m.StartupCost[g,t] + m.ShutdownCost[g,t] for g in m.ThermalGenerators for t in m.CommitmentTimeInStage[st]) + \
@@ -137,10 +138,9 @@ def basic_objective(model):
         cc = sum(m.ProductionCost[g, t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) + \
               sum(m.LoadMismatchCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st])
+        cc += sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
         if m.reactive_power:
             cc += sum(m.LoadMismatchCostReactive[t] for t in m.GenerationTimeInStage[st])
-        if m.storage_services:
-            cc += sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
         if regulation:
             cc += sum(m.RegulationCostGeneration[g,t] for g in m.AGC_Generators for t in m.GenerationTimeInStage[st]) \
                 + sum(m.RegulationCostPenalty[t] for t in m.GenerationTimeInStage[st])
