@@ -363,6 +363,13 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
                 for point, cost in values_list_of_tuples:
                     new_values.append(( normal_op(point,baseMVA), cost))
                 attr['values'] = new_values
+        elif 'data_type' in attr and attr['data_type'] == 'fuel_curve':
+            values_list_of_tuples = attr['values']
+            new_values = list()
+            for point, fuel in values_list_of_tuples:
+                new_values.append(( normal_op(point,baseMVA), fuel))
+            attr['values'] = new_values
+
     else:
         op = _get_op(normal_op, inverse_op, attr_name)
         element[attr_name] = op( attr , baseMVA )
