@@ -38,8 +38,6 @@ def fuel_supply_model(model):
     md = model.model_data
 
     system = md.data['system']
-    elements = md.data['elements']
-
     time_keys = system['time_indices']
     TimeMapper = build_uc_time_mapping(time_keys)
 
@@ -119,9 +117,9 @@ def fuel_supply_model(model):
                             sum( m.StartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriods[g] \
                               if (list(m.ScaledStartupLags[g])[s-1] <= t - tp < (list(m.ScaledStartupLags[g])[s])) ) \
                             for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
-            elif model_startup_costs = 'MLR_startup_costs':
+            elif model_startup_costs == 'MLR_startup_costs':
                 return sum(_startup_fuel_consumed_function(m,g,s-1)*m.delta[g,s,t] for s in m.StartupCostIndices[g])
-            elif model_startup_costs = 'MLR_startup_costs2':
+            elif model_startup_costs == 'MLR_startup_costs2':
                 last_fuel_consumed = _startup_fuel_consumed_function(m,g,-1)
                 return last_fuel_consumed*m.UnitStart[g,t] + \
                            sum((_startup_fuel_consumed_function(m,g,s-1) - last_fuel_consumed)*m.delta[g,s,t] 
