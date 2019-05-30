@@ -591,6 +591,10 @@ def solve_unit_commitment(model_data,
     if hasattr(m, 'flexible_ramping'):
         flex = True
 
+    fs = False
+    if hasattr(m, 'fuel_supply'):
+        fs = True
+
     for g,g_dict in thermal_gens.items():
         pg_dict = {}
         if reserve_requirement:
@@ -613,6 +617,9 @@ def solve_unit_commitment(model_data,
         if flex:
             flex_up_supp = {}
             flex_dn_supp = {}
+        gfs = (fs and (g in m.FuelSupplyGenerators))
+        if gfs:
+            fuel_consumed = {}
 
         for dt, mt in zip(data_time_periods,m.TimePeriods):
             pg_dict[dt] = value(m.PowerGenerated[g,mt])
@@ -651,6 +658,8 @@ def solve_unit_commitment(model_data,
             if flex:
                 flex_up_supp[dt] = value(m.FlexUpProvided[g,mt])
                 flex_dn_supp[dt] = value(m.FlexDnProvided[g,mt])
+            if gfs:
+                fuel_consumed[dt] = value(m.FuelConsumed[g,mt])
 
         g_dict['pg'] = _time_series_dict(pg_dict)
         if reserve_requirement:
@@ -671,6 +680,8 @@ def solve_unit_commitment(model_data,
         if flex:
             g_dict['flex_up_supplied'] = _time_series_dict(flex_up_supp)
             g_dict['flex_down_supplied'] = _time_series_dict(flex_dn_supp)
+        if gfs:
+            g_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
 
     for g,g_dict in renewable_gens.items():
         pg_dict = {}
@@ -873,6 +884,19 @@ def solve_unit_commitment(model_data,
     _populate_zonal_reserves(zones, 'zone_')
 
     _populate_system_reserves(md.data['system'])
+
+    if fs:
+        fuel_supplies = dict(md.elements(element_type='fuel_supply'))
+        for f, f_dict in fuel_supplies.items():
+            fuel_consumed = {}
+            fuel_supply_type = f_dict['fuel_supply_type']
+            if fuel_supply_type == 'instantaneous':
+                for dt, mt in zip(data_time_periods, m.TimePeriods):
+                    fuel_consumed[dt] = value(m.TotalFuelConsumedAtInstFuelSupply[f,mt])
+            else:
+                print('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
+            f_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
+
     md.data['system']['total_cost'] = value(m.TotalCostObjective)
 
     unscale_ModelData_to_pu(md, inplace=True)
