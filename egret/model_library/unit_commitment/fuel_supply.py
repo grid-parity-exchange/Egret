@@ -41,23 +41,15 @@ def fuel_supply_model(model):
     time_keys = system['time_indices']
     TimeMapper = build_uc_time_mapping(time_keys)
 
-    
-    ## instantaneous fuel supply model
-    inst_fuel_supply_attrs = md.attributes(element_type='fuel_supply', fuel_supply_type='instantaneous')
 
+    ## generator fuel consumption model
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
 
-    model.InstantaneousFuelSupplies = Set(initialize=inst_fuel_supply_attrs['names'])
-
-    def inst_fuel_supply_gens_init(m):
+    def fuel_supply_gens_init(m):
         if 'fuel_supply' not in thermal_gen_attrs:
             print('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
             return
-        for g in thermal_gen_attrs['names']:
-            if g in thermal_gen_attrs['fuel_supply']:
-                f = thermal_gen_attrs['fuel_supply'][g]
-                if f in inst_fuel_supply_attrs['names']:
-                    yield g
+        return thermal_gen_attrs['fuel_supply'].keys()
 
     def gen_cost_fuel_validator(m,g):
         cost_curve = thermal_gen_attrs['p_cost'][g]
@@ -86,17 +78,9 @@ def fuel_supply_model(model):
                     print('ERROR: Found non-identical values for generator {}'.format(g))
         return True
 
-    model.InstFuelSupplyGenerators = Set(within=model.ThermalGenerators, initialize=inst_fuel_supply_gens_init, validate=gen_cost_fuel_validator)
+    model.FuelSupplyGenerators = Set(within=model.ThermalGenerators, initialize=fuel_supply_gens_init, validate=gen_cost_fuel_validator)
 
-    def gens_using_inst_fuel_supply_init(m, f):
-        for g in m.InstFuelSupplyGenerators:
-            if thermal_gen_attrs['fuel_supply'][g] == f:
-                yield g
-    model.ThermalGeneratorsUsingInstFuelSupply = Set(model.InstantaneousFuelSupplies, initialize=gens_using_inst_fuel_supply_init,)
-
-    model.InstFuelSupply = Param(model.InstantaneousFuelSupplies, model.TimePeriods, initialize=TimeMapper(inst_fuel_supply_attrs['fuel_available']))
-
-    model.InstFuelConsumed = Var(model.InstFuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
+    model.FuelConsumed = Var(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
 
     def _fuel_consumed_function(m, g, i):
         return thermal_gen_attrs['p_fuel'][g]['values'][i][1]*m.TimePeriodLengthHours
@@ -110,7 +94,7 @@ def fuel_supply_model(model):
         else:
             return 0.
 
-    model.ProductionFuelConsumed = Expression(model.InstFuelSupplyGenerators, model.TimePeriods, rule=production_fuel_consumed_rule)
+    model.ProductionFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=production_fuel_consumed_rule)
 
     def _startup_fuel_consumed_function(m, g, i):
         return thermal_gen_attrs['startup_fuel'][g][i][1]
@@ -136,19 +120,37 @@ def fuel_supply_model(model):
                 raise Exception('fuel_supply model requires one of KOW_startup_costs, MLR_startup_costs, or MLR_startup_costs2')
         else:
             return 0.
-    model.StartupFuelConsumed = Expression(model.InstFuelSupplyGenerators, model.TimePeriods, rule=startup_fuel_consumed_rule)
+    model.StartupFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=startup_fuel_consumed_rule)
 
     def fuel_consumed_constr_rule(m, g, t):
         ######  total fuel consumed   ==   fuel consumed above minimum + fuel consumed for being on and operating at p_min + fuel consumed for startup
-        return m.InstFuelConsumed[g,t] == m.ProductionFuelConsumed[g,t] + _fuel_consumed_function(m,g,0)*m.UnitOn[g,t] + m.StartupFuelConsumed[g,t]
-    model.FuelConsumedConstr = Constraint(model.InstFuelSupplyGenerators, model.TimePeriods, rule=fuel_consumed_constr_rule)
+        return m.FuelConsumed[g,t] == m.ProductionFuelConsumed[g,t] + _fuel_consumed_function(m,g,0)*m.UnitOn[g,t] + m.StartupFuelConsumed[g,t]
+    model.FuelConsumedConstr = Constraint(model.FuelSupplyGenerators, model.TimePeriods, rule=fuel_consumed_constr_rule)
+    ## end generator fuel consumption model
 
+    ## instantaneous fuel supply model
+    inst_fuel_supply_attrs = md.attributes(element_type='fuel_supply', fuel_supply_type='instantaneous')
+
+    model.InstantaneousFuelSupplies = Set(initialize=inst_fuel_supply_attrs['names'])
+
+    def gens_using_inst_fuel_supply_init(m, f):
+        for g in m.FuelSupplyGenerators:
+            if thermal_gen_attrs['fuel_supply'][g] == f:
+                yield g
+    model.ThermalGeneratorsUsingInstFuelSupply = Set(model.InstantaneousFuelSupplies, initialize=gens_using_inst_fuel_supply_init,)
+
+    model.InstFuelSupply = Param(model.InstantaneousFuelSupplies, model.TimePeriods, initialize=TimeMapper(inst_fuel_supply_attrs['fuel_available']))
+
+    def total_fuel_consumed_expr(m, f, t):
+        return sum(m.FuelConsumed[g,t] for g in m.ThermalGeneratorsUsingInstFuelSupply[f]) 
+    model.TotalFuelConsumedAtInstFuelSupply = Expression(model.InstantaneousFuelSupplies, model.TimePeriods, rule=total_fuel_consumed_expr)
 
     def total_fuel_consumed_rule(m, f, t):
         if m.ThermalGeneratorsUsingInstFuelSupply[f]:
-            return sum(m.InstFuelConsumed[g,t] for g in m.ThermalGeneratorsUsingInstFuelSupply[f]) <= m.InstFuelSupply[f,t]
+            return m.TotalFuelConsumedAtInstFuelSupply[f,t] <= m.InstFuelSupply[f,t]
         else:
             if t == m.TimePeriods.first():
                 print('WARNING: no generators attached to fuel_supply {}'.format(f))
             return Constraint.Feasible
     model.FuelLimitConstr = Constraint(model.InstantaneousFuelSupplies, model.TimePeriods, rule=total_fuel_consumed_rule)
+    ## end instantaneous fuel supply model
