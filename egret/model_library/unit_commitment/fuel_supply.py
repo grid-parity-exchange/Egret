@@ -50,6 +50,9 @@ def fuel_supply_model(model):
     model.InstantaneousFuelSupplies = Set(initialize=inst_fuel_supply_attrs['names'])
 
     def inst_fuel_supply_gens_init(m):
+        if 'fuel_supply' not in thermal_gen_attrs:
+            print('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
+            return
         for g in thermal_gen_attrs['names']:
             if g in thermal_gen_attrs['fuel_supply']:
                 f = thermal_gen_attrs['fuel_supply'][g]
@@ -63,19 +66,24 @@ def fuel_supply_model(model):
             print('All cost curves must be piecewise for fuel constrained generators')
             return False
         cost_curve = cost_curve['values']
-        fuel_curve = thermal_gen_attrs['p_fuel'][g]['values']
-        for ft, ct in zip(fuel_curve, cost_curve):
-            if not math.isclose(ft[0], ct[0]):
-                print('All output values for the cost curve and fuel curve must be identical')
-                print('Found non-identical values for generator {}'.format(g))
-                return False
+        if 'p_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['p_fuel']:
+            fuel_curve = thermal_gen_attrs['p_fuel'][g]['values']
+            for ft, ct in zip(fuel_curve, cost_curve):
+                if not math.isclose(ft[0], ct[0]):
+                    print('ERROR: All output values for the cost curve and fuel curve must be identical')
+                    print('ERROR: Found non-identical values for generator {}'.format(g))
+                    return False
+        else:
+            print('ERROR: All fuel-constrained generators must have "p_fuel" attribute which tracks their fuel consumption')
+            print('ERROR: Could not find such an attribute for generator {}'.format(g))
+            return False
         if 'startup_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['startup_fuel']:
             startup_fuel = thermal_gen_attrs['startup_fuel'][g]
             startup_cost = thermal_gen_attrs['startup_cost'][g]
             for ft, ct in zip(startup_fuel, startup_cost):
                 if not math.isclose(ft[0], ct[0]):
-                    print('All start-up hours for startup_fuel must be the same as those for startup_cost')
-                    print('Found non-identical values for generator {}'.format(g))
+                    print('ERROR: All start-up hours for startup_fuel must be the same as those for startup_cost')
+                    print('ERROR: Found non-identical values for generator {}'.format(g))
         return True
 
     model.InstFuelSupplyGenerators = Set(within=model.ThermalGenerators, initialize=inst_fuel_supply_gens_init, validate=gen_cost_fuel_validator)
@@ -91,7 +99,7 @@ def fuel_supply_model(model):
     model.InstFuelConsumed = Var(model.InstFuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
 
     def _fuel_consumed_function(m, g, i):
-        return thermal_gen_attrs['p_fuel']['values'][i][1]*m.TimePeriodLengthHours
+        return thermal_gen_attrs['p_fuel'][g]['values'][i][1]*m.TimePeriodLengthHours
 
     def production_fuel_consumed_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
@@ -107,13 +115,13 @@ def fuel_supply_model(model):
     def _startup_fuel_consumed_function(m, g, i):
         return thermal_gen_attrs['startup_fuel'][g][i][1]
 
-    model_startup_costs = m.startup_costs
+    model_startup_costs = model.startup_costs
     def startup_fuel_consumed_rule(m,g,t):
         if 'startup_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['startup_fuel']:
             if model_startup_costs == 'KOW_startup_costs':
                 last_fuel_consumed = _startup_fuel_consumed_function(m,g,-1)
                 return last_fuel_consumed*m.UnitStart[g,t] + \
-                            sum( (_startup_fuel_consumed_function[s-1] - last_fuel_consumed) * \
+                            sum( (_startup_fuel_consumed_function(m,g,s-1) - last_fuel_consumed) * \
                             sum( m.StartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriods[g] \
                               if (list(m.ScaledStartupLags[g])[s-1] <= t - tp < (list(m.ScaledStartupLags[g])[s])) ) \
                             for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
@@ -137,5 +145,10 @@ def fuel_supply_model(model):
 
 
     def total_fuel_consumed_rule(m, f, t):
-        return sum(m.InstFuelConsumed[g,t] for g in m.ThermalGeneratorsUsingInstFuelSupply[f]) <= m.InstFuelSupply[f,t]
+        if m.ThermalGeneratorsUsingInstFuelSupply[f]:
+            return sum(m.InstFuelConsumed[g,t] for g in m.ThermalGeneratorsUsingInstFuelSupply[f]) <= m.InstFuelSupply[f,t]
+        else:
+            if t == m.TimePeriods.first():
+                print('WARNING: no generators attached to fuel_supply {}'.format(f))
+            return Constraint.Feasible
     model.FuelLimitConstr = Constraint(model.InstantaneousFuelSupplies, model.TimePeriods, rule=total_fuel_consumed_rule)

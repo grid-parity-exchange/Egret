@@ -239,6 +239,7 @@ scaled_attributes = {
                                                           'non_spinning_supplied',
                                                           'supplemental_supplied',
                                                           'p_cost',
+                                                          'p_fuel',
                                                           'q_cost',
                                                           'agc_marginal_cost',
                                                           'spinning_cost',
