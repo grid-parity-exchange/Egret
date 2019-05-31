@@ -604,6 +604,24 @@ def solve_unit_commitment(model_data,
         production_cost_dict = {}
         ramp_up_avail_dict = {}
 
+        ## all of the potential constraints that could limit maximum output
+        ## Not all unit commitment models have these constraints, so first
+        ## we need check if they're on the model object
+        ramp_up_avail_potential_constrs = [
+                                          'EnforceMaxAvailableRampUpRates',
+                                          'AncillaryServiceRampUpLimit',
+                                          'power_limit_from_start',
+                                          'power_limit_from_stop',
+                                          'power_limit_from_start_stop',
+                                          'power_limit_from_start_stops',
+                                          'EnforceMaxAvailableRampDownRates',
+                                          'EnforceMaxCapacity',
+                                         ]
+        ramp_up_avail_constrs = []
+        for constr in ramp_up_avail_potential_constrs:
+            if hasattr(m, constr):
+                ramp_up_avail_constrs.append(getattr(m, constr))
+
         if regulation:
             reg_prov = {}
             reg_up_supp = {}
@@ -661,6 +679,16 @@ def solve_unit_commitment(model_data,
             if gfs:
                 fuel_consumed[dt] = value(m.FuelConsumed[g,mt])
 
+            ## pyomo doesn't add constraints that are skiped to the index set, so we also
+            ## need check here if the index exists.
+            slack_list = []
+            for constr in ramp_up_avail_constrs:
+                if (g,mt) in constr:
+                    slack_list.append(constr[g,mt].slack())
+
+            ramp_up_avail_dict[dt] = min( slack_list )
+
+
         g_dict['pg'] = _time_series_dict(pg_dict)
         if reserve_requirement:
             g_dict['rg'] = _time_series_dict(rg_dict)
@@ -682,6 +710,7 @@ def solve_unit_commitment(model_data,
             g_dict['flex_down_supplied'] = _time_series_dict(flex_dn_supp)
         if gfs:
             g_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
+        g_dict['headroom'] = _time_series_dict(ramp_up_avail_dict)
 
     for g,g_dict in renewable_gens.items():
         pg_dict = {}
