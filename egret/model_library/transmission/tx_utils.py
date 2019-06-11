@@ -231,6 +231,7 @@ scaled_attributes = {
                                                           'pg',
                                                           'qg',
                                                           'rg',
+                                                          'headroom'
                                                           'reg_up_supplied',
                                                           'reg_down_supplied',
                                                           'spin_supplied',
