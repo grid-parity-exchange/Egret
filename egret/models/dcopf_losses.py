@@ -10,7 +10,11 @@
 """
 This module provides functions that create the modules for typical DCOPF formulations.
 
+Note that since the losses model is quadratic, the create_btheta_losses_dcopf_model and
+the create_ptdf_losses_dcopf_model are not equivalent; the former is a QCP and the latter is a LP.
+
 #TODO: document this with examples
+
 """
 import pyomo.environ as pe
 import egret.model_library.transmission.tx_utils as tx_utils
@@ -376,21 +380,20 @@ def solve_dcopf_losses(model_data,
     return md
 
 
-if __name__ == '__main__':
-    import os
-    from egret.parsers.matpower_parser import create_ModelData
-
-    path = os.path.dirname(__file__)
-    case = 'pglib_opf_case30_ieee'
-    filename = case + '.m'
-    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-    md = create_ModelData(matpower_file)
-    model_data, model, results = solve_dcopf_losses(md, "ipopt", return_model=True, return_results=True)
-    #model_data.write_to_json(case + '_btheta_dcopf_losses_solution.json')
-    from acopf import solve_acopf
-    model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-
-    md = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model)
-    #md.write_to_json(case + '_ptdf_dcopf_losses_solution.json')
+# if __name__ == '__main__':
+#     import os
+#     from egret.parsers.matpower_parser import create_ModelData
+#
+#     path = os.path.dirname(__file__)
+#     case = 'pglib_opf_case30_ieee'
+#     filename = case + '.m'
+#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+#     md = create_ModelData(matpower_file)
+#     model_data, model, results = solve_dcopf_losses(md, "ipopt", return_model=True, return_results=True)
+#
+#     from acopf import solve_acopf
+#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
+#
+#     md = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model)
 
 

@@ -366,7 +366,8 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=Base
 def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
     """
     Compute the power flow constant for the taylor series expansion of real power flow as
-    a convex combination of the from/to directions
+    a convex combination of the from/to directions, i.e.,
+    pf = 0.5*g*((tau*vn)^2 - vm^2) - tau*vn*vm*b*sin(tn-tm-shift)
     """
 
     _len_branch = len(index_set_branch)
@@ -406,9 +407,9 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
 
 def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
     """
-    Compute the power losses constant for the taylor series expansion of real power flow  as
-    a convex combination of the from/to directions
-
+    Compute the power losses constant for the taylor series expansion of real power losses as
+    a convex combination of the from/to directions, i.e.,
+    pfl = g*((tau*vn)^2 + vm^2) - 2*tau*vn*vm*g*cos(tn-tm-shift)
     """
 
     _len_branch = len(index_set_branch)
@@ -483,7 +484,8 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
 
 def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION):
     """
-    Calculates the sensitivity of the voltage angle to real power injections
+    Calculates the sensitivity of the voltage angle to real power injections and losses on the lines. Includes the
+    calculation of the constant term for the quadratic losses on the lines.
     """
 
     _len_bus = len(index_set_bus)
