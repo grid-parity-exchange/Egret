@@ -141,7 +141,7 @@ def solve_copperplate_dispatch(model_data,
 
     for b,b_dict in buses.items():
         b_dict['pl'] = value(m.pl[b])
-        b_dict['lmp'] = value(m.dual[m.eq_p_balance['0']])
+        b_dict['lmp'] = value(m.dual[m.eq_p_balance])
 
     unscale_ModelData_to_pu(md, inplace=True)
 
@@ -154,12 +154,12 @@ def solve_copperplate_dispatch(model_data,
     return md
 
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     filename = 'pglib_opf_case3_lmbd.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
-#     md = solve_copperplate_dispatch(md, "gurobi")
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    filename = 'pglib_opf_case3_lmbd.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+    md = create_ModelData(matpower_file)
+    md = solve_copperplate_dispatch(md, "gurobi")
