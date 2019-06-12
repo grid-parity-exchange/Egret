@@ -121,7 +121,7 @@ def solve_copperplate_dispatch(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
-    m = copperplate_dispatch_model_generator(model_data)
+    m, md = copperplate_dispatch_model_generator(model_data)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
