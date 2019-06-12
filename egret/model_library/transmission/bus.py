@@ -138,7 +138,6 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     m = model
-    m.eq_p_balance = pe.Constraint(con_set)
 
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
@@ -177,8 +176,8 @@ def declare_eq_p_balance_dc_approx(model, index_set,
             p_expr = -sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
             p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
         elif approximation_type == ApproximationType.BTHETA_LOSSES:
-            p_expr = 0.5*sum([m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
-            p_expr += 0.5*sum([m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+            p_expr = -0.5*sum([m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr -= 0.5*sum([m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
             p_expr -= sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
             p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 

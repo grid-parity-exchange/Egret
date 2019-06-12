@@ -363,6 +363,89 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=Base
     return L11
 
 
+def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
+    """
+    Compute the power flow constant for the taylor series expansion of real power flow as
+    a convex combination of the from/to directions
+    """
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    pf_constant = np.zeros(_len_branch)
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+        g = calculate_conductance(branch)
+        b = calculate_susceptance(branch)/tau
+
+        if base_point == BasePointType.FLATSTART:
+            vn = 1.
+            vm = 1.
+            tn = 0.
+            tm = 0.
+        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+            tn = buses[from_bus]['va']
+            tm = buses[to_bus]['va']
+
+        pf_constant[idx_row] = 0.5 * g * ((vn/tau) ** 2 - vm ** 2) \
+                               - b * vn * vm * (sin(tn - tm - shift) - cos(tn - tm - shift)*(tn - tm))
+
+    return pf_constant
+
+
+def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
+    """
+    Compute the power losses constant for the taylor series expansion of real power flow  as
+    a convex combination of the from/to directions
+
+    """
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    pfl_constant = np.zeros(_len_branch)
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+        _g = calculate_conductance(branch)
+        g = _g/tau
+        g2 = _g/tau**2
+
+        if base_point == BasePointType.FLATSTART:
+            vn = 1.
+            vm = 1.
+            tn = 0.
+            tm = 0.
+        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+            tn = buses[from_bus]['va']
+            tm = buses[to_bus]['va']
+
+        pfl_constant[idx_row] = g2 * (vn ** 2) + _g * (vm ** 2) \
+                              - 2 * g * vn * vm * (sin(tn - tm - shift) * (tn - tm) + cos(tn - tm - shift))
+
+    return pfl_constant
+
 def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART):
     """
     Calculates the sensitivity of the voltage angle to real power injections
@@ -413,6 +496,9 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
 
     J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point,approximation_type=ApproximationType.PTDF_LOSSES)
     L = _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point)
+    Jc = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
+    Lc = _calculate_pfl_constant(branches,buses,index_set_branch,base_point)
+
     A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
     AA = calculate_absolute_adjacency_matrix(A)
     M1 = np.matmul(A.transpose(),J)
@@ -435,7 +521,12 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     PTDF = np.matmul(J, SENSI)
     LDF = np.matmul(L,SENSI)
 
-    return PTDF, LDF
+    M1 = np.matmul(A.transpose(), Jc)
+    M2 = np.matmul(AA.transpose(), Lc)
+    M = M1 + 0.5 * M2
+    LDF_constant = -np.matmul(LDF,M) + Lc
+
+    return PTDF, LDF, LDF_constant
 
 
 def calculate_adjacency_matrix(branches,index_set_branch,index_set_bus):

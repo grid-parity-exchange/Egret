@@ -25,7 +25,7 @@ from egret.data.model_data import map_items, zip_items
 from math import pi
 
 
-def create_btheta_dcopf_model(model_data):
+def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -142,11 +142,14 @@ def create_btheta_dcopf_model(model_data):
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
 
 
 def create_ptdf_dcopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
+
+    data_utils.create_dicts_of_ptdf(md)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -239,7 +242,7 @@ def create_ptdf_dcopf_model(model_data):
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
 
 def solve_dcopf(model_data,
                 solver,
@@ -283,14 +286,12 @@ def solve_dcopf(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
-    m = dcopf_model_generator(model_data)
+    m, md = dcopf_model_generator(model_data)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
-
-    md = model_data.clone_in_service()
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -303,9 +304,15 @@ def solve_dcopf(model_data,
         g_dict['pg'] = value(m.pg[g])
 
     for b,b_dict in buses.items():
-        b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
-        b_dict['va'] = value(m.va[b])
         b_dict['pl'] = value(m.pl[b])
+        if dcopf_model_generator == create_btheta_dcopf_model:
+            b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
+            b_dict['va'] = value(m.va[b])
+        if dcopf_model_generator == create_ptdf_dcopf_model:
+            b_dict['lmp'] = value(m.dual[m.eq_p_balance])
+            for k, k_dict in branches.items():
+                if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
+                    b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
 
     for k, k_dict in branches.items():
         k_dict['pf'] = value(m.pf[k])
@@ -329,4 +336,4 @@ def solve_dcopf(model_data,
 #     filename = 'pglib_opf_case3_lmbd.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
-#     md = solve_dcopf(md, "gurobi")
+#     md = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model)

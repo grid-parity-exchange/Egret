@@ -40,7 +40,7 @@ def create_dicts_of_ptdf_losses(md,base_point=BasePointType.SOLUTION):
     bus_attrs = md.attributes(element_type='bus')
 
     reference_bus = md.data['system']['reference_bus']
-    ptdf_r, ldf = tx_calc.calculate_ptdf_ldf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
+    ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
 
     _len_bus = len(bus_attrs['names'])
     _len_branch = len(branch_attrs['names'])
@@ -53,3 +53,5 @@ def create_dicts_of_ptdf_losses(md,base_point=BasePointType.SOLUTION):
 
         _row_ldf = {bus_attrs['names'][i]: ldf[idx,i] for i in list(range(0,_len_bus))}
         branch['ldf'] = _row_ldf
+
+        branch['ldf_c'] = ldf_c[idx]

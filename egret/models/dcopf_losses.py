@@ -25,8 +25,9 @@ from egret.data.model_data import map_items, zip_items
 from math import pi
 
 
-def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.NONE, include_angle_diff_limits=False):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC, include_angle_diff_limits=False):
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -169,11 +170,14 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
 
 
 def create_ptdf_losses_dcopf_model(model_data):
-    md = tx_utils.scale_ModelData_to_pu(model_data)
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
+
+    data_utils.create_dicts_of_ptdf_losses(md)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -223,7 +227,7 @@ def create_ptdf_losses_dcopf_model(model_data):
         ifj_init = tx_calc.calculate_ifj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
         pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
-    pfl_bounds = {k: (0,p_max[k]**2) for k in branches.keys()}
+    pfl_bounds = {k: (-p_max[k]**2,p_max[k]**2) for k in branches.keys()}
     pfl_init = {k: 0 for k in branches.keys()}
 
     libbranch.declare_var_pf(model=model,
@@ -284,84 +288,109 @@ def create_ptdf_losses_dcopf_model(model_data):
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
+
+def solve_dcopf_losses(model_data,
+                solver,
+                timelimit = None,
+                solver_tee = True,
+                symbolic_solver_labels = False,
+                options = None,
+                dcopf_losses_model_generator = create_btheta_losses_dcopf_model,
+                return_model = False,
+                return_results = False):
+    '''
+    Create and solve a new dcopf with losses model
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    solver : str or pyomo.opt.base.solvers.OptSolver
+        Either a string specifying a pyomo solver name, or an instantiated pyomo solver
+    timelimit : float (optional)
+        Time limit for dcopf run. Default of None results in no time
+        limit being set.
+    solver_tee : bool (optional)
+        Display solver log. Default is True.
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels. Useful for debugging; default is False.
+    options : dict (optional)
+        Other options to pass into the solver. Default is dict().
+    dcopf_model_generator : function (optional)
+        Function for generating the dcopf model. Default is
+        egret.models.dcopf.create_btheta_dcopf_model
+    return_model : bool (optional)
+        If True, returns the pyomo model object
+    return_results : bool (optional)
+        If True, returns the pyomo results object
+    '''
+
+    import pyomo.environ as pe
+    from pyomo.environ import value
+    from egret.common.solver_interface import _solve_model
+    from egret.model_library.transmission.tx_utils import \
+        scale_ModelData_to_pu, unscale_ModelData_to_pu
+
+    m, md = dcopf_losses_model_generator(model_data)
+
+    m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+
+    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+
+    # save results data to ModelData object
+    gens = dict(md.elements(element_type='generator'))
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+
+    md.data['system']['total_cost'] = value(m.obj)
+
+    for g,g_dict in gens.items():
+        g_dict['pg'] = value(m.pg[g])
+
+    for b,b_dict in buses.items():
+        b_dict['pl'] = value(m.pl[b])
+        b_dict.pop('qlmp',None)
+        if dcopf_losses_model_generator == create_btheta_losses_dcopf_model:
+            b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
+            b_dict['va'] = value(m.va[b])
+        if dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:
+            b_dict['lmp'] = value(m.dual[m.eq_p_balance])
+            for k, k_dict in branches.items():
+                if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
+                    b_dict['lmp'] += k_dict['ptdf_r'][b]*value(m.dual[m.eq_pf_branch[k]])
+                    b_dict['lmp'] += k_dict['ldf'][b]*value(m.dual[m.eq_pfl_branch[k]])
+
+    for k, k_dict in branches.items():
+        k_dict['pf'] = value(m.pf[k])
+
+    unscale_ModelData_to_pu(md, inplace=True)
+
+    if return_model and return_results:
+        return md, m, results
+    elif return_model:
+        return md, m
+    elif return_results:
+        return md, results
+    return md
+
 
 if __name__ == '__main__':
     import os
-
-    path = os.path.dirname(__file__)
-
-    case = 'pglib_opf_case24_ieee_rts'
-
-    matpower_file = os.path.join(path, '../../download/pglib-opf-old/' + case + '.m')
-
-    assert os.path.isfile(matpower_file)
-
     from egret.parsers.matpower_parser import create_ModelData
 
-    model_data = create_ModelData(matpower_file)
+    path = os.path.dirname(__file__)
+    case = 'pglib_opf_case30_ieee'
+    filename = case + '.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+    md = create_ModelData(matpower_file)
+    model_data, model, results = solve_dcopf_losses(md, "ipopt", return_model=True, return_results=True)
+    #model_data.write_to_json(case + '_btheta_dcopf_losses_solution.json')
+    from acopf import solve_acopf
+    model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
 
-    data_utils.create_dicts_of_ptdf(model_data)
-
-    model = create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC)
-
-    solver = pe.SolverFactory('gurobi')
-
-    results = solver.solve(model, tee=True)
-
-    # model.pfl.pprint()
-    # md = tx_utils.scale_ModelData_to_pu(model_data)
-    # gens = dict(md.elements(element_type='generator'))
-    # buses = dict(md.elements(element_type='bus'))
-    bus_attrs = model_data.attributes(element_type='bus')
-    # branch_attrs = md.attributes(element_type='branch')
-    # gens_by_bus = tx_utils.gens_by_bus(buses, gens)
-    # print(sum(model.pfl[branch_name].value for branch_name in branch_attrs['names']))
-    # print(sum(model.pl[bus_name].value for bus_name in bus_attrs['names']))
-    # print(sum(model.pg[gen_name].value for bus_name in bus_attrs['names'] for gen_name in gens_by_bus[bus_name]))
-    #
-    #from egret.models.acopf import create_psv_acopf_model
-    #model = create_psv_acopf_model(model_data)
-
-    #solver = pe.SolverFactory('ipopt')
-
-    #results = solver.solve(model, tee=True)
-
-    from egret.models.dcopf import create_btheta_dcopf_model, create_ptdf_dcopf_model
-
-    model = create_btheta_dcopf_model(model_data)
-    solver = pe.SolverFactory('gurobi')
-    results = solver.solve(model, tee=True)
-    #model.va.pprint()
-
-    # model = create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC)
-    # solver = pe.SolverFactory('gurobi')
-    # results = solver.solve(model, tee=True)
-    #model.va.pprint()
-
-    for i in bus_attrs['names']:
-        model_data.data['elements']['bus'][i]['va'] = model.va[i].value
-
-    data_utils.create_dicts_of_ptdf_losses(model_data)
-    model = create_ptdf_losses_dcopf_model(model_data)
-
-    #from egret.model_library.defn import BasePointType
-    #data_utils.create_dicts_of_ptdf(model_data, base_point=BasePointType.SOLUTION)
-    #model = create_ptdf_dcopf_model(model_data)
-
-    solver = pe.SolverFactory('gurobi')
-
-    results = solver.solve(model, tee=True)
-
-    model.pfl.pprint()
-    md = tx_utils.scale_ModelData_to_pu(model_data)
-    gens = dict(md.elements(element_type='generator'))
-    buses = dict(md.elements(element_type='bus'))
-    bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
-    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
-    print(sum(model.pfl[branch_name].value for branch_name in branch_attrs['names']))
-    print(sum(model.pl[bus_name].value for bus_name in bus_attrs['names']))
-    print(sum(model.pg[gen_name].value for bus_name in bus_attrs['names'] for gen_name in gens_by_bus[bus_name]))
+    md = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model)
+    #md.write_to_json(case + '_ptdf_dcopf_losses_solution.json')
 
 

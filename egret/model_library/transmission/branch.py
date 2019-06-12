@@ -431,6 +431,8 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, 
             for gen_name in gens_by_bus[bus_name]:
                 expr -= coef * m.pg[gen_name]
 
+        expr += branch['ldf_c']
+
         m.eq_pfl_branch[branch_name] = \
             m.pfl[branch_name] == expr
 

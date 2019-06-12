@@ -76,7 +76,7 @@ def create_copperplate_dispatch_approx_model(model_data):
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
 
 
 def solve_copperplate_dispatch(model_data,

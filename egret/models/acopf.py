@@ -209,7 +209,7 @@ def create_psv_acopf_model(model_data):
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
 
 
 def create_rsv_acopf_model(model_data):
@@ -397,7 +397,7 @@ def create_rsv_acopf_model(model_data):
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
 
 
 def create_riv_acopf_model(model_data):
@@ -611,7 +611,7 @@ def create_riv_acopf_model(model_data):
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
 
 
 def solve_acopf(model_data,
@@ -656,14 +656,12 @@ def solve_acopf(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
-    m = acopf_model_generator(model_data)
+    m, md = acopf_model_generator(model_data)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
-
-    md = model_data.clone_in_service()
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
