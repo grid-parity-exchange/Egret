@@ -20,7 +20,7 @@ from parameterized import parameterized
 from egret.parsers.matpower_parser import create_ModelData
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee','pglib_opf_case3012wp_k','pglib_opf_case13659_pegase']
+case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee','pglib_opf_case3012wp_k']
 test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
 soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'dcopf_solution_files', '{}_dcopf_solution.json'.format(i)) for i in case_names]
 
@@ -49,6 +49,21 @@ class TestBThetaDCOPF(unittest.TestCase):
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-4)
         self.assertTrue(comparison)
 
+
+    @parameterized.expand(zip(test_cases, soln_cases))
+    def test_ptdf_dcopf_model(self, test_case, soln_case):
+        dcopf_model = create_ptdf_dcopf_model
+
+        md_soln = ModelData()
+        md_soln.read_from_json(soln_case)
+
+        md_dict = create_ModelData(test_case)
+        print(test_case)
+        md, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False, return_results=True)
+
+        self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
+        comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-4)
+        self.assertTrue(comparison)
 
 if __name__ == '__main__':
      unittest.main()
