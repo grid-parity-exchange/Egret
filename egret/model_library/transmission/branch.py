@@ -325,7 +325,7 @@ def declare_eq_branch_power_btheta_approx(model, index_set, branches, approximat
 
         if approximation_type == ApproximationType.BTHETA:
             x = branch['reactance']
-            b = 1/(tau*x)
+            b = -1/(tau*x)
         elif approximation_type == ApproximationType.BTHETA_LOSSES:
             b = tx_calc.calculate_susceptance(branch)/tau
 

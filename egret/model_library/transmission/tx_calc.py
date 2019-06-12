@@ -296,7 +296,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=Base
 
         if approximation_type == ApproximationType.PTDF:
             x = branch['reactance']
-            b = 1/(tau*x)
+            b = -1/(tau*x)
         elif approximation_type == ApproximationType.PTDF_LOSSES:
             b = calculate_susceptance(branch)/tau
 
