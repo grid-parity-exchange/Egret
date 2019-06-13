@@ -35,18 +35,18 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
             return []
                                         ## adds the necessary index for starting-up after a shutdown before the time horizon began
         return (t for t in (list(m.TimePeriods)+([] if (value(m.UnitOnT0State[g]) >= 0) else [m.InitialTime + int(round(value(m.UnitOnT0State[g]/value(m.TimePeriodLengthHours))))])))
-    model.ValidShutdownTimePeriods=Set(model.ThermalGenerators, initialize=ValidShutdownTimePeriods_generator)
+    model.ValidShutdownTimePeriods=Set(model.SingleFuelGenerators, initialize=ValidShutdownTimePeriods_generator)
     
     def ShutdownHotStartupPairs_generator(m,g):
         ## for speed, if we don't have different startups
         if len(m.ScaledStartupLags[g]) <= 1:
             return [] 
         return ((t_prime, t) for t_prime in m.ValidShutdownTimePeriods[g] for t in m.TimePeriods if (m.ScaledStartupLags[g].first() <= t - t_prime < m.ScaledStartupLags[g].last()))
-    model.ShutdownHotStartupPairs = Set(model.ThermalGenerators, initialize=ShutdownHotStartupPairs_generator, dimen=2)
+    model.ShutdownHotStartupPairs = Set(model.SingleFuelGenerators, initialize=ShutdownHotStartupPairs_generator, dimen=2)
     
     # (g,t',t) will be an inidicator for g for shutting down at time t' and starting up at time t
     def StartupIndicator_domain_generator(m):
-        return ((g,t_prime,t) for g in m.ThermalGenerators for t_prime,t in m.ShutdownHotStartupPairs[g]) 
+        return ((g,t_prime,t) for g in m.SingleFuelGenerators for t_prime,t in m.ShutdownHotStartupPairs[g]) 
     model.StartupIndicator_domain=Set(initialize=StartupIndicator_domain_generator, dimen=3)
     
     if _is_relaxed(model):
@@ -60,10 +60,10 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     
     def startup_match_rule(m, g, t):
         return sum(m.StartupIndicator[g, t_prime, s] for (t_prime, s) in m.ShutdownHotStartupPairs[g] if s == t) <= m.UnitStart[g,t]
-    model.StartupMatch = Constraint(model.ThermalGenerators, model.TimePeriods, rule=startup_match_rule)
+    model.StartupMatch = Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=startup_match_rule)
     
     def GeneratorShutdownPeriods_generator(m):
-        return ((g,t) for g in m.ThermalGenerators for t in m.ValidShutdownTimePeriods[g])
+        return ((g,t) for g in m.SingleFuelGenerators for t in m.ValidShutdownTimePeriods[g])
     model.GeneratorShutdownPeriods = Set(initialize=GeneratorShutdownPeriods_generator, dimen=2)
     
     def shutdown_match_rule(m, g, t):
@@ -78,7 +78,7 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     model.ShutdownMatch = Constraint(model.GeneratorShutdownPeriods, rule=shutdown_match_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
     
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStart[g,t] + \
@@ -87,7 +87,7 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
                                            if (list(m.ScaledStartupLags[g])[s-1] <= t - tp < (list(m.ScaledStartupLags[g])[s])) ) \
                                          for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
     
-    model.ComputeStartupCosts=Constraint(model.ThermalGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
+    model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
     return
 
@@ -111,7 +111,7 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     ############################################################
     ## BK -- replace with delta's
     def startup_costs_index_set_generator(m):
-        return ((g,s,t) for t in m.TimePeriods for g in m.ThermalGenerators for s in m.StartupCostIndices[g])
+        return ((g,s,t) for t in m.TimePeriods for g in m.SingleFuelGenerators for s in m.StartupCostIndices[g])
     
     model.StartupCostsIndexSet = Set(initialize=startup_costs_index_set_generator, dimen=3)
     
@@ -123,7 +123,7 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     def delta_eq_rule(m,g,t):
         return sum(m.delta[g,s,t] for s in m.StartupCostIndices[g])==m.UnitStart[g,t]
     
-    model.delta_eq=Constraint(model.ThermalGenerators, model.TimePeriods, rule=delta_eq_rule)
+    model.delta_eq=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=delta_eq_rule)
     
     ## BK -- updated to reflect previous generator condition
     ## BK -- assumes initial time is 1
@@ -156,12 +156,12 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     model.delta_ineq=Constraint(model.StartupCostsIndexSet, rule=delta_ineq_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
     
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] == sum(m.delta[g,s,t]*list(m.StartupCosts[g])[s-1] for s in m.StartupCostIndices[g])
     
-    model.ComputeStartupCosts=Constraint(model.ThermalGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
+    model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
     return
 
@@ -179,14 +179,14 @@ def KOW_3bin_startup_costs(model, add_startup_cost_var=True):
     '''
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
+        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
     ############################################################
     
     def startup_costs_index_set_generator(m):
-       return ((g,t,i) for t in m.TimePeriods for g in m.ThermalGenerators for i in m.StartupCostIndices[g])
+       return ((g,t,i) for t in m.TimePeriods for g in m.SingleFuelGenerators for i in m.StartupCostIndices[g])
     
     model.StartupCostsIndexSet = Set(initialize=startup_costs_index_set_generator, dimen=3)
     
@@ -253,14 +253,14 @@ def CA_SHB_startup_costs(model, add_startup_cost_var=True):
     '''
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
+        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
     ############################################################
     
     def startup_costs_index_set_generator(m):
-       return ((g,t,i) for t in m.TimePeriods for g in m.ThermalGenerators for i in m.StartupCostIndices[g])
+       return ((g,t,i) for t in m.TimePeriods for g in m.SingleFuelGenerators for i in m.StartupCostIndices[g])
     
     model.StartupCostsIndexSet = Set(initialize=startup_costs_index_set_generator, dimen=3)
     
@@ -313,14 +313,14 @@ def CA_startup_costs(model, add_startup_cost_var=True):
     '''
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
+        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
     ############################################################
     
     def startup_costs_index_set_generator(m):
-       return ((g,t,i) for t in m.TimePeriods for g in m.ThermalGenerators for i in m.StartupCostIndices[g])
+       return ((g,t,i) for t in m.TimePeriods for g in m.SingleFuelGenerators for i in m.StartupCostIndices[g])
     
     model.StartupCostsIndexSet = Set(initialize=startup_costs_index_set_generator, dimen=3)
     
@@ -365,14 +365,14 @@ def ALS_startup_costs(model, add_startup_cost_var=True):
     Systems, 33(1):736–748, 2018.
 
     '''
-    model.StartupCostOverHot = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
+    model.StartupCostOverHot = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
     ############################################################
     
     def startup_costs_index_set_generator(m):
-       return ((g,t,i) for t in m.TimePeriods for g in m.ThermalGenerators for i in m.StartupCostIndices[g])
+       return ((g,t,i) for t in m.TimePeriods for g in m.SingleFuelGenerators for i in m.StartupCostIndices[g])
     
     model.StartupCostsIndexSet = Set(initialize=startup_costs_index_set_generator, dimen=3)
     
@@ -424,11 +424,11 @@ def ALS_startup_costs(model, add_startup_cost_var=True):
     model.ComputeStartupCostsOverHot = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
 
     def compute_startup_costs_expr_rule(m, g, t):
         return m.StartupCost[g,t] == m.StartupCostOverHot[g,t] + m.StartupCosts[g].first()*m.UnitStart[g,t]
-    model.ComputeStartupCosts = Constraint( model.ThermalGenerators, model.TimePeriods, rule=compute_startup_costs_expr_rule)
+    model.ComputeStartupCosts = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=compute_startup_costs_expr_rule)
 
 
 @add_model_attr(component_name, requires = {'data_loader': None,
@@ -443,14 +443,14 @@ def YZJMXD_startup_costs(model, add_startup_cost_var=True):
     power systems. Applied energy, 187:732–745, 2017.
     '''
 
-    model.StartupCostOverHot = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
+    model.StartupCostOverHot = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
     ############################################################
     
     def startup_costs_index_set_generator(m):
-       return ((g,t,i) for t in m.TimePeriods for g in m.ThermalGenerators for i in m.StartupCostIndices[g])
+       return ((g,t,i) for t in m.TimePeriods for g in m.SingleFuelGenerators for i in m.StartupCostIndices[g])
     
     model.StartupCostsIndexSet = Set(initialize=startup_costs_index_set_generator, dimen=3)
     
@@ -491,11 +491,11 @@ def YZJMXD_startup_costs(model, add_startup_cost_var=True):
     model.ComputeStartupCostsOverHot = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
 
     def compute_startup_costs_expr_rule(m, g, t):
         return m.StartupCost[g,t] ==  m.StartupCostOverHot[g,t] + m.StartupCosts[g].first()*m.UnitStart[g,t]
-    model.ComputeStartupCosts = Constraint( model.ThermalGenerators, model.TimePeriods, rule=compute_startup_costs_expr_rule)
+    model.ComputeStartupCosts = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=compute_startup_costs_expr_rule)
 
 
 @add_model_attr(component_name, requires = {'data_loader': None,
@@ -508,14 +508,14 @@ def KOW_3bin_startup_costs2(model, add_startup_cost_var=True):
     consider a hot start directly in the objective function
     '''
 
-    model.StartupCostOverHot = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
+    model.StartupCostOverHot = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
     ############################################################
     
     def startup_costs_index_set_generator(m):
-       return ((g,t,i) for t in m.TimePeriods for g in m.ThermalGenerators for i in m.StartupCostIndices[g])
+       return ((g,t,i) for t in m.TimePeriods for g in m.SingleFuelGenerators for i in m.StartupCostIndices[g])
     
     model.StartupCostsIndexSet = Set(initialize=startup_costs_index_set_generator, dimen=3)
     
@@ -567,11 +567,11 @@ def KOW_3bin_startup_costs2(model, add_startup_cost_var=True):
     model.ComputeStartupCostsOverHot = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
 
     def compute_startup_costs_expr_rule(m, g, t):
         return m.StartupCost[g,t] ==  m.StartupCostOverHot[g,t] + m.StartupCosts[g].first()*m.UnitStart[g,t]
-    model.ComputeStartupCosts = Constraint( model.ThermalGenerators, model.TimePeriods, rule=compute_startup_costs_expr_rule)
+    model.ComputeStartupCosts = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=compute_startup_costs_expr_rule)
 
     return
 
@@ -593,7 +593,7 @@ def MLR_startup_costs2(model, add_startup_cost_var=True):
     ############################################################
     ## BK -- replace with delta's
     def startup_costs_index_set_generator(m):
-        return ((g,s,t) for t in m.TimePeriods for g in m.ThermalGenerators for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
+        return ((g,s,t) for t in m.TimePeriods for g in m.SingleFuelGenerators for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
     
     model.StartupCostsIndexSet = Set(initialize=startup_costs_index_set_generator, dimen=3)
     
@@ -605,7 +605,7 @@ def MLR_startup_costs2(model, add_startup_cost_var=True):
     def delta_eq_rule(m,g,t):
         return sum(m.delta[g,s,t] for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g])) <= m.UnitStart[g,t]
     
-    model.delta_eq=Constraint(model.ThermalGenerators, model.TimePeriods, rule=delta_eq_rule)
+    model.delta_eq=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=delta_eq_rule)
     
     ## BK -- updated to reflect previous generator condition
     ## BK -- assumes initial time is 1
@@ -638,12 +638,12 @@ def MLR_startup_costs2(model, add_startup_cost_var=True):
     model.delta_ineq=Constraint(model.StartupCostsIndexSet, rule=delta_ineq_rule)
     
     if add_startup_cost_var:
-        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
 
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] ==  m.StartupCosts[g].last()*m.UnitStart[g,t] + \
                 sum(m.delta[g,s,t]*(list(m.StartupCosts[g])[s-1] - m.StartupCosts[g].last()) for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
-    model.ComputeStartupCosts=Constraint(model.ThermalGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
+    model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
     return
 

@@ -118,6 +118,7 @@ def load_params(model, model_data):
     renewable_gens_by_bus = tx_utils.gens_by_bus(buses, renewable_gens)
     storage_by_bus = tx_utils.gens_by_bus(buses, storage)
 
+
     #
     # Parameters
     #
@@ -187,7 +188,6 @@ def load_params(model, model_data):
     
     model.ThermalGenerators = Set(initialize=thermal_gen_attrs['names'])
     model.ThermalGeneratorsAtBus = Set(model.Buses, initialize=thermal_gens_by_bus)
-    
     model.ThermalGeneratorType = Param(model.ThermalGenerators, within=Any, default='C', initialize=thermal_gen_attrs.get('fuel'))
     
     def verify_thermal_generator_buses_rule(m, g):
@@ -198,6 +198,7 @@ def load_params(model, model_data):
        assert(False)
     
     model.VerifyThermalGeneratorBuses = BuildAction(model.ThermalGenerators, rule=verify_thermal_generator_buses_rule)
+
     
     model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('quickstart_capable'))
     
@@ -819,12 +820,199 @@ def load_params(model, model_data):
 
     ## END PRODUCTION COST CALCULATIONS
 
+
+    ## BEGIN DUAL-FUEL CHECKS AND INITIALIZATION
+
+    model.DualFuelGenerators = Set(within=model.ThermalGenerators,
+                                initialize=md.elements(element_type='generator', generator_type='thermal', aux_fuel_capable=True))
+
+    ## This set is for modeling elements that are exhanged
+    ## in whole for the dual-fuel model
+    model.SingleFuelGenerators = model.ThermalGenerators - model.DualFuelGenerators
+
+    def verify_dual_fuel_consistency(m, g):
+        gen = thermal_gens[g]
+        if gen['aux_fuel_blending'] and not gen['aux_fuel_online_switching']:
+            print("DATA ERROR: Dual fuel generators which are fuel blending capable must also be online fuel switching capable")
+            print("Generator {} had aux_fuel_blending = True and aux_fuel_online_switching=False".format(g))
+            assert(False)
+    model.VerifyDualFuelBlendingSwitchingConsistency = BuildAction(model.DualFuelGenerators, rule=verify_dual_fuel_consistency)
+
+    def verify_initial_fuel_defined(m, g):
+        if not value(m.UnitSwitchOperating[g]) and value(m.UnitOnT0[g]):
+            if 'aux_fuel_supply_initial' not in thermal_gen_attrs or g not in thermal_gen_attrs['aux_fuel_supply_initial']:
+                print("DATA ERROR: Couldn't find initial fuel for dual fuel generator "+g)
+                assert(False)
+    model.VerifyUnitInitialFuelDefined = BuildAction(model.DualFuelGenerators, rule=verify_initial_fuel_defined)
+
+    def verify_cost_aux_p_curves(m, g):
+        aux_cost_curve = thermal_gens[g]['aux_p_cost']
+        aux_cost_curve_type = aux_cost_curve['cost_curve_type']
+        if aux_cost_curve_type != 'piecewise':
+            print('All auxilary fuel cost curves must be piecewise')
+            assert False
+        aux_cost_values = aux_cost_curve['values']
+        first, last = aux_cost_values[0][0], aux_cost_values[-1][0]
+        p_min, p_max = thermal_gens[g]['p_min'], thermal_gens[g]['p_max'] 
+        if not math.isclose(first, p_min):
+            print('DATA ERROR: First piecewise point for aux_p_cost must be equal to p_min')
+            print('Generator: {0}, first piecewise point: {1}, p_min: {2}'.format(g, first, thermal_gens[g]['p_min']))
+            assert False
+        if not math.isclose(last, p_max):
+            print('DATA ERROR: Last piecewise point for aux_p_cost must be equal to p_max')
+            print('Generator: {0}, first piecewise point: {1}, p_min: {2}'.format(g, first, thermal_gens[g]['p_max']))
+            assert False
+
+        ## overwrite these values for the first and last, as above for numerical reasons
+        aux_cost_values[0][0], aux_cost_values[-1][0] = p_min, p_max
+
+    model.VerifyAuxPowerCurves = BuildAction(model.DualFuelGenerators, rule=verify_cost_aux_p_curves)
+
+    def prep_dual_fuel_cost_curve(m, g):
+
+        ## overwrite these values with those calculated above to make
+        ## building the dual-fuel model more straightforward
+        ## NOTE: Needs modifying if we allow for time-specific bids
+        t = m.InitialTime
+
+        p_min, p_max = thermal_gens[g]['p_min'], thermal_gens[g]['p_max'] 
+
+        pri_cost_curve = thermal_gens[g]['p_cost']
+        pri_cost_curve['cost_curve_type'] = 'piecewise'
+        pri_cost_curve['values'] = [ (m.PowerGenerationPiecewisePoints[g,t][i]+p_min, m.PowerGenerationPiecewiseValues[g,t][i]) \
+                                     for i in range(len(m.PowerGenerationPiecewisePoints[g,t])) ]
+
+        ## overwrite for p_max floating point error
+        pri_cost_curve['values'][0][-1] = p_max
+
+    model.PrepDualFuelPowerCostCurve = BuildAction(model.DualFuelGenerators, rule=prep_dual_fuel_cost_curve)
+
+    ########################################################
+    # auxilary startup cost parameters for each generator. #
+    ########################################################
+    
+    # startup costs are conceptually expressed as pairs (x, y), where x represents the number of hours that a unit has been off and y represents
+    # the cost associated with starting up the unit after being off for x hours. these are broken into two distinct ordered sets, as follows.
+    def aux_startup_lags_init_rule(m, g):
+        aux_startup_cost = thermal_gens[g].get('aux_startup_cost')
+        if aux_startup_cost is None:
+            ## use the StartupLags from before
+            return list(m.StartupLags[g])
+        else:
+            return [i[0] for i in aux_startup_cost]
+    model.AuxStartupLags = Set(model.DualFuelGenerators, within=NonNegativeReals, ordered=True, initialize=aux_startup_lags_init_rule) # units are hours / time periods.
+    
+    def aux_startup_costs_init_rule(m, g):
+        aux_startup_cost = thermal_gens[g].get('aux_startup_cost')
+        if aux_startup_cost is None:
+            return list(m.StartupCosts[g])
+        else:
+            return [i[1] for i in aux_startup_cost]
+    model.AuxStartupCosts = Set(model.DualFuelGenerators, within=NonNegativeReals, ordered=True, initialize=aux_startup_costs_init_rule) # units are $.
+    
+    # startup lags must be monotonically increasing...
+    def aux_validate_startup_lags_rule(m, g):
+        startup_lags = list(m.AuxStartupLags[g])
+    
+        if len(startup_lags) == 0:
+           print("DATA ERROR: The number of auxillary fuel startup lags for thermal generator="+str(g)+" must be >= 1.")
+           assert(False)
+    
+        if startup_lags[0] != value(m.MinimumDownTime[g]):
+           print("DATA ERROR: The first auxillary fuel startup lag for thermal generator="+str(g)+" must be equal the minimum down time="+str(value(m.MinimumDownTime[g]))+".")
+           assert(False)      
+    
+        for i in range(0, len(startup_lags)-1):
+           if startup_lags[i] >= startup_lags[i+1]:
+              print("DATA ERROR: auxillary fuel startup lags for thermal generator="+str(g)+" must be monotonically increasing.")
+              assert(False)
+    
+    model.AuxValidateStartupLags = BuildAction(model.DualFuelGenerators, rule=aux_validate_startup_lags_rule)
+    
+    # while startup costs must be monotonically non-decreasing!
+    def aux_validate_startup_costs_rule(m, g):
+       startup_costs = list(m.AuxStartupCosts[g])
+       for i in range(0, len(startup_costs)-2):
+          if startup_costs[i] > startup_costs[i+1]:
+             print("DATA ERROR: Auxillary fuel startup costs for thermal generator="+str(g)+" must be monotonically non-decreasing.")
+             assert(False)
+    
+    model.AuxValidateStartupCosts = BuildAction(model.DualFuelGenerators, rule=aux_validate_startup_costs_rule)
+    
+    def aux_validate_startup_lag_cost_cardinalities(m, g):
+       if len(m.AuxStartupLags[g]) != len(m.AuxStartupCosts[g]):
+          print("DATA ERROR: The number of auxillary fuel startup lag entries ("+str(len(m.AuxStartupLags[g]))+") for thermal generator="+str(g)+" must equal the number of startup cost entries ("+str(len(m.AuxStartupCosts[g]))+")")
+          assert(False)
+    
+    model.AuxValidateStartupLagCostCardinalities = BuildAction(model.DualFuelGenerators, rule=aux_validate_startup_lag_cost_cardinalities)
+    
+    # for purposes of defining constraints, it is useful to have a set to index the various startup costs parameters.
+    # entries are 1-based indices, because they are used as indicies into Pyomo sets - which use 1-based indexing.
+    
+    def aux_startup_cost_indices_init_rule(m, g):
+       return range(1, len(m.AuxStartupLags[g])+1)
+    
+    model.AuxStartupCostIndices = Set(model.DualFuelGenerators, within=NonNegativeIntegers, initialize=aux_startup_cost_indices_init_rule)
+    
+    ## TODO: Should these scaled parameters be handled somewhere else?? Just like we do now for baseMVA??
+    ## scale the auxillary startup lags
+    ## Again, assert that this must be at least one in the time units of the model
+    def scaled_aux_startup_lags_rule(m, g):
+        return [ max(int(round(this_lag / m.TimePeriodLengthHours)),1) for this_lag in m.AuxStartupLags[g] ]
+    model.ScaledAuxStartupLags = Set(model.DualFuelGenerators, within=NonNegativeIntegers, ordered=True, initialize=scaled_aux_startup_lags_rule)
+    ## END DUAL-FUEL
+
+    ## BEGIN FUEL SUPPLY CHECKS
+
+    def fuel_supply_gens_init(m):
+        if 'fuel_supply' in elements and ('fuel_supply' not in thermal_gen_attrs or 'aux_fuel_supply' not in thermal_gen_attrs):
+            print('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
+            return
+        return thermal_gen_attrs['fuel_supply'].keys()
+
+
+    def _make_gen_cost_fuel_validator(p_cost_k, p_fuel_k, startup_cost_k, startup_fuel_k):
+        def gen_cost_fuel_validator(m,g):
+            cost_curve = thermal_gen_attrs[p_cost_k][g]
+            cost_curve_type = cost_curve['cost_curve_type']
+            if cost_curve_type != 'piecewise':
+                print('All cost curves must be piecewise for fuel constrained generators')
+                return False
+            cost_curve = cost_curve['values']
+            if p_fuel_k in thermal_gen_attrs and g in thermal_gen_attrs[p_fuel_k]:
+                fuel_curve = thermal_gen_attrs[p_fuel_k][g]['values']
+                for ft, ct in zip(fuel_curve, cost_curve):
+                    if not math.isclose(ft[0], ct[0]):
+                        print('ERROR: All output values for {0} and {1} must be identical'.format(p_cost_k, p_fuel_k))
+                        print('ERROR: Found non-identical values for generator {}'.format(g))
+                        return False
+            else:
+                print('ERROR: All fuel-constrained generators must have "p_fuel" or "aux_p_fuel"'
+                        'attribute which tracks their fuel consumption for "fuel_supply" or "aux_fuel_supply')
+                print('ERROR: Could not find such an attribute for generator {}'.format(g))
+                return False
+            if startup_fuel_k in thermal_gen_attrs and g in thermal_gen_attrs[startup_fuel_k]:
+                startup_fuel = thermal_gen_attrs[startup_fuel_k][g]
+                startup_cost = thermal_gen_attrs[startup_cost_k][g]
+                for ft, ct in zip(startup_fuel, startup_cost):
+                    if not math.isclose(ft[0], ct[0]):
+                        print('ERROR: All start-up hours for {0} must be the same as those for {1}'.format(startup_fuel_k, startup_cost_k))
+                        print('ERROR: Found non-identical values for generator {}'.format(g))
+            return True
+        return gen_cost_fuel_validator
+
+    pri_gen_cost_fuel_validator = _make_gen_cost_fuel_validator('p_cost', 'p_fuel', 'startup_cost', 'startup_fuel')
+    model.FuelSupplyGenerators = Set(within=model.ThermalGenerators, initialize=fuel_supply_gens_init, validate=pri_gen_cost_fuel_validator)
+
+
+    aux_gen_cost_fuel_validator = _make_gen_cost_fuel_validator('aux_p_cost', 'aux_p_fuel', 'aux_startup_cost', 'aux_startup_fuel')
+    model.AuxFuelSupplyGenerators = Set(within=model.DualFuelGenerators, initialize=aux_fuel_supply_gens_init, validate=aux_gen_cost_fuel_validator)
+
+    ## END FUEL-SUPPLY CHECKS
+
     #
     # STORAGE parameters
     #
-    
-
-
     
     model.Storage = Set(initialize=storage_attrs['names'])
     model.StorageAtBus = Set(model.Buses, initialize=storage_by_bus)

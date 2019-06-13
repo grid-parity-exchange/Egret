@@ -7,7 +7,6 @@
 #  This software is distributed under the Revised BSD License.
 #  ___________________________________________________________________________
 
-## file for all the ancillary services
 from pyomo.environ import *
 import math
 
@@ -44,41 +43,6 @@ def fuel_supply_model(model):
 
     ## generator fuel consumption model
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
-
-    def fuel_supply_gens_init(m):
-        if 'fuel_supply' not in thermal_gen_attrs:
-            print('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
-            return
-        return thermal_gen_attrs['fuel_supply'].keys()
-
-    def gen_cost_fuel_validator(m,g):
-        cost_curve = thermal_gen_attrs['p_cost'][g]
-        cost_curve_type = cost_curve['cost_curve_type']
-        if cost_curve_type != 'piecewise':
-            print('All cost curves must be piecewise for fuel constrained generators')
-            return False
-        cost_curve = cost_curve['values']
-        if 'p_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['p_fuel']:
-            fuel_curve = thermal_gen_attrs['p_fuel'][g]['values']
-            for ft, ct in zip(fuel_curve, cost_curve):
-                if not math.isclose(ft[0], ct[0]):
-                    print('ERROR: All output values for the cost curve and fuel curve must be identical')
-                    print('ERROR: Found non-identical values for generator {}'.format(g))
-                    return False
-        else:
-            print('ERROR: All fuel-constrained generators must have "p_fuel" attribute which tracks their fuel consumption')
-            print('ERROR: Could not find such an attribute for generator {}'.format(g))
-            return False
-        if 'startup_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['startup_fuel']:
-            startup_fuel = thermal_gen_attrs['startup_fuel'][g]
-            startup_cost = thermal_gen_attrs['startup_cost'][g]
-            for ft, ct in zip(startup_fuel, startup_cost):
-                if not math.isclose(ft[0], ct[0]):
-                    print('ERROR: All start-up hours for startup_fuel must be the same as those for startup_cost')
-                    print('ERROR: Found non-identical values for generator {}'.format(g))
-        return True
-
-    model.FuelSupplyGenerators = Set(within=model.ThermalGenerators, initialize=fuel_supply_gens_init, validate=gen_cost_fuel_validator)
 
     model.FuelConsumed = Var(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
 
