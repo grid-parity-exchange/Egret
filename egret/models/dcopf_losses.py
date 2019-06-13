@@ -26,10 +26,12 @@ import egret.model_library.transmission.gen as libgen
 import egret.data.data_utils as data_utils
 from egret.model_library.defn import CoordinateType, ApproximationType, RelaxationType
 from egret.data.model_data import map_items, zip_items
+from egret.models.copperplate_dispatch import _include_system_feasibility_slack
+from egret.models.dcopf import _include_feasibility_slack
 from math import pi
 
 
-def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC, include_angle_diff_limits=False):
+def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC, include_angle_diff_limits=False, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -70,6 +72,12 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     libbranch.declare_var_dva(model, branch_attrs['names'],
                               initialize=dva_initialize
                               )
+
+    ### include the feasibility slack for the bus balances
+    p_rhs_kwargs = {}
+    penalty_expr = None
+    if include_feasibility_slack:
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -145,7 +153,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
                                           bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                           inlet_branches_by_bus=inlet_branches_by_bus,
                                           outlet_branches_by_bus=outlet_branches_by_bus,
-                                          approximation_type=ApproximationType.BTHETA_LOSSES
+                                          approximation_type=ApproximationType.BTHETA_LOSSES,
+                                          **p_rhs_kwargs
                                           )
 
     ### declare the real power flow limits
@@ -171,13 +180,15 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
                                                   )
 
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    if include_feasibility_slack:
+        obj_expr += penalty_expr
 
     model.obj = pe.Objective(expr=obj_expr)
 
     return model, md
 
 
-def create_ptdf_losses_dcopf_model(model_data):
+def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -215,6 +226,11 @@ def create_ptdf_losses_dcopf_model(model_data):
     libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init,
                           bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
                           )
+
+    ### include the feasibility slack for the system balance
+    p_rhs_kwargs = {}
+    if include_feasibility_slack:
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
 
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -271,7 +287,8 @@ def create_ptdf_losses_dcopf_model(model_data):
                                    bus_p_loads=bus_p_loads,
                                    gens_by_bus=gens_by_bus,
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                   include_losses=branch_attrs['names']
+                                   include_losses=branch_attrs['names'],
+                                   **p_rhs_kwargs
                                    )
 
     ### declare the real power flow limits
@@ -289,6 +306,8 @@ def create_ptdf_losses_dcopf_model(model_data):
                                                   )
 
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    if include_feasibility_slack:
+        obj_expr += penalty_expr
 
     model.obj = pe.Objective(expr=obj_expr)
 
@@ -302,7 +321,8 @@ def solve_dcopf_losses(model_data,
                 options = None,
                 dcopf_losses_model_generator = create_btheta_losses_dcopf_model,
                 return_model = False,
-                return_results = False):
+                return_results = False,
+                **kwargs):
     '''
     Create and solve a new dcopf with losses model
 
@@ -328,6 +348,8 @@ def solve_dcopf_losses(model_data,
         If True, returns the pyomo model object
     return_results : bool (optional)
         If True, returns the pyomo results object
+    kwargs : dictionary (optional)
+        Additional arguments for building model
     '''
 
     import pyomo.environ as pe
@@ -336,7 +358,7 @@ def solve_dcopf_losses(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
-    m, md = dcopf_losses_model_generator(model_data)
+    m, md = dcopf_losses_model_generator(model_data, **kwargs)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
@@ -380,20 +402,20 @@ def solve_dcopf_losses(model_data,
     return md
 
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     case = 'pglib_opf_case30_ieee'
-#     filename = case + '.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
-#     model_data, model, results = solve_dcopf_losses(md, "ipopt", return_model=True, return_results=True)
-#
-#     from acopf import solve_acopf
-#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-#
-#     md = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model)
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    case = 'pglib_opf_case30_ieee'
+    filename = case + '.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+    md = create_ModelData(matpower_file)
+    model_data, model, results = solve_dcopf_losses(md, "ipopt", return_model=True, return_results=True)
+
+    from acopf import solve_acopf
+    model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
+    kwargs = {'include_feasibility_slack': 'True'}
+    md = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model, **kwargs)
 
 

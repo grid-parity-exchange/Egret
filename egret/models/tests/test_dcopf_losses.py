@@ -36,7 +36,7 @@ class TestBThetaDCOPF(unittest.TestCase):
             get_pglib(download_dir)
 
     @parameterized.expand(zip(test_cases, btheta_soln_cases))
-    def test_btheta_losses_dcopf_model(self, test_case, soln_case):
+    def test_btheta_losses_dcopf_model(self, test_case, soln_case, include_kwargs=False):
         dcopf_losses_model = create_btheta_losses_dcopf_model
 
         md_soln = ModelData()
@@ -44,7 +44,10 @@ class TestBThetaDCOPF(unittest.TestCase):
 
         md_dict = create_ModelData(test_case)
 
-        md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model, solver_tee=False, return_results=True)
+        kwargs = {}
+        if include_kwargs:
+            kwargs = {'include_feasibility_slack': 'True'}
+        md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-4)
@@ -52,7 +55,7 @@ class TestBThetaDCOPF(unittest.TestCase):
 
 
     @parameterized.expand(zip(test_cases, ptdf_soln_cases))
-    def test_ptdf_losses_dcopf_model(self, test_case, soln_case):
+    def test_ptdf_losses_dcopf_model(self, test_case, soln_case, include_kwargs=False):
         dcopf_losses_model = create_ptdf_losses_dcopf_model
 
         md_soln = ModelData()
@@ -63,7 +66,10 @@ class TestBThetaDCOPF(unittest.TestCase):
         from egret.models.acopf import solve_acopf
         md_dict, _, _ = solve_acopf(md_dict, "ipopt", solver_tee=False, return_model=True, return_results=True)
 
-        md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model, solver_tee=False, return_results=True)
+        kwargs = {}
+        if include_kwargs:
+            kwargs = {'include_feasibility_slack': 'True'}
+        md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-4)

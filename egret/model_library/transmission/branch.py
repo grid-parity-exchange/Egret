@@ -110,8 +110,6 @@ def declare_eq_branch_dva(model, index_set, branches):
     m.eq_dva_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
-        if not branch['in_service']:
-            continue
 
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -346,8 +344,6 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
     m.eq_pfl_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
-        if not branch['in_service']:
-            continue
 
         tau = 1.0
         if branch['branch_type'] == 'transformer':
@@ -376,8 +372,6 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
     m.eq_pf_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
-        if not branch['in_service']:
-            continue
         expr = 0
 
         if approximation_type == ApproximationType.PTDF:
@@ -413,8 +407,6 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, 
     m.eq_pfl_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
-        if not branch['in_service']:
-            continue
         expr = 0
 
         ptdf = branch['ldf']

@@ -36,7 +36,7 @@ class TestPSVACOPF(unittest.TestCase):
             get_pglib(download_dir)
 
     @parameterized.expand(zip(test_cases, soln_cases))
-    def test_acopf_model(self, test_case, soln_case):
+    def test_acopf_model(self, test_case, soln_case, include_kwargs=False):
         acopf_model = create_psv_acopf_model
 
         md_soln = ModelData()
@@ -44,7 +44,10 @@ class TestPSVACOPF(unittest.TestCase):
 
         md_dict = create_ModelData(test_case)
 
-        md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True)
+        kwargs = {}
+        if include_kwargs:
+            kwargs = {'include_feasibility_slack': 'True'}
+        md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-4)
@@ -62,7 +65,7 @@ class TestRSVACOPF(unittest.TestCase):
             get_pglib(download_dir)
 
     @parameterized.expand(zip(test_cases, soln_cases))
-    def test_acopf_model(self, test_case, soln_case):
+    def test_acopf_model(self, test_case, soln_case, include_kwargs=False):
         acopf_model = create_rsv_acopf_model
 
         md_soln = ModelData()
@@ -70,7 +73,10 @@ class TestRSVACOPF(unittest.TestCase):
 
         md_dict = create_ModelData(test_case)
 
-        md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True)
+        kwargs = {}
+        if include_kwargs:
+            kwargs = {'include_feasibility_slack': 'True'}
+        md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-4)
@@ -88,7 +94,7 @@ class TestRIVACOPF(unittest.TestCase):
             get_pglib(download_dir)
 
     @parameterized.expand(zip(test_cases, soln_cases))
-    def test_acopf_model(self, test_case, soln_case):
+    def test_acopf_model(self, test_case, soln_case, include_kwargs=False):
         acopf_model = create_riv_acopf_model
 
         md_soln = ModelData()
@@ -96,7 +102,10 @@ class TestRIVACOPF(unittest.TestCase):
 
         md_dict = create_ModelData(test_case)
 
-        md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True)
+        kwargs = {}
+        if include_kwargs:
+            kwargs = {'include_feasibility_slack': 'True'}
+        md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-4)

@@ -25,7 +25,36 @@ from egret.data.model_data import map_items, zip_items
 from math import pi
 
 
-def create_psv_acopf_model(model_data):
+def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads, penalty=1000):
+    import egret.model_library.decl as decl
+    slack_init = {k: 0 for k in bus_attrs['names']}
+    slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
+    decl.declare_var('p_slack_pos', model=model, index_set=bus_attrs['names'],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    decl.declare_var('p_slack_neg', model=model, index_set=bus_attrs['names'],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    slack_bounds = {k: (0, sum(bus_q_loads.values())) for k in bus_attrs['names']}
+    decl.declare_var('q_slack_pos', model=model, index_set=bus_attrs['names'],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    decl.declare_var('q_slack_neg', model=model, index_set=bus_attrs['names'],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
+    q_rhs_kwargs = {'include_feasibility_slack_pos':'q_slack_pos','include_feasibility_slack_neg':'q_slack_neg'}
+
+    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
+    q_penalty = penalty * (max(gen_attrs.get('q_cost', gen_attrs['p_cost'])[k]['values'][1] for k in gen_attrs['names']) + 1)
+
+    penalty_expr = sum(p_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
+                    + q_penalty * (model.q_slack_pos[bus_name] + model.q_slack_neg[bus_name])
+                    for bus_name in bus_attrs['names'])
+    return p_rhs_kwargs, q_rhs_kwargs, penalty_expr
+
+
+def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -67,6 +96,12 @@ def create_psv_acopf_model(model_data):
     libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
                           bounds=va_bounds
                           )
+
+    ### include the feasibility slack for the bus balances
+    p_rhs_kwargs = {}
+    q_rhs_kwargs = {}
+    if include_feasibility_slack:
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -161,7 +196,8 @@ def create_psv_acopf_model(model_data):
                                 bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.POLAR
+                                coordinate_type=CoordinateType.POLAR,
+                                **p_rhs_kwargs
                                 )
 
     libbus.declare_eq_q_balance(model=model,
@@ -171,7 +207,8 @@ def create_psv_acopf_model(model_data):
                                 bus_bs_fixed_shunts=bus_bs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.POLAR
+                                coordinate_type=CoordinateType.POLAR,
+                                **q_rhs_kwargs
                                 )
 
     ### declare the thermal limits
@@ -204,6 +241,8 @@ def create_psv_acopf_model(model_data):
                                                   )
 
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    if include_feasibility_slack:
+        obj_expr += penalty_expr
     if hasattr(model, 'qg_operating_cost'):
         obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
 
@@ -212,7 +251,7 @@ def create_psv_acopf_model(model_data):
     return model, md
 
 
-def create_rsv_acopf_model(model_data):
+def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -256,6 +295,12 @@ def create_rsv_acopf_model(model_data):
     libbus.declare_var_vj(model, bus_attrs['names'], initialize=vj_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
+
+    ### include the feasibility slack for the bus balances
+    p_rhs_kwargs = {}
+    q_rhs_kwargs = {}
+    if include_feasibility_slack:
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -349,7 +394,8 @@ def create_rsv_acopf_model(model_data):
                                 bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.RECTANGULAR
+                                coordinate_type=CoordinateType.RECTANGULAR,
+                                **p_rhs_kwargs
                                 )
 
     libbus.declare_eq_q_balance(model=model,
@@ -359,7 +405,8 @@ def create_rsv_acopf_model(model_data):
                                 bus_bs_fixed_shunts=bus_bs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.RECTANGULAR
+                                coordinate_type=CoordinateType.RECTANGULAR,
+                                **q_rhs_kwargs
                                 )
 
     ### declare the thermal limits
@@ -392,6 +439,8 @@ def create_rsv_acopf_model(model_data):
                                                   )
 
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    if include_feasibility_slack:
+        obj_expr += penalty_expr
     if hasattr(model, 'qg_operating_cost'):
         obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
 
@@ -400,7 +449,7 @@ def create_rsv_acopf_model(model_data):
     return model, md
 
 
-def create_riv_acopf_model(model_data):
+def create_riv_acopf_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -444,6 +493,12 @@ def create_riv_acopf_model(model_data):
     libbus.declare_var_vj(model, bus_attrs['names'], initialize=vj_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
+
+    ### include the feasibility slack for the bus balances
+    p_rhs_kwargs = {}
+    q_rhs_kwargs = {}
+    if include_feasibility_slack:
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -568,12 +623,14 @@ def create_riv_acopf_model(model_data):
                                                    index_set=bus_attrs['names'],
                                                    bus_p_loads=bus_p_loads,
                                                    gens_by_bus=gens_by_bus,
+                                                   **p_rhs_kwargs
                                                    )
 
     libbus.declare_eq_q_balance_with_i_aggregation(model=model,
                                                    index_set=bus_attrs['names'],
                                                    bus_q_loads=bus_q_loads,
                                                    gens_by_bus=gens_by_bus,
+                                                   **q_rhs_kwargs
                                                    )
 
     ### declare the thermal limits
@@ -606,6 +663,8 @@ def create_riv_acopf_model(model_data):
                                                   )
 
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    if include_feasibility_slack:
+        obj_expr += penalty_expr
     if hasattr(model, 'qg_operating_cost'):
         obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
 
@@ -622,7 +681,8 @@ def solve_acopf(model_data,
                 options = None,
                 acopf_model_generator = create_psv_acopf_model,
                 return_model = False,
-                return_results = False):
+                return_results = False,
+                **kwargs):
     '''
     Create and solve a new acopf model
 
@@ -648,6 +708,8 @@ def solve_acopf(model_data,
         If True, returns the pyomo model object
     return_results : bool (optional)
         If True, returns the pyomo results object
+    kwargs : dictionary (optional)
+        Additional arguments for building model
     '''
 
     import pyomo.environ as pe
@@ -656,7 +718,7 @@ def solve_acopf(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
-    m, md = acopf_model_generator(model_data)
+    m, md = acopf_model_generator(model_data, **kwargs)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
@@ -718,5 +780,6 @@ def solve_acopf(model_data,
 #     filename = 'pglib_opf_case3_lmbd.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
-#     md = solve_acopf(md, "ipopt")
-
+#     kwargs = {'include_feasibility_slack':'True'}
+#     md = solve_acopf(md, "ipopt",**kwargs)
+#

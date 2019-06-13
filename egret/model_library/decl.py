@@ -20,12 +20,16 @@ def declare_var(varname, model, index_set, **kwargs):
         bounds_rule = lambda m, k: (d[k][0], d[k][1])
         kwargs['bounds'] = bounds_rule
 
+    # create var if index set is None
+    if index_set is None:
+        model.add_component(varname, pe.Var(**kwargs))
     # transform the index set into a Pyomo Set
-    pyomo_index_set = pe.Set(initialize=index_set, ordered=True)
-    model.add_component("_var_{}_index_set".format(varname), pyomo_index_set)
+    else:
+        pyomo_index_set = pe.Set(initialize=index_set, ordered=True)
+        model.add_component("_var_{}_index_set".format(varname), pyomo_index_set)
 
-    # now create the var
-    model.add_component(varname, pe.Var(pyomo_index_set, **kwargs))
+        # now create the var
+        model.add_component(varname, pe.Var(pyomo_index_set, **kwargs))
 
 def declare_set(setname, model, index_set, **kwargs):
     # transform the index set into a Pyomo Set
