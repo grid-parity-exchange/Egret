@@ -15,12 +15,28 @@ import math
 import pyomo.environ as pe
 import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.decl as decl
-from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
+from egret.model_library.defn import FlowType, CoordinateType, ApproximationType, RelaxationType
 from egret.data.model_data import zip_items
+
+
+def declare_var_dva(model, index_set, **kwargs):
+    """
+    Create variable or the angle difference between interconnected bus pairs
+    """
+    decl.declare_var('dva', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_pfl(model, index_set, **kwargs):
+    """
+    Create variable for the real part of the power loss in the transmission
+    line
+    """
+    decl.declare_var('pfl', model=model, index_set=index_set, **kwargs)
+
 
 def declare_var_pf(model, index_set, **kwargs):
     """
-    Create variable or the real part of the power flow in the "from"
+    Create variable for the real part of the power flow in the "from"
     end of the transmission line
     """
     decl.declare_var('pf', model=model, index_set=index_set, **kwargs)
@@ -28,7 +44,7 @@ def declare_var_pf(model, index_set, **kwargs):
 
 def declare_var_qf(model, index_set, **kwargs):
     """
-    Create variable or the imaginary part of the power flow in the "from"
+    Create variable for the imaginary part of the power flow in the "from"
     end of the transmission line
     """
     decl.declare_var('qf', model=model, index_set=index_set, **kwargs)
@@ -36,7 +52,7 @@ def declare_var_qf(model, index_set, **kwargs):
 
 def declare_var_pt(model, index_set, **kwargs):
     """
-    Create variable or the real part of the power flow in the "to"
+    Create variable for the real part of the power flow in the "to"
     end of the transmission line
     """
     decl.declare_var('pt', model=model, index_set=index_set, **kwargs)
@@ -44,7 +60,7 @@ def declare_var_pt(model, index_set, **kwargs):
 
 def declare_var_qt(model, index_set, **kwargs):
     """
-    Create variable or the imaginary part of the power flow in the "to"
+    Create variable for the imaginary part of the power flow in the "to"
     end of the transmission line
     """
     decl.declare_var('qt', model=model, index_set=index_set, **kwargs)
@@ -52,7 +68,7 @@ def declare_var_qt(model, index_set, **kwargs):
 
 def declare_var_ifr(model, index_set, **kwargs):
     """
-    Create variable or the real part of the current flow in the "from"
+    Create variable for the real part of the current flow in the "from"
     end of the transmission line
     """
     decl.declare_var('ifr', model=model, index_set=index_set, **kwargs)
@@ -60,7 +76,7 @@ def declare_var_ifr(model, index_set, **kwargs):
 
 def declare_var_ifj(model, index_set, **kwargs):
     """
-    Create variable or the imaginary part of the current flow in the "from"
+    Create variable for the imaginary part of the current flow in the "from"
     end of the transmission line
     """
     decl.declare_var('ifj', model=model, index_set=index_set, **kwargs)
@@ -68,7 +84,7 @@ def declare_var_ifj(model, index_set, **kwargs):
 
 def declare_var_itr(model, index_set, **kwargs):
     """
-    Create variable or the real part of the current flow in the "to"
+    Create variable for the real part of the current flow in the "to"
     end of the transmission line
     """
     decl.declare_var('itr', model=model, index_set=index_set, **kwargs)
@@ -76,10 +92,35 @@ def declare_var_itr(model, index_set, **kwargs):
 
 def declare_var_itj(model, index_set, **kwargs):
     """
-    Create variable or the imaginary part of the current flow in the "to"
+    Create variable for the imaginary part of the current flow in the "to"
     end of the transmission line
     """
     decl.declare_var('itj', model=model, index_set=index_set, **kwargs)
+
+
+def declare_eq_branch_dva(model, index_set, branches):
+    """
+    Create the equality constraints for the angle difference
+    in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_dva_set", model, index_set)
+
+    m.eq_dva_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            shift = math.radians(branch['transformer_phase_shift'])
+
+        m.eq_dva_branch[branch_name] = \
+            m.dva[branch_name] == \
+            m.va[from_bus] - m.va[to_bus] - shift
 
 
 def declare_expr_c(model, index_set, coordinate_type=CoordinateType.POLAR):
@@ -258,16 +299,14 @@ def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate
              g21 * m.c[(from_bus,to_bus)])
 
 
-def declare_eq_branch_power_dc_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):
+def declare_eq_branch_power_btheta_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):
     """
-    Create the equality constraints for power (from DC approximation)
+    Create the equality constraints for power (from BTHETA approximation)
     in the branch
     """
-    assert (approximation_type == ApproximationType.BTHETA
-            and "Only the B-Theta approximation has been implemented.")
     m = model
 
-    con_set = decl.declare_set("_con_eq_branch_power_dc_approx_set", model, index_set)
+    con_set = decl.declare_set("_con_eq_branch_power_btheta_approx_set", model, index_set)
 
     m.eq_pf_branch = pe.Constraint(con_set)
     for branch_name in con_set:
@@ -276,18 +315,118 @@ def declare_eq_branch_power_dc_approx(model, index_set, branches, approximation_
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        x = branch['reactance']
         tau = 1.0
         shift = 0.0
-
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
 
-        b = 1/(tau*x)
+        if approximation_type == ApproximationType.BTHETA:
+            x = branch['reactance']
+            b = -1/(tau*x)
+        elif approximation_type == ApproximationType.BTHETA_LOSSES:
+            b = tx_calc.calculate_susceptance(branch)/tau
+
         m.eq_pf_branch[branch_name] = \
             m.pf[branch_name] == \
             b * (m.va[from_bus] - m.va[to_bus] - shift)
+
+
+def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_type = RelaxationType.NONE):
+    """
+    Create the equality constraints for losses (from BTHETA approximation)
+    in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_loss_btheta_approx_set", model, index_set)
+
+    m.eq_pfl_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+
+        tau = 1.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+        g = tx_calc.calculate_conductance(branch)/tau
+
+        if relaxation_type == RelaxationType.NONE:
+            m.eq_pfl_branch[branch_name] = \
+                m.pfl[branch_name] == \
+                g * (m.dva[branch_name])**2
+        elif relaxation_type == RelaxationType.SOC:
+            m.eq_pfl_branch[branch_name] = \
+                m.pfl[branch_name] >= \
+                g * (m.dva[branch_name])**2
+
+
+def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol = None, approximation_type = ApproximationType.PTDF):
+    """
+    Create the equality constraints for power (from PTDF approximation)
+    in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_power_ptdf_approx_set", model, index_set)
+
+    m.eq_pf_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+        expr = 0
+
+        if approximation_type == ApproximationType.PTDF:
+            ptdf = branch['ptdf']
+        elif approximation_type == ApproximationType.PTDF_LOSSES:
+            ptdf = branch['ptdf_r']
+        for bus_name, coef in ptdf.items():
+            if ptdf_tol and abs(coef) < ptdf_tol:
+                coef = 0.
+
+            if bus_gs_fixed_shunts[bus_name] != 0.0:
+                expr += coef * bus_gs_fixed_shunts[bus_name]
+
+            if bus_p_loads[bus_name] != 0.0:
+                expr += coef * m.pl[bus_name]
+
+            for gen_name in gens_by_bus[bus_name]:
+                expr -= coef * m.pg[gen_name]
+
+        m.eq_pf_branch[branch_name] = \
+            m.pf[branch_name] == expr
+
+
+def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol = None):
+    """
+    Create the equality constraints for losses (from PTDF approximation)
+    in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_loss_ptdf_approx_set", model, index_set)
+
+    m.eq_pfl_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+        expr = 0
+
+        ptdf = branch['ldf']
+        for bus_name, coef in ptdf.items():
+            if ptdf_tol and abs(coef) < ptdf_tol:
+                coef = 0.
+
+            if bus_gs_fixed_shunts[bus_name] != 0.0:
+                expr += coef * bus_gs_fixed_shunts[bus_name]
+
+            if bus_p_loads[bus_name] != 0.0:
+                expr += coef * m.pl[bus_name]
+
+            for gen_name in gens_by_bus[bus_name]:
+                expr -= coef * m.pg[gen_name]
+
+        expr += branch['ldf_c']
+
+        m.eq_pfl_branch[branch_name] = \
+            m.pfl[branch_name] == expr
 
 
 def declare_ineq_s_branch_thermal_limit(model, index_set,

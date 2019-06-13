@@ -24,7 +24,25 @@ from egret.data.model_data import map_items, zip_items
 from math import pi
 
 
-def create_copperplate_dispatch_approx_model(model_data):
+def _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, penalty=1000):
+    import egret.model_library.decl as decl
+    slack_init = 0
+    slack_bounds = (0, sum(bus_p_loads.values()))
+    decl.declare_var('p_slack_pos', model=model, index_set=None,
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    decl.declare_var('p_slack_neg', model=model, index_set=None,
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
+
+    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
+
+    penalty_expr = p_penalty * (model.p_slack_pos + model.p_slack_neg)
+    return p_rhs_kwargs, penalty_expr
+
+
+def create_copperplate_dispatch_approx_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -58,12 +76,18 @@ def create_copperplate_dispatch_approx_model(model_data):
                           bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
                           )
 
+    ### include the feasibility slack for the system balance
+    p_rhs_kwargs = {}
+    if include_feasibility_slack:
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
+
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
                                    index_set=bus_attrs['names'],
                                    bus_p_loads=bus_p_loads,
                                    gens_by_bus=gens_by_bus,
-                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts
+                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                   **p_rhs_kwargs
                                    )
 
     ### declare the generator cost objective
@@ -73,10 +97,12 @@ def create_copperplate_dispatch_approx_model(model_data):
                                                   )
 
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    if include_feasibility_slack:
+        obj_expr += penalty_expr
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    return model
+    return model, md
 
 
 def solve_copperplate_dispatch(model_data,
@@ -87,7 +113,8 @@ def solve_copperplate_dispatch(model_data,
                 options = None,
                 copperplate_dispatch_model_generator = create_copperplate_dispatch_approx_model,
                 return_model = False,
-                return_results = False):
+                return_results = False,
+                **kwargs):
     '''
     Create and solve a new copperplate dispatch model
 
@@ -113,6 +140,8 @@ def solve_copperplate_dispatch(model_data,
         If True, returns the pyomo model object
     return_results : bool (optional)
         If True, returns the pyomo results object
+    kwargs : dictionary (optional)
+        Additional arguments for building model
     '''
 
     import pyomo.environ as pe
@@ -121,7 +150,7 @@ def solve_copperplate_dispatch(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
-    m = copperplate_dispatch_model_generator(model_data)
+    m, md = copperplate_dispatch_model_generator(model_data, **kwargs)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
@@ -141,7 +170,7 @@ def solve_copperplate_dispatch(model_data,
 
     for b,b_dict in buses.items():
         b_dict['pl'] = value(m.pl[b])
-        b_dict['lmp'] = value(m.dual[m.eq_p_balance['0']])
+        b_dict['lmp'] = value(m.dual[m.eq_p_balance])
 
     unscale_ModelData_to_pu(md, inplace=True)
 
@@ -162,4 +191,5 @@ def solve_copperplate_dispatch(model_data,
 #     filename = 'pglib_opf_case3_lmbd.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
-#     md = solve_copperplate_dispatch(md, "gurobi")
+#     kwargs = {'include_feasibility_slack': 'True'}
+#     md = solve_copperplate_dispatch(md, "gurobi", **kwargs)

@@ -79,11 +79,10 @@ def _btheta_dcopf_network_model(md,block):
                              )
 
     ### declare the branch power flow approximation constraints
-    libbranch.declare_eq_branch_power_dc_approx(model=block,
-                                                index_set=branch_attrs['names'],
-                                                branches=branches,
-                                                approximation_type=ApproximationType.BTHETA
-                                                )
+    libbranch.declare_eq_branch_power_btheta_approx(model=block,
+                                                    index_set=branch_attrs['names'],
+                                                    branches=branches
+                                                    )
 
     ### declare the p balance
     libbus.declare_eq_p_balance_dc_approx(model=block,
