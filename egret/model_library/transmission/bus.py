@@ -138,10 +138,6 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     m = model
-    _system_idx = ['0']
-    con_set = decl.declare_set('_con_eq_p_balance', model, _system_idx)
-
-    m.eq_p_balance = pe.Constraint(con_set)
 
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
@@ -149,11 +145,14 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
-            if idx == 'include_feasibility_slack':
-                p_expr += eval("m." + val)[_system_idx]
+            if idx == 'include_feasibility_slack_pos':
+                p_expr -= eval("m." + val)
+            if idx == 'include_feasibility_slack_neg':
+                p_expr += eval("m." + val)
+            if idx == 'include_losses':
+                p_expr -= sum(m.pfl[branch_name] for branch_name in val)
 
-    m.eq_p_balance[_system_idx[0]] = \
-        p_expr == 0
+    m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
 
 def declare_eq_p_balance_dc_approx(model, index_set,
@@ -169,8 +168,6 @@ def declare_eq_p_balance_dc_approx(model, index_set,
 
     NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
-    assert (approximation_type == ApproximationType.BTHETA
-            and "Only the B-Theta approximation has been implemented.")
     m = model
     con_set = decl.declare_set('_con_eq_p_balance', model, index_set)
 
@@ -179,6 +176,11 @@ def declare_eq_p_balance_dc_approx(model, index_set,
     for bus_name in con_set:
         if approximation_type == ApproximationType.BTHETA:
             p_expr = -sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+            p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+        elif approximation_type == ApproximationType.BTHETA_LOSSES:
+            p_expr = -0.5*sum([m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr -= 0.5*sum([m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+            p_expr -= sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
             p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
@@ -189,14 +191,16 @@ def declare_eq_p_balance_dc_approx(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack':
+                if idx == 'include_feasibility_slack_pos':
+                    p_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
                     p_expr += eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
 
         m.eq_p_balance[bus_name] = \
-            p_expr == 0
+            p_expr == 0.0
 
 
 def declare_eq_p_balance(model, index_set,
@@ -234,14 +238,16 @@ def declare_eq_p_balance(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack':
+                if idx == 'include_feasibility_slack_pos':
+                    p_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
                     p_expr += eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
 
         m.eq_p_balance[bus_name] = \
-            p_expr == 0
+            p_expr == 0.0
 
 
 def declare_eq_p_balance_with_i_aggregation(model, index_set,
@@ -268,14 +274,16 @@ def declare_eq_p_balance_with_i_aggregation(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack':
+                if idx == 'include_feasibility_slack_pos':
+                    p_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
                     p_expr += eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
 
         m.eq_p_balance[bus_name] = \
-            p_expr == 0
+            p_expr == 0.0
 
 
 def declare_eq_q_balance(model, index_set,
@@ -312,14 +320,16 @@ def declare_eq_q_balance(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack':
+                if idx == 'include_feasibility_slack_pos':
+                    q_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
                     q_expr += eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
 
         m.eq_q_balance[bus_name] = \
-            q_expr == 0
+            q_expr == 0.0
 
 
 def declare_eq_q_balance_with_i_aggregation(model, index_set,
@@ -346,14 +356,16 @@ def declare_eq_q_balance_with_i_aggregation(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack':
+                if idx == 'include_feasibility_slack_pos':
+                    q_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
                     q_expr += eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
 
         m.eq_q_balance[bus_name] = \
-            q_expr == 0
+            q_expr == 0.0
 
 
 def declare_ineq_vm_bus_lbub(model, index_set, buses, coordinate_type=CoordinateType.POLAR):

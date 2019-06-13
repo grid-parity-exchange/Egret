@@ -79,11 +79,10 @@ def _btheta_dcopf_network_model(md,block):
                              )
 
     ### declare the branch power flow approximation constraints
-    libbranch.declare_eq_branch_power_dc_approx(model=block,
-                                                index_set=branch_attrs['names'],
-                                                branches=branches,
-                                                approximation_type=ApproximationType.BTHETA
-                                                )
+    libbranch.declare_eq_branch_power_btheta_approx(model=block,
+                                                    index_set=branch_attrs['names'],
+                                                    branches=branches
+                                                    )
 
     ### declare the p balance
     libbus.declare_eq_p_balance_dc_approx(model=block,
@@ -189,7 +188,7 @@ def _get_pg_expr_rule(t):
         m = block.model()
         # bus b, time t (S)
         return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
-                + sum(m.PowerOutputStorage[s, t]*m.OutputEfficiencyEnergy[s] for s in m.StorageAtBus[b])\
+                + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
                 - sum(m.PowerInputStorage[s, t] for s in m.StorageAtBus[b])\
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
                 + m.LoadGenerateMismatch[b,t]

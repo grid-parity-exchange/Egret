@@ -22,3 +22,11 @@ class ApproximationType(Enum):
     BTHETA_LOSSES = 2
     PTDF = 3
     PTDF_LOSSES = 4
+
+class BasePointType(Enum):
+    FLATSTART = 1
+    SOLUTION = 2
+
+class RelaxationType(Enum):
+    NONE = 1
+    SOC = 2
