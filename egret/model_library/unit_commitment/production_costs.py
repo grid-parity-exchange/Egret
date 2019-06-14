@@ -48,7 +48,7 @@ def _compute_total_production_cost(model):
     model.ComputeProductionCosts = compute_production_costs_rule
     # compute the total production costs, across all generators and time periods.
     def compute_total_production_cost_rule(m, t):
-        return sum(m.ProductionCost[g, t] for g in m.SingleFuelGenerators)
+        return sum(m.ProductionCost[g, t] for g in m.ThermalGenerators)
     
     model.TotalProductionCost = Expression(model.TimePeriods, rule=compute_total_production_cost_rule)
 
@@ -93,7 +93,9 @@ def _basic_production_costs_vars(model):
 
 def _basic_production_costs_constr(model):
 
-    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+    model.ProductionCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
@@ -126,7 +128,9 @@ def _rescaled_basic_production_costs_vars(model):
 
 def _rescaled_basic_production_costs_constr(model):
 
-    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+    model.ProductionCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
@@ -447,7 +451,9 @@ def _CW_production_costs_garver(model):
         return sum( m.PiecewiseProductionFrac[g,t,i] for i in range(1,len(m.PowerGenerationPiecewisePoints[g,t]))) <= m.UnitOn[g,t]
     model.PiecewiseProductionFracLimits = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_frac_limits_rule )
 
-    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+    model.ProductionCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
         return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, m.PowerGenerationPiecewisePoints[g,t][i]))*m.PiecewiseProductionFrac[g,t,i] for i in range(1, len(m.PowerGenerationPiecewisePoints[g,t])))
@@ -519,7 +525,9 @@ def _SLL_production_costs(model, ideal=True):
                     == (m.UnitOn[g,t] if ideal else 1)
     model.PiecewiseProductionFracLimits = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_frac_limits_rule )
 
-    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+    model.ProductionCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
         return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, m.PowerGenerationPiecewisePoints[g,t][i]))*m.PiecewiseProductionFrac[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])))
@@ -629,7 +637,9 @@ def _basic_production_costs_envelope_garver(model):
     # NOTE: this assumes the cost to operate the generator at minimum power has been moved to the
     #       coeffecient on the UnitOn variable, such that 0,0 is the starting point for this curve,
     #       and hence >= 0 is a valid inequality
-    model.ProductionCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+    model.ProductionCost = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,

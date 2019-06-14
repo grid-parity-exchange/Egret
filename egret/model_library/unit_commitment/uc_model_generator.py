@@ -17,7 +17,7 @@ from egret.model_library.unit_commitment import \
         ramping_limits, production_costs, \
         uptime_downtime, startup_costs, \
         services, power_balance, reserve_requirement, \
-        objective, fuel_supply
+        objective, fuel_supply, dual_fuel
 
 from collections import namedtuple
 import pyomo.environ as pe
@@ -100,14 +100,22 @@ def _generate_model( model_data,
     getattr(production_costs, _production_costs)(model)
     getattr(uptime_downtime, _uptime_downtime)(model)
     getattr(startup_costs, _startup_costs)(model)
+
+    ## add the constraints for dual-fuel generators
+    ## if they're on the model
+    if model.DualFuelGenerators:
+        dual_fuel.dual_fuel_model(model)
+
+    ## add the fuel supply constraints,
+    ## if any generators have fuel supply constraints
+    if model.FuelSupplyGenerators or model.AuxFuelSupplyGenerators:
+        fuel_supply.fuel_supply_model(model)
+
     services.storage_services(model)
     services.ancillary_services(model)
     getattr(power_balance, _power_balance)(model)
     getattr(reserve_requirement, _reserve_requirement)(model)
     getattr(objective, _objective)(model)
-
-    if 'fuel_supply' in model_data.data['elements'] and bool(model_data.data['elements']['fuel_supply']):
-        fuel_supply.fuel_supply_model(model)
 
     return model
 

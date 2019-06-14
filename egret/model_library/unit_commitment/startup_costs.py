@@ -78,7 +78,9 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     model.ShutdownMatch = Constraint(model.GeneratorShutdownPeriods, rule=shutdown_match_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=Reals)
     
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStart[g,t] + \
@@ -156,7 +158,9 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     model.delta_ineq=Constraint(model.StartupCostsIndexSet, rule=delta_ineq_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=Reals)
     
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] == sum(m.delta[g,s,t]*list(m.StartupCosts[g])[s-1] for s in m.StartupCostIndices[g])
@@ -179,7 +183,9 @@ def KOW_3bin_startup_costs(model, add_startup_cost_var=True):
     '''
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
@@ -253,7 +259,9 @@ def CA_SHB_startup_costs(model, add_startup_cost_var=True):
     '''
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
@@ -313,7 +321,9 @@ def CA_startup_costs(model, add_startup_cost_var=True):
     '''
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals)
     
     ############################################################
     # compute the per-generator, per-time period startup costs #
@@ -424,7 +434,9 @@ def ALS_startup_costs(model, add_startup_cost_var=True):
     model.ComputeStartupCostsOverHot = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
 
     def compute_startup_costs_expr_rule(m, g, t):
         return m.StartupCost[g,t] == m.StartupCostOverHot[g,t] + m.StartupCosts[g].first()*m.UnitStart[g,t]
@@ -491,7 +503,9 @@ def YZJMXD_startup_costs(model, add_startup_cost_var=True):
     model.ComputeStartupCostsOverHot = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
 
     def compute_startup_costs_expr_rule(m, g, t):
         return m.StartupCost[g,t] ==  m.StartupCostOverHot[g,t] + m.StartupCosts[g].first()*m.UnitStart[g,t]
@@ -567,7 +581,9 @@ def KOW_3bin_startup_costs2(model, add_startup_cost_var=True):
     model.ComputeStartupCostsOverHot = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
 
     def compute_startup_costs_expr_rule(m, g, t):
         return m.StartupCost[g,t] ==  m.StartupCostOverHot[g,t] + m.StartupCosts[g].first()*m.UnitStart[g,t]
@@ -638,7 +654,9 @@ def MLR_startup_costs2(model, add_startup_cost_var=True):
     model.delta_ineq=Constraint(model.StartupCostsIndexSet, rule=delta_ineq_rule)
     
     if add_startup_cost_var:
-        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
+    ## NOTE: This Var is defined over all thermal generators so the 
+    ##       dual-fuel model can also use it for consistency
+        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
 
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] ==  m.StartupCosts[g].last()*m.UnitStart[g,t] + \

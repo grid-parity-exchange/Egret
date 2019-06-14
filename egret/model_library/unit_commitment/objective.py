@@ -84,7 +84,8 @@ def basic_objective(model):
     #############################################
     
     def compute_total_no_load_cost_rule(m,t):
-        return sum(m.MinimumProductionCost[g]*m.UnitOn[g,t]*m.TimePeriodLengthHours for g in m.ThermalGenerators)
+        return sum(m.MinimumProductionCost[g]*m.UnitOn[g,t]*m.TimePeriodLengthHours for g in m.SingleFuelGenerators) \
+             + sum(m.NoLoadCost[g,t] for g in m.DualFuelGenerators)
     
     model.TotalNoLoadCost = Expression(model.TimePeriods, rule=compute_total_no_load_cost_rule)
     

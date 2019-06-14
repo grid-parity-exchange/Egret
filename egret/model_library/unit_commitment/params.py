@@ -959,16 +959,26 @@ def load_params(model, model_data):
     ## Again, assert that this must be at least one in the time units of the model
     def scaled_aux_startup_lags_rule(m, g):
         return [ max(int(round(this_lag / m.TimePeriodLengthHours)),1) for this_lag in m.AuxStartupLags[g] ]
-    model.ScaledAuxStartupLags = Set(model.DualFuelGenerators, within=NonNegativeIntegers, ordered=True, initialize=scaled_aux_startup_lags_rule)
+    model.AuxScaledStartupLags = Set(model.DualFuelGenerators, within=NonNegativeIntegers, ordered=True, initialize=scaled_aux_startup_lags_rule)
     ## END DUAL-FUEL
 
     ## BEGIN FUEL SUPPLY CHECKS
 
     def fuel_supply_gens_init(m):
-        if 'fuel_supply' in elements and ('fuel_supply' not in thermal_gen_attrs or 'aux_fuel_supply' not in thermal_gen_attrs):
+        if 'fuel_supply' not in elements and ('fuel_supply' in thermal_gen_attrs or 'aux_fuel_supply' in thermal_gen_attrs):
+            print('WARNING: Some generators have \'fuel_supply\' marked, but no fuel supply was found on ModelData.data[\'system\']') 
+            return iter(())
+        if 'fuel_supply' in elements and ('fuel_supply' not in thermal_gen_attrs and 'aux_fuel_supply' not in thermal_gen_attrs):
             print('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
-            return
+            return iter(())
+        if 'fuel_supply' not in thermal_gen_attrs:
+            return iter(())
         return thermal_gen_attrs['fuel_supply'].keys()
+
+    def aux_fuel_supply_gens_init(m):
+        if 'aux_fuel_supply' not in thermal_gen_attrs:
+            return iter(())
+        return thermal_gen_attrs['aux_fuel_supply'].keys()
 
 
     def _make_gen_cost_fuel_validator(p_cost_k, p_fuel_k, startup_cost_k, startup_fuel_k):
