@@ -59,11 +59,15 @@ def _fuel_type_to_code(x):
     
     return code
 
-
-def _indexed_dict_to_array(indexed_dict):
-    """Converts dictionary with keys of time series indices and values of time series values to a NumPy array."""
-    return np.array([p[-1] for p in sorted(indexed_dict.items(), key=lambda x: x[0])])
-
+def _build_attribute_to_array_func(time_indices):
+    '''returns a function for converting EGRET time-valued objects to np arrays'''
+    def attribute_to_array(attr):
+        '''returns a numpy array for the time-valued attr'''
+        if isinstance(attr, dict):
+            return np.array([attr['values'][t] for t in time_indices])
+        else:
+            return np.array([attr for t in time_indices])
+    return attribute_to_array
 
 def generate_stack_graph(egret_model_data, bar_width=0.9, 
                             x_tick_frequency=1,
@@ -90,6 +94,10 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
 
     '''
 
+    ## functions for interfacing with EGRET time structure
+    time_periods = egret_model_data.data['system']['time_indices']
+    attribute_to_array = _build_attribute_to_array_func(time_periods)
+
     def _plot_generation_stack_components():
         if plot_individual_generators and show_individual_components:
             raise ValueError('plot_individual_generators and show_individual_components cannot be simultaneously True.')
@@ -106,8 +114,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
             for generator, generator_data in egret_model_data.data['elements']['generator'].items():
                 is_quickstart = generator_data.get('quickstart_capable', False)
 
-                pg = generator_data['pg']['values']
-                pg_array = _indexed_dict_to_array(pg)
+                pg_array = attribute_to_array(generator_data['pg'])
 
                 if is_quickstart:
                     quickstart_label = 'quickstart'
@@ -131,8 +138,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 fuel_type = generator_data['fuel']
                 is_quickstart = generator_data.get('quickstart_capable', False)
 
-                pg = generator_data['pg']['values']
-                pg_array = _indexed_dict_to_array(pg)
+                pg_array = attribute_to_array(generator_data['pg'])
 
                 if is_quickstart:
                     quickstart_label = 'quickstart'
@@ -191,7 +197,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 is_quickstart = generator_data.get('quickstart_capable', False)
 
                 pg = generator_data['pg']['values']
-                pg_array = _indexed_dict_to_array(pg)
+                pg_array = attribute_to_array(generator_data['pg'])
 
                 if is_quickstart:
                     quickstart_label = 'quickstart'
@@ -253,7 +259,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     total_load_shed_by_hour = np.zeros(len(indices))
 
     for bus, bus_data in bus_dict.items():
-        p_balance_violation = _indexed_dict_to_array(bus_data['p_balance_violation']['values'])
+        p_balance_violation = attribute_to_array(bus_data['p_balance_violation'])
         load_shed = np.maximum(0, p_balance_violation)
 
         total_load_shed_by_hour += load_shed
@@ -270,8 +276,8 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     load_structure = egret_model_data.data['elements']['load']
 
     for load_bus in load_structure:
-        bus_load = load_structure[load_bus]['p_load']['values']
-        load_array = _indexed_dict_to_array(bus_load)
+        bus_load = load_structure[load_bus]['p_load']
+        load_array = attribute_to_array(bus_load)
         demand_by_hour += load_array
     
     ## This is to make it so the step graph covers the total dispatch levels as expected.
@@ -281,26 +287,27 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     ax.step(demand_indices, demand_by_hour, linewidth=3, color='#000000', where='post')
     
     # Add reserve requirements, if applicable.
-    reserve_requirements_by_hour = egret_model_data.data['system'].get('reserve_requirement', {}).get('values', {})
-    reserve_requirements_array = _indexed_dict_to_array(reserve_requirements_by_hour)
+    reserve_requirements_by_hour = egret_model_data.data['system'].get('reserve_requirement')
+    if reserve_requirements_by_hour is not None:
+        reserve_requirements_array = attribute_to_array(reserve_requirements_by_hour)
+
+        if sum(reserve_requirements_array) > 0.0:
+            component_color = '#00c2ff'
+            ax.bar(indices, reserve_requirements_array, bar_width, bottom=bottom, color=component_color,
+                   edgecolor=None, linewidth=0,
+                   label='Required Reserve')
+            bottom += reserve_requirements_array
     
-    if sum(reserve_requirements_array) > 0.0:
-        component_color = '#00c2ff'
-        ax.bar(indices, reserve_requirements_array, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Required Reserve')
-        bottom += reserve_requirements_array
+        # Add reserve shortfalls, if applicable.
+        reserve_shortfall_by_hour = egret_model_data.data['system']['reserve_shortfall']
+        reserve_shortfall_array = attribute_to_array(reserve_shortfall_by_hour)
     
-    # Add reserve shortfalls, if applicable.
-    reserve_shortfall_by_hour = egret_model_data.data['system'].get('reserve_shortfall', {}).get('values', {})
-    reserve_shortfall_array = _indexed_dict_to_array(reserve_shortfall_by_hour)
-    
-    if sum(reserve_shortfall_array) > 0.0:
-        component_color = '#ff00ff'
-        ax.bar(indices, reserve_shortfall_array, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Reserve Shortfall')
-        bottom += reserve_shortfall_array
+        if sum(reserve_shortfall_array) > 0.0:
+            component_color = '#ff00ff'
+            ax.bar(indices, reserve_shortfall_array, bar_width, bottom=bottom, color=component_color,
+                   edgecolor=None, linewidth=0,
+                   label='Reserve Shortfall')
+            bottom += reserve_shortfall_array
     
 #     # Add implicit reserves, if applicable.
 #     # TODO:
@@ -322,8 +329,8 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
         is_quickstart = gen_data.get('quickstart_capable', False)
 
         if is_quickstart:
-            p_max = _indexed_dict_to_array(gen_data['p_max']['values'])
-            pg = _indexed_dict_to_array(gen_data['pg']['values'])
+            p_max = attribute_to_array(gen_data['p_max'])
+            pg = attribute_to_array(gen_data['pg'])
 
             quickstart_capacity_available = np.maximum(p_max - pg, 0)
 
@@ -344,8 +351,8 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
         generator_type = gen_data['generator_type']
 
         if generator_type == 'renewable':
-            p_max = _indexed_dict_to_array(gen_data['p_max']['values'])
-            pg = _indexed_dict_to_array(gen_data['pg']['values'])
+            p_max = attribute_to_array(gen_data['p_max'])
+            pg = attribute_to_array(gen_data['pg'])
 
             p_curtailed = np.maximum(p_max - pg, 0)
 
