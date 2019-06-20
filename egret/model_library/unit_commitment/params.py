@@ -822,9 +822,13 @@ def load_params(model, model_data):
 
 
     ## BEGIN DUAL-FUEL CHECKS AND INITIALIZATION
+    def dual_fuel_init(m):
+        for g, g_dict in thermal_gens.items():
+            if 'aux_fuel_capable' in g_dict and g_dict['aux_fuel_capable']:
+                yield g
+    model.DualFuelGenerators = Set(within=model.ThermalGenerators, initialize=dual_fuel_init)
 
-    model.DualFuelGenerators = Set(within=model.ThermalGenerators,
-                                initialize=md.elements(element_type='generator', generator_type='thermal', aux_fuel_capable=True))
+    model.UnitSwitchOperating = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('aux_fuel_online_switching'))
 
     ## This set is for modeling elements that are exhanged
     ## in whole for the dual-fuel model
@@ -852,6 +856,9 @@ def load_params(model, model_data):
             print('All auxilary fuel cost curves must be piecewise')
             assert False
         aux_cost_values = aux_cost_curve['values']
+        ## get rid of tuples
+        for i,tup in enumerate(aux_cost_values):
+            aux_cost_values[i] = list(tup)
         first, last = aux_cost_values[0][0], aux_cost_values[-1][0]
         p_min, p_max = thermal_gens[g]['p_min'], thermal_gens[g]['p_max'] 
         if not math.isclose(first, p_min):
@@ -873,17 +880,18 @@ def load_params(model, model_data):
         ## overwrite these values with those calculated above to make
         ## building the dual-fuel model more straightforward
         ## NOTE: Needs modifying if we allow for time-specific bids
-        t = m.InitialTime
+
+        t = value(model.InitialTime)
 
         p_min, p_max = thermal_gens[g]['p_min'], thermal_gens[g]['p_max'] 
 
         pri_cost_curve = thermal_gens[g]['p_cost']
         pri_cost_curve['cost_curve_type'] = 'piecewise'
-        pri_cost_curve['values'] = [ (m.PowerGenerationPiecewisePoints[g,t][i]+p_min, m.PowerGenerationPiecewiseValues[g,t][i]) \
-                                     for i in range(len(m.PowerGenerationPiecewisePoints[g,t])) ]
+        pri_cost_curve['values'] = [ [val+p_min, cost+value(m.MinimumProductionCost[g])] \
+                                     for val, cost in m.PowerGenerationPiecewiseValues[g,t].items() ]
 
         ## overwrite for p_max floating point error
-        pri_cost_curve['values'][0][-1] = p_max
+        pri_cost_curve['values'][-1][0] = p_max
 
     model.PrepDualFuelPowerCostCurve = BuildAction(model.DualFuelGenerators, rule=prep_dual_fuel_cost_curve)
 

@@ -86,7 +86,7 @@ def fuel_supply_model(model):
                 last_fuel_consumed = _startup_fuel_consumed_function(m,g,-1)
                 return last_fuel_consumed*m.UnitStartPriFuel[g,t] + \
                             sum( (_startup_fuel_consumed_function(m,g,s-1) - last_fuel_consumed) * \
-                            sum( m.PriStartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriods[g] \
+                            sum( m.PriStartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriodsD[g] \
                               if (list(m.ScaledStartupLags[g])[s-1] <= t - tp < (list(m.ScaledStartupLags[g])[s])) ) \
                             for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
         else:
@@ -117,7 +117,7 @@ def fuel_supply_model(model):
             last_fuel_consumed = _aux_startup_fuel_consumed_function(m,g,-1)
             return last_fuel_consumed*m.UnitStartAuxFuel[g,t] + \
                         sum( (_aux_startup_fuel_consumed_function(m,g,s-1) - last_fuel_consumed) * \
-                        sum( m.AuxStartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriods[g] \
+                        sum( m.AuxStartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriodsD[g] \
                           if (list(m.AuxScaledStartupLags[g])[s-1] <= t - tp < (list(m.AuxScaledStartupLags[g])[s])) ) \
                         for s in m.AuxStartupCostIndices[g] if s < len(m.AuxStartupCostIndices[g]))
         else:

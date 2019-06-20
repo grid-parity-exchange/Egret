@@ -66,7 +66,6 @@ def dual_fuel_model(model):
         return m.UnitStopPriFuel[g,t] + m.UnitStopAuxFuel[g,t] == m.UnitStop[g,t]
     model.UnitStopLink = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=linking_unit_stop)
 
-    model.UnitSwitchOperating = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=dual_fuel_attrs.get('aux_fuel_online_switching')) 
 
 
     ## These enforce that if the generator starts with a certain fuel type it
@@ -167,7 +166,7 @@ def dual_fuel_model(model):
                 ) \
              == \
                m.ProductionCost[g,t]
-    model.DualFuelProductionCostConstr = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule)
+    model.DualFuelProductionCostConstr = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=piecewise_production_cost_rule)
 
     def no_load_cost_expr_rule(m, g, t):
         p_cost_vals = dual_fuel_attrs['p_cost'][g]['values']
@@ -197,24 +196,20 @@ def dual_fuel_model(model):
         ## for speed, if we don't have different startups
         if len(m.ScaledStartupLags[g]) <= 1:
             return [] 
-        return ((t_prime, t) for t_prime in m.ValidShutdownTimePeriods[g] for t in m.TimePeriods if (m.ScaledStartupLags[g].first() <= t - t_prime < m.ScaledStartupLags[g].last()))
+        return ((t_prime, t) for t_prime in m.ValidShutdownTimePeriodsD[g] for t in m.TimePeriods if (m.ScaledStartupLags[g].first() <= t - t_prime < m.ScaledStartupLags[g].last()))
     model.PriShutdownHotStartupPairs = Set(model.DualFuelGenerators, initialize=ShutdownHotStartupPairs_generator, dimen=2)
 
     def AuxShutdownHotStartupPairs_generator(m,g):
         ## for speed, if we don't have different startups
         if len(m.ScaledStartupLags[g]) <= 1:
             return [] 
-        return ((t_prime, t) for t_prime in m.ValidShutdownTimePeriods[g] for t in m.TimePeriods if (m.AuxScaledStartupLags[g].first() <= t - t_prime < m.AuxScaledStartupLags[g].last()))
+        return ((t_prime, t) for t_prime in m.ValidShutdownTimePeriodsD[g] for t in m.TimePeriods if (m.AuxScaledStartupLags[g].first() <= t - t_prime < m.AuxScaledStartupLags[g].last()))
     model.AuxShutdownHotStartupPairs = Set(model.DualFuelGenerators, initialize=AuxShutdownHotStartupPairs_generator, dimen=2)
     
     # (g,t',t) will be an inidicator for g for shutting down at time t' and starting up at time t
     def PriStartupIndicator_domain_generator(m):
         return ((g,t_prime,t) for g in m.DualFuelGenerators for t_prime,t in m.PriShutdownHotStartupPairs[g]) 
     model.PriStartupIndicator_domain=Set(initialize=PriStartupIndicator_domain_generator, dimen=3)
-    
-    def binary_or_unit_interval_startup(m, g, t_p, t):
-        return binary_or_unit_interval(m, g, t)
-    model.PriStartupIndicator=Var(model.PriStartupIndicator_domain, within=binary_or_unit_interval_startup)
 
     # (g,t',t) will be an inidicator for g for shutting down at time t' and starting up at time t
     def AuxStartupIndicator_domain_generator(m):
@@ -234,12 +229,12 @@ def dual_fuel_model(model):
     def Pri_startup_match_rule(m, g, t):
         return sum(m.PriStartupIndicator[g, t_prime, s] for (t_prime, s) in m.PriShutdownHotStartupPairs[g] if s == t) \
                 <= m.UnitStartPriFuel[g,t]
-    model.PriStartupMatch = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=startup_match_rule)
+    model.PriStartupMatch = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=Pri_startup_match_rule)
 
     def Aux_startup_match_rule(m, g, t):
         return sum(m.AuxStartupIndicator[g, t_prime, s] for (t_prime, s) in m.AuxShutdownHotStartupPairs[g] if s == t) \
                 <= m.UnitStartAuxFuel[g,t]
-    model.AuxStartupMatch = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=startup_match_rule)
+    model.AuxStartupMatch = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=Aux_startup_match_rule)
     
     def shutdown_match_rule(m, g, t):
         if t < m.InitialTime:
@@ -251,18 +246,20 @@ def dual_fuel_model(model):
                 return sum(m.PriStartupIndicator[g, s, t_prime] for (s, t_prime) in p_begin_pairs) \
                         + sum(m.AuxStartupIndicator[g, s, t_prime] for (s, t_prime) in a_begin_pairs) <= 1
         else:
-            return sum(m.StartupIndicator[g, s, t_prime] for (s, t_prime) in m.ShutdownHotStartupPairs[g] if s == t) <= m.UnitStop[g,t]
+            return  sum(m.PriStartupIndicator[g, s, t_prime] for (s, t_prime) in m.PriShutdownHotStartupPairs[g] if s == t) \
+                  + sum(m.AuxStartupIndicator[g, s, t_prime] for (s, t_prime) in m.AuxShutdownHotStartupPairs[g] if s == t) \
+                  <= m.UnitStop[g,t]
     model.ShutdownMatchD = Constraint(model.GeneratorShutdownPeriodsD, rule=shutdown_match_rule)
 
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStartPriFuel[g,t] + \
                                       sum( (list(m.StartupCosts[g])[s-1] - m.StartupCosts[g].last()) * \
-                                         sum( m.PriStartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriods[g] \
+                                         sum( m.PriStartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriodsD[g] \
                                            if (list(m.ScaledStartupLags[g])[s-1] <= t - tp < (list(m.ScaledStartupLags[g])[s])) ) \
                                          for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g])) \
                                    +  m.AuxStartupCosts[g].last()*m.UnitStartAuxFuel[g,t] + \
                                       sum( (list(m.AuxStartupCosts[g])[s-1] - m.AuxStartupCosts[g].last()) * \
-                                         sum( m.AuxStartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriods[g] \
+                                         sum( m.AuxStartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriodsD[g] \
                                            if (list(m.AuxScaledStartupLags[g])[s-1] <= t - tp < (list(m.AuxScaledStartupLags[g])[s])) ) \
                                          for s in m.AuxStartupCostIndices[g] if s < len(m.AuxStartupCostIndices[g])) 
-    model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
+    model.ComputeStartupCostsD=Constraint(model.DualFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
