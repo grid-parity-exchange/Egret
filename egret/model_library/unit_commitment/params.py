@@ -102,6 +102,7 @@ def load_params(model, model_data):
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
     storage = dict(md.elements(element_type='storage'))
+    fuel_supply = dict(md.elements(element_type='fuel_supply'))
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
     renewable_gen_attrs = md.attributes(element_type='generator', generator_type='renewable')
@@ -989,8 +990,12 @@ def load_params(model, model_data):
         return thermal_gen_attrs['aux_fuel_supply'].keys()
 
 
-    def _make_gen_cost_fuel_validator(p_cost_k, p_fuel_k, startup_cost_k, startup_fuel_k):
+    def _make_gen_cost_fuel_validator(fuel_k,  p_cost_k, p_fuel_k, startup_cost_k, startup_fuel_k):
         def gen_cost_fuel_validator(m,g):
+            fs = thermal_gen_attrs[fuel_k][g]
+            if fs not in fuel_supply:
+                print('ERROR: Fuel supply {0} for generator {1} not found in fuel supplies!'.format(fs, g))
+                return False
             cost_curve = thermal_gen_attrs[p_cost_k][g]
             cost_curve_type = cost_curve['cost_curve_type']
             if cost_curve_type != 'piecewise':
@@ -1019,11 +1024,11 @@ def load_params(model, model_data):
             return True
         return gen_cost_fuel_validator
 
-    pri_gen_cost_fuel_validator = _make_gen_cost_fuel_validator('p_cost', 'p_fuel', 'startup_cost', 'startup_fuel')
+    pri_gen_cost_fuel_validator = _make_gen_cost_fuel_validator('fuel_supply', 'p_cost', 'p_fuel', 'startup_cost', 'startup_fuel')
     model.FuelSupplyGenerators = Set(within=model.ThermalGenerators, initialize=fuel_supply_gens_init, validate=pri_gen_cost_fuel_validator)
 
 
-    aux_gen_cost_fuel_validator = _make_gen_cost_fuel_validator('aux_p_cost', 'aux_p_fuel', 'aux_startup_cost', 'aux_startup_fuel')
+    aux_gen_cost_fuel_validator = _make_gen_cost_fuel_validator('aux_fuel_supply', 'aux_p_cost', 'aux_p_fuel', 'aux_startup_cost', 'aux_startup_fuel')
     model.AuxFuelSupplyGenerators = Set(within=model.DualFuelGenerators, initialize=aux_fuel_supply_gens_init, validate=aux_gen_cost_fuel_validator)
 
     ## END FUEL-SUPPLY CHECKS
