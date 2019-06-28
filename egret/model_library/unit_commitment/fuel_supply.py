@@ -40,7 +40,6 @@ def fuel_supply_model(model):
     time_keys = system['time_indices']
     TimeMapper = build_uc_time_mapping(time_keys)
 
-
     ## generator fuel consumption model
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
 
@@ -136,7 +135,7 @@ def fuel_supply_model(model):
         ######  total fuel consumed   ==   fuel consumed above minimum + fuel consumed for being on and operating at p_min + fuel consumed for startup
         assert (g in m.DualFuelGenerators)
         return m.AuxFuelConsumed[g,t] == m.AuxProductionFuelConsumed[g,t] + _aux_fuel_consumed_function(m,g,0)*m.UnitOnAuxFuel[g,t] + m.AuxStartupFuelConsumed[g,t]
-    model.AuxFuelConsumedConstr = Constraint(model.FuelSupplyGenerators, model.TimePeriods, rule=fuel_consumed_constr_rule)
+    model.AuxFuelConsumedConstr = Constraint(model.AuxFuelSupplyGenerators, model.TimePeriods, rule=aux_fuel_consumed_constr_rule)
     ## end generator fuel consumption model
 
     ## instantaneous fuel supply model
@@ -164,7 +163,7 @@ def fuel_supply_model(model):
     model.TotalFuelConsumedAtInstFuelSupply = Expression(model.InstantaneousFuelSupplies, model.TimePeriods, rule=total_fuel_consumed_expr)
 
     def total_fuel_consumed_rule(m, f, t):
-        if m.ThermalGeneratorsUsingInstFuelSupply[f]:
+        if m.ThermalGeneratorsUsingInstFuelSupply[f] or m.ThermalGeneratorsUsingInstFuelSupplyAsAux[f]:
             return m.TotalFuelConsumedAtInstFuelSupply[f,t] <= m.InstFuelSupply[f,t]
         else:
             if t == m.TimePeriods.first():
