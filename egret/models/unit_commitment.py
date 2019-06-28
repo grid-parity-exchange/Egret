@@ -694,7 +694,7 @@ def solve_unit_commitment(model_data,
             if gdf:
                 aux_fuel_indicator[dt] = value(m.UnitOnAuxFuel[g,mt])
             if gafs:
-                aux_fuel_consumed[dt] = value(m.AuxFuelSupplyGenerators[g,mt])
+                aux_fuel_consumed[dt] = value(m.AuxFuelConsumed[g,mt])
 
             ## pyomo doesn't add constraints that are skiped to the index set, so we also
             ## need check here if the index exists.
