@@ -563,15 +563,27 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
 
 
             y = {}
-            y[0] = float(row['Fuel Price $/MMBTU'])*((float(row['HR_avg_0'])*1000./ 1000000.)*x[0]) ## /1000. from the RTS-GMLC MATPOWER writer, 
+            ## /1000. from the RTS-GMLC MATPOWER writer -- 
+            ## heat rates are in BTU/kWh, 1BTU == 10^-6 MMBTU, 1kWh == 10^-3 MWh, so MMBTU/MWh == 10^3/10^6 * BTU/kWh
+            y[0] = float(row['Fuel Price $/MMBTU'])*((float(row['HR_avg_0'])*1000./ 1000000.)*x[0])
             y[1] = float(row['Fuel Price $/MMBTU'])*(((x[1]-x[0])*(float(row['HR_incr_1'])*1000. / 1000000.))) + y[0]
             y[2] = float(row['Fuel Price $/MMBTU'])*(((x[2]-x[1])*(float(row['HR_incr_2'])*1000. / 1000000.))) + y[1]
             y[3] = float(row['Fuel Price $/MMBTU'])*(((x[3]-x[2])*(float(row['HR_incr_3'])*1000. / 1000000.))) + y[2]
+
+            f = {}
+            f[0] = ((float(row['HR_avg_0'])*1000./ 1000000.)*x[0])
+            f[1] = (((x[1]-x[0])*(float(row['HR_incr_1'])*1000. / 1000000.))) + f[0]
+            f[2] = (((x[2]-x[1])*(float(row['HR_incr_2'])*1000. / 1000000.))) + f[1]
+            f[3] = (((x[3]-x[2])*(float(row['HR_incr_3'])*1000. / 1000000.))) + f[2]
 
             # only include the cost coeffecients that matter
             P_COEFF = [ (x[i], round(y[i],2)) for i in range(4) if (((i == 0) or (x[i-1],y[i-1]) != (x[i], y[i])) and (x[i], y[i]) != (0.,0.)) ]
             if P_COEFF == []:
                 P_COEFF = [(PMAX, 0.0)] 
+
+            F_COEFF = [ (x[i], round(f[i],2)) for i in range(4) if (((i == 0) or (x[i-1],f[i-1]) != (x[i], f[i])) and (x[i], f[i]) != (0.,0.)) ]
+            if F_COEFF == []:
+                F_COEFF = [(PMAX, 0.0)]
                 
             # UC Data
             MIN_UP_TIME = float(row['Min Up Time Hr'])
@@ -592,13 +604,21 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
 
             if (COLD_TIME <= MIN_DN_TIME) or (COLD_TIME == WARM_TIME == HOT_TIME):
                 STARTUP_COSTS = [(MIN_DN_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
+                STARTUP_FUEL = [(MIN_DN_TIME, COLD_HEAT)]
+
             elif WARM_TIME <= MIN_DN_TIME:
                 STARTUP_COSTS = [(MIN_DN_TIME, round(WARM_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
                                  (COLD_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
+                STARTUP_FUEL = [(MIN_DN_TIME, WARM_HEAT),\
+                                 (COLD_TIME, COLD_HEAT)]
+
             else:
                 STARTUP_COSTS = [(MIN_DN_TIME, round(HOT_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
                                  (WARM_TIME, round(WARM_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
                                  (COLD_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
+                STARTUP_FUEL = [(MIN_DN_TIME, HOT_HEAT),\
+                                 (WARM_TIME, WARM_HEAT),\
+                                 (COLD_TIME, COLD_HEAT)]
 
             SHUTDOWN_COST = 0.0
 
@@ -618,8 +638,10 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             gen_dict["ramp_down_60min"] = RAMP_DN_60
             gen_dict["power_factor"] = APF
             gen_dict["p_cost"] = {"data_type": "cost_curve", "cost_curve_type":"piecewise", "values": P_COEFF }
+            gen_dict["p_fuel"] = {"data_type": "fuel_curve", "values": F_COEFF }
 
             gen_dict["startup_cost"] = STARTUP_COSTS
+            gen_dict["startup_fuel"] = STARTUP_FUEL
             gen_dict["shutdown_cost"] = SHUTDOWN_COST
             # these assumptions are the same as prescient-rtsgmlc
             gen_dict["startup_capacity"] = PMIN

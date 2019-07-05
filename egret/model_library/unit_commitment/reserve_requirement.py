@@ -16,11 +16,10 @@ from .uc_utils import add_model_attr
 from .reserve_vars import check_reserve_requirement
 component_name = 'reserve_requirement'
 
-#TODO: this doesn't check if storage_services is added first, 
-#      but this will only happen when there are storage_services!
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'reserve_vars': None,
-                                            'non_dispatchable_vars': None
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
                                             })
 def CA_reserve_constraints(model):
     '''
@@ -51,20 +50,12 @@ def CA_reserve_constraints(model):
     #       maximum power available, and not actual power generated.
     
     def enforce_reserve_requirements_rule(m, t):
-        if m.storage_services:
-            return sum(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
+        return sum(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
                  + sum(m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
                  + sum(m.PowerOutputStorage[s,t] for s in m.Storage) \
                  - sum(m.PowerInputStorage[s,t] for s in m.Storage) \
                  + sum(m.LoadGenerateMismatch[b,t] for b in m.Buses) \
                  + m.ReserveShortfall[t] \
-                 >= \
-                 m.TotalDemand[t] + m.ReserveRequirement[t]
-        else:
-            return (sum(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
-                 + sum(m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
-                 + sum(m.LoadGenerateMismatch[b,t] for b in m.Buses) \
-                 + m.ReserveShortfall[t]) \
                  >= \
                  m.TotalDemand[t] + m.ReserveRequirement[t]
     

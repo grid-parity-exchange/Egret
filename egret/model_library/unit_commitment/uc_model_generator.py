@@ -17,7 +17,7 @@ from egret.model_library.unit_commitment import \
         ramping_limits, production_costs, \
         uptime_downtime, startup_costs, \
         services, power_balance, reserve_requirement, \
-        objective
+        objective, fuel_supply
 
 from collections import namedtuple
 import pyomo.environ as pe
@@ -86,12 +86,6 @@ def _generate_model( model_data,
     
     ## enforece time 1 ramp rates
     model.enforce_t1_ramp_rates = True
-
-    ## prescient assumes we have storage services
-    model.storage_services = True
-
-    ## new flag for ancillary services
-    model.ancillary_services = True
     
     ## to relax binaries
     model.relax_binaries = _relax_binaries
@@ -106,13 +100,14 @@ def _generate_model( model_data,
     getattr(production_costs, _production_costs)(model)
     getattr(uptime_downtime, _uptime_downtime)(model)
     getattr(startup_costs, _startup_costs)(model)
-    if model.storage_services:
-        services.storage_services(model)
-    if model.ancillary_services:
-        services.ancillary_services(model)
+    services.storage_services(model)
+    services.ancillary_services(model)
     getattr(power_balance, _power_balance)(model)
     getattr(reserve_requirement, _reserve_requirement)(model)
     getattr(objective, _objective)(model)
+
+    if 'fuel_supply' in model_data.data['elements'] and bool(model_data.data['elements']['fuel_supply']):
+        fuel_supply.fuel_supply_model(model)
 
     return model
 

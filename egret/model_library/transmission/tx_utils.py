@@ -240,6 +240,7 @@ scaled_attributes = {
                                                           'non_spinning_supplied',
                                                           'supplemental_supplied',
                                                           'p_cost',
+                                                          'p_fuel',
                                                           'q_cost',
                                                           'agc_marginal_cost',
                                                           'spinning_cost',
@@ -354,16 +355,20 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
             if attr['cost_curve_type'] == 'polynomial':
                 values_dict = attr['values']
-                new_values = dict()
-                for power, coeff in values_dict.items():
-                    new_values[int(power)] = coeff*(inverse_op(1.,baseMVA)**int(power))
+                new_values = { int(power): coeff*(inverse_op(1.,baseMVA)**int(power)) \
+                                for (power, coeff) in values_dict.items() }
                 attr['values'] = new_values
             elif attr['cost_curve_type'] == 'piecewise':
                 values_list_of_tuples = attr['values']
-                new_values = list()
-                for point, cost in values_list_of_tuples:
-                    new_values.append(( normal_op(point,baseMVA), cost))
+                new_values = [ ( normal_op(point,baseMVA), cost) \
+                                for (point, cost) in values_list_of_tuples ]
                 attr['values'] = new_values
+        elif 'data_type' in attr and attr['data_type'] == 'fuel_curve':
+            values_list_of_tuples = attr['values']
+            new_values = [ ( normal_op(point,baseMVA), fuel) \
+                            for (point, fuel) in values_list_of_tuples ]
+            attr['values'] = new_values
+
     else:
         op = _get_op(normal_op, inverse_op, attr_name)
         element[attr_name] = op( attr , baseMVA )
