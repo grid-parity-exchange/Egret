@@ -41,6 +41,12 @@ def declare_var_pf(model, index_set, **kwargs):
     """
     decl.declare_var('pf', model=model, index_set=index_set, **kwargs)
 
+def declare_expr_pf(model, index_set, **kwargs):
+    """
+    Create expression for the real part of the power flow in the "from"
+    end of the transmission line
+    """
+    decl.declare_expr('pf', model=model, index_set=index_set, **kwargs)
 
 def declare_var_qf(model, index_set, **kwargs):
     """
@@ -369,7 +375,13 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
 
     con_set = decl.declare_set("_con_eq_branch_power_ptdf_approx_set", model, index_set)
 
-    m.eq_pf_branch = pe.Constraint(con_set)
+    pf_is_var = isinstance(m.pf, pe.Var)
+    if not pf_is_var:
+        if not isinstance(m.pf, pe.Expression):
+            raise Exception("Unrecognized type for m.pf", m.pf.pprint())
+
+    if pf_is_var:
+        m.eq_pf_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
         expr = 0
@@ -391,8 +403,11 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
             for gen_name in gens_by_bus[bus_name]:
                 expr -= coef * m.pg[gen_name]
 
-        m.eq_pf_branch[branch_name] = \
-            m.pf[branch_name] == expr
+        if pf_is_var:
+            m.eq_pf_branch[branch_name] = \
+                m.pf[branch_name] == expr
+        else:
+            m.pf[branch_name] = expr
 
 
 def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol = None):
@@ -474,7 +489,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
                                         approximation_type=ApproximationType.BTHETA):
     """
     Create the inequality constraints for the branch thermal limits
-    based on the power variables.
+    based on the power variables or expressions.
     """
     m = model
     con_set = decl.declare_set('_con_ineq_p_branch_thermal_lbub',
@@ -483,7 +498,9 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
     m.ineq_pf_branch_thermal_lb = pe.Constraint(con_set)
     m.ineq_pf_branch_thermal_ub = pe.Constraint(con_set)
 
-    if approximation_type == ApproximationType.BTHETA:
+    if approximation_type == ApproximationType.BTHETA or \
+            (approximation_type == ApproximationType.PTDF and \
+            isinstance(m.pf, pe.Expression)):
         for branch_name in con_set:
             if p_thermal_limits[branch_name] is None:
                 continue

@@ -66,14 +66,10 @@ def _ptdf_dcopf_network_model(md,block):
     _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
 
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    p_lbub = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
-    pf_bounds = p_lbub
 
     ### declare the power flows and their limits
-    libbranch.declare_var_pf(model=block,
+    libbranch.declare_expr_pf(model=block,
                              index_set=branches.keys(),
-                             initialize=None,
-                             bounds=pf_bounds
                              )
 
     ### declare the branch power flow approximation constraints
@@ -92,6 +88,13 @@ def _ptdf_dcopf_network_model(md,block):
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                    )
 
+    ### declare the real power flow limits
+    libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
+                                                 index_set=branches.keys(),
+                                                 branches=branches,
+                                                 p_thermal_limits=p_max,
+                                                 approximation_type=ApproximationType.PTDF
+                                                 )
 
 def _btheta_dcopf_network_model(md,block):
     buses = dict(md.elements(element_type='bus'))
