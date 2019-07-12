@@ -21,11 +21,77 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
+import egret.data.data_utils as data_utils
 
-from egret.model_library.defn import CoordinateType, ApproximationType
+from egret.model_library.defn import BasePointType, CoordinateType, ApproximationType
 from math import pi
 
 component_name = 'power_balance'
+
+def _ptdf_dcopf_network_model(md,block):
+    buses = dict(md.elements(element_type='bus'))
+    loads = dict(md.elements(element_type='load'))
+    shunts = dict(md.elements(element_type='shunt'))
+    branches = { key: val for key,val in md.elements(element_type='branch') \
+                 if ('planned_outage' not in val) or (not val['planned_outage']) }
+
+    ## to keep things in order
+    buses_idx = list(buses.keys())
+    branches_idx = list(branches.keys())
+
+    reference_bus = md.data['system']['reference_bus']
+
+    ## TODO: just do this once, not for every time step, while keeping line outages in mind
+    ## equivalent to data_utils.create_dicts_of_ptdf()
+    PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
+    for i,branch_name in enumerate(branches_idx):
+        branch = branches[branch_name]
+        ptdf_row = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
+        branch['ptdf'] = ptdf_row
+
+    inlet_branches_by_bus, outlet_branches_by_bus = \
+        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+
+    ## this is not the "real" gens by bus, but the
+    ## index of net injections from the UC model
+    gens_by_bus = block.gens_by_bus
+
+    ### declare (and fix) the loads at the buses
+    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+
+    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
+    block.pl.fix()
+
+    ### declare the fixed shunts at the buses
+    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+
+    p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+    p_lbub = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
+    pf_bounds = p_lbub
+
+    ### declare the power flows and their limits
+    libbranch.declare_var_pf(model=block,
+                             index_set=branches.keys(),
+                             initialize=None,
+                             bounds=pf_bounds
+                             )
+
+    ### declare the branch power flow approximation constraints
+    libbranch.declare_eq_branch_power_ptdf_approx(model=block,
+                                                  index_set=branches.keys(),
+                                                  branches=branches,
+                                                  bus_p_loads=bus_p_loads,
+                                                  gens_by_bus=gens_by_bus,
+                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts
+                                                  )
+    ### declare the p balance
+    libbus.declare_eq_p_balance_ed(model=block,
+                                   index_set=buses.keys(),
+                                   bus_p_loads=bus_p_loads,
+                                   gens_by_bus=gens_by_bus,
+                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                   )
+
 
 def _btheta_dcopf_network_model(md,block):
     buses = dict(md.elements(element_type='bus'))
@@ -237,6 +303,14 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
         md_t = md.clone_at_timestamp(td)
         network_model_builder(md_t,b)
 
+
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'power_vars': None,
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
+                                            })
+def ptdf_power_flow(model, slacks=True):
+    _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,

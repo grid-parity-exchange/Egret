@@ -558,6 +558,7 @@ def solve_unit_commitment(model_data,
 
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+        m.rc = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options)
 
@@ -759,6 +760,9 @@ def solve_unit_commitment(model_data,
                 for dt, mt in zip(data_time_periods,m.TimePeriods):
                     lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+    elif m.power_balance == 'ptdf_power_flow':
+        print("TODO: Implement data scrape from PTDF")
 
     elif m.power_balance == 'power_balance_constraints':
         for l,l_dict in branches.items():
