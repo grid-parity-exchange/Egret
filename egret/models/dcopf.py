@@ -20,11 +20,12 @@ import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 
 import egret.data.data_utils as data_utils
-from egret.model_library.defn import CoordinateType, ApproximationType
+from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
 from egret.data.model_data import map_items, zip_items
-from egret.models.copperplate_dispatch import _include_system_feasibility_slack
+from egret.models.copperplate_dispatch import _include_system_feasibility_slack, create_copperplate_dispatch_approx_model
 from math import pi
 
+import numpy as np
 
 def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, penalty=1000):
     import egret.model_library.decl as decl
@@ -281,6 +282,112 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
 
     return model, md
 
+def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
+    md = model_data.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
+
+    gens = dict(md.elements(element_type='generator'))
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+    loads = dict(md.elements(element_type='load'))
+    shunts = dict(md.elements(element_type='shunt'))
+
+    gen_attrs = md.attributes(element_type='generator')
+    bus_attrs = md.attributes(element_type='bus')
+
+    inlet_branches_by_bus, outlet_branches_by_bus = \
+        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
+
+    model = pe.ConcreteModel()
+
+    ### declare (and fix) the loads at the buses
+    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+
+    libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
+    model.pl.fix()
+
+    ### declare the fixed shunts at the buses
+    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+
+    ### declare the generator real power
+    pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
+    libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init,
+                          bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
+                          )
+
+    ### include the feasibility slack for the system balance
+    p_rhs_kwargs = {}
+    if include_feasibility_slack:
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
+
+    ### declare the p balance
+    libbus.declare_eq_p_balance_ed(model=model,
+                                   index_set=bus_attrs['names'],
+                                   bus_p_loads=bus_p_loads,
+                                   gens_by_bus=gens_by_bus,
+                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                   **p_rhs_kwargs
+                                   )
+
+    ### declare the generator cost objective
+    libgen.declare_expression_pgqg_operating_cost(model=model,
+                                                  index_set=gen_attrs['names'],
+                                                  p_costs=gen_attrs['p_cost']
+                                                  )
+
+    obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    if include_feasibility_slack:
+        obj_expr += penalty_expr
+
+    model.obj = pe.Objective(expr=obj_expr)
+
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+
+    ## to keep things in order
+    buses_idx = list(buses.keys())
+    branches_idx = list(branches.keys())
+
+    reference_bus = md.data['system']['reference_bus']
+
+    ## calculate PTDFs, but don't do anything with them (for now..)
+    PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
+
+    model._PTDFM = PTDFM
+    model._PTDF_bus_idx = buses_idx
+    model._PTDF_branch_idx = branches_idx
+
+    model._PTDF_bus_nw_exprs = [ model.pl[bus] + bus_gs_fixed_shunts[bus] - \
+                     sum(model.pg[g] for g in gens_by_bus[bus]) for bus in buses_idx]
+
+    model._PTDF_branch_limits = np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ])
+
+    return model, md
+
+def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=True,iteration_limit=100):
+
+    buses_idx = m._PTDF_bus_idx
+    branches_idx = m._PTDF_branch_idx
+    bus_nw_exprs = m._PTDF_bus_nw_exprs
+    branch_limits = m._PTDF_branch_limits
+    PTDFM = m._PTDFM
+
+    branches = dict(md.elements(element_type='branch'))
+    NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
+    
+    PFV  = np.dot(PTDFM, NWV)
+
+    ## get the indices of the violations
+    gt_viol = np.nonzero(np.greater(PFV, branch_limits))[0]
+    lt_viol = np.nonzero(np.less(PFV, -branch_limits))[0]
+
+    for i in gt_viol:
+        print('branch '+branches_idx[i]+' has positive violations')
+    for i in lt_viol:
+        print('branch '+branches_idx[i]+' has negative violations')
+    
+
 def solve_dcopf(model_data,
                 solver,
                 timelimit = None,
@@ -333,6 +440,9 @@ def solve_dcopf(model_data,
     m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
 
+    if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
+        _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=100)
+
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -355,7 +465,11 @@ def solve_dcopf(model_data,
                     b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
 
     for k, k_dict in branches.items():
-        k_dict['pf'] = value(m.pf[k])
+        if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
+            ##TODO: Implement this
+            pass
+        else:
+            k_dict['pf'] = value(m.pf[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
 
@@ -368,13 +482,13 @@ def solve_dcopf(model_data,
     return md
 
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     filename = 'pglib_opf_case3_lmbd.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
-#     kwargs = {'include_feasibility_slack':'True'}
-#     md = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, **kwargs)
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    filename = 'pglib_opf_case118_ieee.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+    md = create_ModelData(matpower_file)
+    kwargs = {'include_feasibility_slack':'True'}
+    md = solve_dcopf(md, "gurobi", options={'method':1}, dcopf_model_generator=create_lazy_ptdf_dcopf_model, **kwargs)
