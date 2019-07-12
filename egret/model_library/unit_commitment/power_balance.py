@@ -29,12 +29,10 @@ component_name = 'power_balance'
 
 def _btheta_dcopf_network_model(md,block):
     buses = dict(md.elements(element_type='bus'))
-    branches = dict(md.elements(element_type='branch'))
     loads = dict(md.elements(element_type='load'))
     shunts = dict(md.elements(element_type='shunt'))
-
-    bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
+    branches = { key: val for key,val in md.elements(element_type='branch') \
+                 if ('planned_outage' not in val) or (not val['planned_outage']) }
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
@@ -46,15 +44,15 @@ def _btheta_dcopf_network_model(md,block):
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
 
-    libbus.declare_var_pl(block, bus_attrs['names'], initialize=bus_p_loads)
+    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
     block.pl.fix()
 
     ### declare the fixed shunts at the buses
     _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
 
     ### declare the polar voltages
-    va_bounds = {k: (-pi, pi) for k in bus_attrs['names']}
-    libbus.declare_var_va(block, bus_attrs['names'], initialize=None,
+    va_bounds = {k: (-pi, pi) for k in buses.keys()}
+    libbus.declare_var_va(block, buses.keys(), initialize=None,
                           bounds=va_bounds
                           )
 
@@ -73,20 +71,20 @@ def _btheta_dcopf_network_model(md,block):
     pf_bounds = p_lbub
 
     libbranch.declare_var_pf(model=block,
-                             index_set=branch_attrs['names'],
+                             index_set=branches.keys(),
                              initialize=None,
                              bounds=pf_bounds
                              )
 
     ### declare the branch power flow approximation constraints
     libbranch.declare_eq_branch_power_btheta_approx(model=block,
-                                                    index_set=branch_attrs['names'],
+                                                    index_set=branches.keys(),
                                                     branches=branches
                                                     )
 
     ### declare the p balance
     libbus.declare_eq_p_balance_dc_approx(model=block,
-                                          index_set=bus_attrs['names'],
+                                          index_set=buses.keys(),
                                           bus_p_loads=bus_p_loads,
                                           gens_by_bus=gens_by_bus,
                                           bus_gs_fixed_shunts=bus_gs_fixed_shunts,
@@ -97,7 +95,7 @@ def _btheta_dcopf_network_model(md,block):
 
     ### declare the real power flow limits
     libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
-                                                 index_set=branch_attrs['names'],
+                                                 index_set=branches.keys(),
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
                                                  approximation_type=ApproximationType.BTHETA
@@ -105,7 +103,7 @@ def _btheta_dcopf_network_model(md,block):
 
     ### declare angle difference limits on interconnected buses
     libbranch.declare_ineq_angle_diff_branch_lbub(model=block,
-                                                  index_set=branch_attrs['names'],
+                                                  index_set=branches.keys(),
                                                   branches=branches,
                                                   coordinate_type=CoordinateType.POLAR
                                                   )
