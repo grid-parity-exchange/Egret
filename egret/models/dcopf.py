@@ -564,20 +564,18 @@ def solve_dcopf(model_data,
         elif dcopf_model_generator == create_ptdf_dcopf_model:
             b_dict['lmp'] = value(m.dual[m.eq_p_balance])
             for k, k_dict in branches.items():
-                if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
-                    b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
+                b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
         elif dcopf_model_generator == create_lazy_ptdf_dcopf_model:
             b_dict['lmp'] = value(m.dual[m.eq_p_balance])
             for k, k_dict in branches.items():
-                if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
-                    ## NOTE: if line k's thermal limits are not binding,
-                    ##       its dual value is 0.
-                    ## NOTE: These need to be - for the dual to be correct.
-                    ##       Is this because our ptdf's are "backwards"?
-                    if k in m.ineq_pf_branch_thermal_lb:
-                        b_dict['lmp'] -= k_dict['ptdf'][b]*value(m.dual[m.ineq_pf_branch_thermal_lb[k]])
-                    if k in m.ineq_pf_branch_thermal_ub:
-                        b_dict['lmp'] -= k_dict['ptdf'][b]*value(m.dual[m.ineq_pf_branch_thermal_ub[k]])
+                ## NOTE: if line k's thermal limits are not binding,
+                ##       its dual value is 0.
+                ## NOTE: These need to be - for the dual to be correct.
+                ##       Is this because our ptdf's are "backwards"?
+                if k in m.ineq_pf_branch_thermal_lb:
+                    b_dict['lmp'] -= k_dict['ptdf'][b]*value(m.dual[m.ineq_pf_branch_thermal_lb[k]])
+                if k in m.ineq_pf_branch_thermal_ub:
+                    b_dict['lmp'] -= k_dict['ptdf'][b]*value(m.dual[m.ineq_pf_branch_thermal_ub[k]])
         else:
             raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
 
@@ -617,11 +615,11 @@ if __name__ == '__main__':
     timer.tic('loading instance model_data')
     path = os.path.dirname(__file__)
     #filename = 'pglib_opf_case1354_pegase.m'
-    #filename = 'pglib_opf_case240_pserc.m'
+    filename = 'pglib_opf_case240_pserc.m'
     #filename = 'pglib_opf_case300_ieee.m'
-    filename = 'pglib_opf_case118_ieee.m'
+    #filename = 'pglib_opf_case118_ieee.m'
     #filename = 'pglib_opf_case30_ieee.m'
-    filename = 'pglib_opf_case5_pjm.m'
+    #filename = 'pglib_opf_case5_pjm.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
     timer.toc('data_loaded')
@@ -630,8 +628,8 @@ if __name__ == '__main__':
     #kwargs = {}
     solver='gurobi_persistent'
     #options = {'optimality_tol':1e-09, 'feasibility_tol':1e-09}
-    options = {'method':1}
-    #options = {}
+    #options = {'method':1}
+    options = {}
 
     timer.tic('solving btheta DCOPF using '+solver)
     mdo_bt = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
