@@ -366,11 +366,11 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
     reference_bus = md.data['system']['reference_bus']
 
     ## calculate PTDFs, but don't do anything with them (for now..)
-    from pyutilib.misc.timing import TicTocTimer
-    timer = TicTocTimer()
-    timer.tic('starting PTDF calculation')
+    #from pyutilib.misc.timing import TicTocTimer
+    #timer = TicTocTimer()
+    #timer.tic('starting PTDF calculation')
     PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
-    timer.toc('done')
+    #timer.toc('done')
 
     ## store some information we'll need when iterating on the model object
     model._PTDFM = PTDFM
@@ -441,7 +441,10 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
         gt_viol = np.nonzero(np.greater(PFV, branch_limits+flow_vio_tol))[0]
         lt_viol = np.nonzero(np.less(PFV, -branch_limits-flow_vio_tol))[0]
 
-        if len(gt_viol)+len(lt_viol) <= 0:
+        viol_num = len(gt_viol)+len(lt_viol)
+        print("iteration {0}, found {1} violation(s)".format(i,viol_num))
+
+        if viol_num <= 0:
             ## in this case, there are no violations!
             ## load the duals now too, if we're using a persistent solver
             if persistent_solver:
@@ -452,7 +455,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
             constr = m.ineq_pf_branch_thermal_lb
             thermal_limit = branch['rating_long_term']
             _sanity_checks(bn, thermal_limit, constr, False)
-            constr[bn] = -branch['rating_long_term'] <= m.pf[bn]
+            constr[bn] = (-branch['rating_long_term'], m.pf[bn], None)
 
             if persistent_solver:
                 solver.add_constraint(constr[bn])
@@ -461,7 +464,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
             constr = m.ineq_pf_branch_thermal_ub
             thermal_limit = branch['rating_long_term']
             _sanity_checks(bn, thermal_limit, constr, True)
-            constr[bn] = m.pf[bn] <= branch['rating_long_term']
+            constr[bn] = (None, m.pf[bn], branch['rating_long_term'])
 
             if persistent_solver:
                 solver.add_constraint(constr[bn])
@@ -564,18 +567,34 @@ def solve_dcopf(model_data,
                 if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
                     b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
         elif dcopf_model_generator == create_lazy_ptdf_dcopf_model:
-            ##TODO: Implement this
-            print("IMPLEMENT ME")
-            pass
+            b_dict['lmp'] = value(m.dual[m.eq_p_balance])
+            for k, k_dict in branches.items():
+                if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
+                    ## NOTE: if line k's thermal limits are not binding,
+                    ##       its dual value is 0.
+                    ## NOTE: These need to be - for the dual to be correct.
+                    ##       Is this because our ptdf's are "backwards"?
+                    if k in m.ineq_pf_branch_thermal_lb:
+                        b_dict['lmp'] -= k_dict['ptdf'][b]*value(m.dual[m.ineq_pf_branch_thermal_lb[k]])
+                    if k in m.ineq_pf_branch_thermal_ub:
+                        b_dict['lmp'] -= k_dict['ptdf'][b]*value(m.dual[m.ineq_pf_branch_thermal_ub[k]])
         else:
             raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
 
-    for k, k_dict in branches.items():
-        if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
-            ##TODO: Implement this
-            print("IMPLEMENT ME")
-            pass
-        else:
+    ## calculate the power flows from our PTDF matrix for maximum precision
+    if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
+        bus_nw_exprs = m._PTDF_bus_nw_exprs
+        PTDFM = m._PTDFM
+        branches_idx = m._PTDF_branch_idx
+
+        NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
+        PFV  = np.dot(PTDFM, NWV)
+
+        for i,bn in enumerate(branches_idx):
+            branches[bn]['pf'] = PFV[i]
+
+    else:
+        for k, k_dict in branches.items():
             k_dict['pf'] = value(m.pf[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
@@ -597,9 +616,12 @@ if __name__ == '__main__':
     timer = TicTocTimer()
     timer.tic('loading instance model_data')
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case2869_pegase.m'
+    #filename = 'pglib_opf_case1354_pegase.m'
+    #filename = 'pglib_opf_case240_pserc.m'
     #filename = 'pglib_opf_case300_ieee.m'
-    filename = 'pglib_opf_case57_ieee.m'
+    filename = 'pglib_opf_case118_ieee.m'
+    #filename = 'pglib_opf_case30_ieee.m'
+    filename = 'pglib_opf_case5_pjm.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
     timer.toc('data_loaded')
@@ -608,16 +630,17 @@ if __name__ == '__main__':
     #kwargs = {}
     solver='gurobi_persistent'
     #options = {'optimality_tol':1e-09, 'feasibility_tol':1e-09}
-    options = {}
+    options = {'method':1}
+    #options = {}
 
     timer.tic('solving btheta DCOPF using '+solver)
-    mdo = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
+    mdo_bt = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
     timer.toc('solved btheta DCOPF using '+solver)
 
     timer.tic('solving full PTDF DCOPF using '+solver)
-    mdo = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_ptdf_dcopf_model, **kwargs)
+    mdo_fp = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_ptdf_dcopf_model, **kwargs)
     timer.toc('solved full PTDF DCOPF using '+solver)
 
     timer.tic('solving lazy PTDF DCOPF using '+solver)
-    mdo = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_lazy_ptdf_dcopf_model, **kwargs)
+    mdo_lp = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_lazy_ptdf_dcopf_model, **kwargs)
     timer.toc('solved lazy PTDF DCOPF using '+solver)
