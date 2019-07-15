@@ -366,6 +366,29 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
                 g * (m.dva[branch_name])**2
 
 
+def get_power_flow_expr_ptdf_approx(model, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol=None, approximation_type = ApproximationType.PTDF):
+    expr = 0
+
+    if approximation_type == ApproximationType.PTDF:
+        ptdf = branch['ptdf']
+    elif approximation_type == ApproximationType.PTDF_LOSSES:
+        ptdf = branch['ptdf_r']
+    for bus_name, coef in ptdf.items():
+        if ptdf_tol and abs(coef) < ptdf_tol:
+            coef = 0.
+
+        if bus_gs_fixed_shunts[bus_name] != 0.0:
+            expr += coef * bus_gs_fixed_shunts[bus_name]
+
+        if bus_p_loads[bus_name] != 0.0:
+            expr += coef * model.pl[bus_name]
+
+        for gen_name in gens_by_bus[bus_name]:
+            expr -= coef * model.pg[gen_name]
+
+    return expr
+
+
 def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol = None, approximation_type = ApproximationType.PTDF):
     """
     Create the equality constraints for power (from PTDF approximation)
@@ -384,24 +407,9 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
         m.eq_pf_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
-        expr = 0
 
-        if approximation_type == ApproximationType.PTDF:
-            ptdf = branch['ptdf']
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            ptdf = branch['ptdf_r']
-        for bus_name, coef in ptdf.items():
-            if ptdf_tol and abs(coef) < ptdf_tol:
-                coef = 0.
-
-            if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_gs_fixed_shunts[bus_name]
-
-            if bus_p_loads[bus_name] != 0.0:
-                expr += coef * m.pl[bus_name]
-
-            for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.pg[gen_name]
+        expr = \
+            get_power_flow_expr_ptdf_approx(m, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol=ptdf_tol, approximation_type=approximation_type)
 
         if pf_is_var:
             m.eq_pf_branch[branch_name] = \

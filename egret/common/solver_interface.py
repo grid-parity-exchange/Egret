@@ -10,7 +10,7 @@
 """
 This file includes the solver interfaces for EGRET.
 """
-from pyomo.opt import SolverFactory, TerminationCondition
+import pyomo.opt as po
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
 
@@ -104,21 +104,21 @@ def _solve_model(model,
 
     ## termination conditions which are acceptable
     safe_termination_conditions = [
-                                   TerminationCondition.maxTimeLimit,
-                                   TerminationCondition.maxIterations,
-                                   TerminationCondition.minFunctionValue,
-                                   TerminationCondition.minStepLength,
-                                   TerminationCondition.globallyOptimal,
-                                   TerminationCondition.locallyOptimal,
-                                   TerminationCondition.feasible,
-                                   TerminationCondition.optimal,
-                                   TerminationCondition.maxEvaluations,
-                                   TerminationCondition.other,
+                                   po.TerminationCondition.maxTimeLimit,
+                                   po.TerminationCondition.maxIterations,
+                                   po.TerminationCondition.minFunctionValue,
+                                   po.TerminationCondition.minStepLength,
+                                   po.TerminationCondition.globallyOptimal,
+                                   po.TerminationCondition.locallyOptimal,
+                                   po.TerminationCondition.feasible,
+                                   po.TerminationCondition.optimal,
+                                   po.TerminationCondition.maxEvaluations,
+                                   po.TerminationCondition.other,
                                   ]
 
     if isinstance(solver, str):
-        solver = SolverFactory(solver)
-    elif isinstance(solver, pyomo.opt.base.OptSolver):
+        solver = po.SolverFactory(solver)
+    elif isinstance(solver, po.base.OptSolver):
         pass
     else:
         raise Exception('solver must be string or an instanciated pyomo solver')
