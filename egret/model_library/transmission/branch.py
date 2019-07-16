@@ -366,16 +366,26 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
                 g * (m.dva[branch_name])**2
 
 
-def get_power_flow_expr_ptdf_approx(model, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol=None, approximation_type = ApproximationType.PTDF):
+def get_power_flow_expr_ptdf_approx(model, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
     expr = 0
+
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
 
     if approximation_type == ApproximationType.PTDF:
         ptdf = branch['ptdf']
     elif approximation_type == ApproximationType.PTDF_LOSSES:
         ptdf = branch['ptdf_r']
+    max_coef = max(abs(coef) for coef in ptdf.values())
     for bus_name, coef in ptdf.items():
-        if ptdf_tol and abs(coef) < ptdf_tol:
-            coef = 0.
+        if abs(coef) < abs_ptdf_tol:
+            ## no point in excuting the rest of the for loop
+            continue
+        if abs(coef)/max_coef < rel_ptdf_tol:
+            ## no point in excuting the rest of the for loop
+            continue
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
             expr += coef * bus_gs_fixed_shunts[bus_name]
@@ -389,7 +399,7 @@ def get_power_flow_expr_ptdf_approx(model, branch, bus_p_loads, gens_by_bus, bus
     return expr
 
 
-def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol = None, approximation_type = ApproximationType.PTDF):
+def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
     """
     Create the equality constraints for power (from PTDF approximation)
     in the branch
@@ -409,7 +419,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
         branch = branches[branch_name]
 
         expr = \
-            get_power_flow_expr_ptdf_approx(m, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol=ptdf_tol, approximation_type=approximation_type)
+            get_power_flow_expr_ptdf_approx(m, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol, approximation_type=approximation_type)
 
         if pf_is_var:
             m.eq_pf_branch[branch_name] = \
@@ -418,7 +428,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
             m.pf[branch_name] = expr
 
 
-def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol = None):
+def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, rel_ptdf_tol=None, abs_ptdf_tol=None):
     """
     Create the equality constraints for losses (from PTDF approximation)
     in the branch
@@ -426,6 +436,10 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, 
     m = model
 
     con_set = decl.declare_set("_con_eq_branch_loss_ptdf_approx_set", model, index_set)
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
 
     m.eq_pfl_branch = pe.Constraint(con_set)
     for branch_name in con_set:
@@ -433,9 +447,14 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, 
         expr = 0
 
         ptdf = branch['ldf']
+        max_coef = max(abs(coef) for coef in ptdf.values())
         for bus_name, coef in ptdf.items():
-            if ptdf_tol and abs(coef) < ptdf_tol:
-                coef = 0.
+            if abs(coef) < abs_ptdf_tol:
+                ## no point in excuting the rest of the for loop
+                continue
+            if abs(coef)/max_coef < rel_ptdf_tol:
+                ## no point in excuting the rest of the for loop
+                continue
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
                 expr += coef * bus_gs_fixed_shunts[bus_name]

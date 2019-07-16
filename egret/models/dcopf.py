@@ -175,9 +175,20 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     return model, md
 
 
-def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
+def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
+                            rel_ptdf_tol=1e-6, abs_ptdf_tol=1e-10):
+    baseMVA = model_data.data['system']['baseMVA']
+    if rel_ptdf_tol < 1e-6:
+        print("WARNING: rel_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing rel_ptdf_tol".format(rel_ptdf_tol))
+    if abs_ptdf_tol/baseMVA < 1e-12:
+        print("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol".format(abs_ptdf_tol))
+
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
+
+    ## scale to base MVA
+    if abs_ptdf_tol is not None:
+        abs_ptdf_tol /= md.data['system']['baseMVA']
 
     data_utils.create_dicts_of_ptdf(md)
 
@@ -248,7 +259,9 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
                                                   branches=branches,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
-                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts
+                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                                  abs_ptdf_tol=abs_ptdf_tol,
+                                                  rel_ptdf_tol=rel_ptdf_tol,
                                                   )
 
     ### declare the p balance
@@ -282,9 +295,29 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
 
     return model, md
 
-def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
+def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
+                                 rel_ptdf_tol=1e-6, abs_ptdf_tol=1e-10,
+                                 abs_flow_tol=1e-3, rel_flow_tol=1e-5,
+                                 lazy_rel_flow_tol=-0.05):
+
+    baseMVA = model_data.data['system']['baseMVA']
+    if abs_flow_tol/baseMVA < lazy_rel_flow_tol:
+        raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
+                        " abs_flow_tol={0}, lazy_flow_tol={1}, baseMVA={2}".format(abs_flow_tol, lazy_flow_tol, baseMVA))
+    if abs_flow_tol/baseMVA < 1e-6:
+        print("WARNING: abs_flow_tol={0}, which is below the numeric threshold of most solvers.".format(abs_flow_tol))
+    if abs_flow_tol/baseMVA < rel_ptdf_tol*10:
+        print("WARNING: abs_flow_tol={0}, rel_ptdf_tol={1}, which will likely result in violations. Consider raising abs_flow_tol or lowering rel_ptdf_tol.".format(abs_flow_tol, rel_ptdf_tol))
+    if rel_ptdf_tol < 1e-6:
+        print("WARNING: rel_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing rel_ptdf_tol.".format(rel_ptdf_tol))
+    if abs_ptdf_tol/baseMVA < 1e-12:
+        print("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol.".format(abs_ptdf_tol))
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
+
+    ## scale to base MVA
+    abs_ptdf_tol /= md.data['system']['baseMVA']
+    abs_flow_tol /= md.data['system']['baseMVA']
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -387,6 +420,12 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
     model._PTDF_gens_by_bus = gens_by_bus
     model._PTDF_bus_gs_fixed_shunts = bus_gs_fixed_shunts
 
+    model._PTDF_rel_ptdf_tol = rel_ptdf_tol
+    model._PTDF_abs_ptdf_tol = abs_ptdf_tol
+    model._PTDF_abs_flow_tol = abs_flow_tol
+    model._PTDF_rel_flow_tol = rel_flow_tol
+    model._PTDF_lazy_rel_flow_tol = lazy_rel_flow_tol
+
     return model, md
 
 def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=True,flow_vio_tol=1.e-5,iteration_limit=100000):
@@ -403,6 +442,13 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
     gens_by_bus = m._PTDF_gens_by_bus
     bus_gs_fixed_shunts = m._PTDF_bus_gs_fixed_shunts
 
+    rel_ptdf_tol = m._PTDF_rel_ptdf_tol
+    abs_ptdf_tol = m._PTDF_abs_ptdf_tol
+
+    abs_flow_tol = m._PTDF_abs_flow_tol
+    rel_flow_tol = m._PTDF_rel_flow_tol
+    lazy_rel_flow_tol = m._PTDF_lazy_rel_flow_tol
+
     def _iter_over_viol_set(viol_set):
         for i in viol_set:
             bn = branches_idx[i]
@@ -411,25 +457,24 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
                 ## This case should be rare, but it could happen that
                 ## we've already added the lower (upper) constraint
                 ## also need to add the upper (lower) constraint
+                ## If lazy_rel_flow_tol < 0, this could also be the case
                 pass
             else:
                 ## add the ptdf row for this branch, and the flow-tracking expression
                 branch['ptdf'] = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
-                expr = libbranch.get_power_flow_expr_ptdf_approx(m, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ptdf_tol=None, approximation_type=ApproximationType.PTDF)
+                expr = libbranch.get_power_flow_expr_ptdf_approx(m, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol, approximation_type=ApproximationType.PTDF)
                 m.pf[bn] = expr
-            yield bn, branch
-
-    def _sanity_checks(bn, thermal_limit, constr, ub):
-        if thermal_limit is None:
-            raise Exception("Branch was found to be violated, but no thermal limits exist, branch={}".format(bn))
-        if bn in constr:
-            if ub:
-                direction, constrn = 'above', 'upper'
-            else:
-                direction, constrn = 'below', 'lower'
-            raise Exception("Branch was found to be violated from {0}, but a {1} bound constraint is already on the model, branch={2}".format(direction, constrn, bn))
+            yield i, bn, branch
 
     persistent_solver = isinstance(solver, PersistentSolver)
+
+    baseMVA = md.data['system']['baseMVA']
+
+    ## if lazy_rel_flow_tol < 0, this narrows the branch limits
+    lazy_branch_limits = branch_limits*(1+lazy_rel_flow_tol)
+
+    ## only enforce the relative and absolute, within tollerance
+    enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
 
     for i in range(iteration_limit):
 
@@ -438,8 +483,11 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
         PFV  = np.dot(PTDFM, NWV)
 
         ## get the indices of the violations, but do it in numpy
-        gt_viol = np.nonzero(np.greater(PFV, branch_limits+flow_vio_tol))[0]
-        lt_viol = np.nonzero(np.less(PFV, -branch_limits-flow_vio_tol))[0]
+        gt_viol_lazy = np.nonzero(np.greater(PFV, lazy_branch_limits))[0]
+        lt_viol_lazy = np.nonzero(np.less(PFV, -lazy_branch_limits))[0]
+
+        gt_viol = np.nonzero(np.greater(PFV, enforced_branch_limits))[0]
+        lt_viol = np.nonzero(np.less(PFV, -enforced_branch_limits))[0]
 
         viol_num = len(gt_viol)+len(lt_viol)
         print("iteration {0}, found {1} violation(s)".format(i,viol_num))
@@ -451,23 +499,40 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
                 solver.load_duals()
             break
 
-        for bn, branch in _iter_over_viol_set(lt_viol):
+        lt_viol_in_constr = 0
+        for i, bn, branch in _iter_over_viol_set(lt_viol_lazy):
             constr = m.ineq_pf_branch_thermal_lb
             thermal_limit = branch['rating_long_term']
-            _sanity_checks(bn, thermal_limit, constr, False)
-            constr[bn] = (-branch['rating_long_term'], m.pf[bn], None)
+            if bn in constr and i in lt_viol:
+                print("WARNING: line {0} (LB) is in the  monitored set, but flow exceeds limit!!\n\t flow={1}, limit={2}".format(bn, PFV[i]*baseMVA, -thermal_limit*baseMVA))
+                lt_viol_in_constr += 1
+            elif bn not in constr: 
+                print("Adding line {0} (LB) to monitored set, flow={1}, limit={2}".format(bn, PFV[i]*baseMVA, -thermal_limit*baseMVA))
+                constr[bn] = (-thermal_limit, m.pf[bn], None)
+                if persistent_solver:
+                    solver.add_constraint(constr[bn])
 
-            if persistent_solver:
-                solver.add_constraint(constr[bn])
-
-        for bn, branch in _iter_over_viol_set(gt_viol):
+        gt_viol_in_constr = 0
+        for i, bn, branch in _iter_over_viol_set(gt_viol_lazy):
             constr = m.ineq_pf_branch_thermal_ub
             thermal_limit = branch['rating_long_term']
-            _sanity_checks(bn, thermal_limit, constr, True)
-            constr[bn] = (None, m.pf[bn], branch['rating_long_term'])
+            if bn in constr and i in gt_viol:
+                print("WARNING: line {0} (UB) is in the  monitored set, but flow exceeds limit!!\n\t flow={1}, limit={2}".format(bn, PFV[i]*baseMVA, thermal_limit*baseMVA))
+                gt_viol_in_constr += 1
+            elif bn not in constr:
+                print("Adding line {0} (UB) to monitored set, flow={1}, limit={2}".format(bn, PFV[i]*baseMVA, branch['rating_long_term']*baseMVA))
+                constr[bn] = (None, m.pf[bn], thermal_limit)
+                if persistent_solver:
+                    solver.add_constraint(constr[bn])
 
+        all_viol_in_model = (len(lt_viol) == lt_viol_in_constr) \
+                            and (len(gt_viol) == gt_viol_in_constr)
+        if all_viol_in_model:
+            print('WARNING: Terminating with monitored violations!')
+            print('         Result is not transmission feasible.')
             if persistent_solver:
-                solver.add_constraint(constr[bn])
+                solver.load_duals()
+            break
 
         #m.ineq_pf_branch_thermal_lb.pprint()
         #m.ineq_pf_branch_thermal_ub.pprint()
@@ -480,6 +545,8 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
     else:
         print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
         print('         Result is not transmission feasible.')
+        if persistent_solver:
+            solver.load_duals()
 
 
 def solve_dcopf(model_data,
@@ -553,33 +620,15 @@ def solve_dcopf(model_data,
 
     md.data['system']['total_cost'] = value(m.obj)
 
+    from pyutilib.misc.timing import TicTocTimer
+
+    timer = TicTocTimer()
+
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
 
-    for b,b_dict in buses.items():
-        b_dict['pl'] = value(m.pl[b])
-        if dcopf_model_generator == create_btheta_dcopf_model:
-            b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
-            b_dict['va'] = value(m.va[b])
-        elif dcopf_model_generator == create_ptdf_dcopf_model:
-            b_dict['lmp'] = value(m.dual[m.eq_p_balance])
-            for k, k_dict in branches.items():
-                b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
-        elif dcopf_model_generator == create_lazy_ptdf_dcopf_model:
-            b_dict['lmp'] = value(m.dual[m.eq_p_balance])
-            for k, k_dict in branches.items():
-                ## NOTE: if line k's thermal limits are not binding,
-                ##       its dual value is 0.
-                ## NOTE: These need to be - for the dual to be correct.
-                ##       Is this because our ptdf's are "backwards"?
-                if k in m.ineq_pf_branch_thermal_lb:
-                    b_dict['lmp'] -= k_dict['ptdf'][b]*value(m.dual[m.ineq_pf_branch_thermal_lb[k]])
-                if k in m.ineq_pf_branch_thermal_ub:
-                    b_dict['lmp'] -= k_dict['ptdf'][b]*value(m.dual[m.ineq_pf_branch_thermal_ub[k]])
-        else:
-            raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
-
     ## calculate the power flows from our PTDF matrix for maximum precision
+    ## calculate the LMPC (LMP congestion) using numpy
     if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
         bus_nw_exprs = m._PTDF_bus_nw_exprs
         PTDFM = m._PTDFM
@@ -587,13 +636,39 @@ def solve_dcopf(model_data,
 
         NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
         PFV  = np.dot(PTDFM, NWV)
-
+        PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
             branches[bn]['pf'] = PFV[i]
-
+            if bn in m.ineq_pf_branch_thermal_lb:
+                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_lb[bn]])
+            if bn in m.ineq_pf_branch_thermal_ub:
+                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_ub[bn]])
+        ## TODO: PFD is likely to be sparse, implying we just need a few
+        ##       rows of the PTDF matrix (or columns in its transpose).
+        LMPC = np.dot(-PTDFM.T, PFD)
     else:
         for k, k_dict in branches.items():
             k_dict['pf'] = value(m.pf[k])
+
+    if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
+        buses_idx = m._PTDF_bus_idx
+        LMPE = value(m.dual[m.eq_p_balance])
+        for i,b in enumerate(buses_idx):
+            b_dict = buses[b]
+            b_dict['lmp'] = LMPE + LMPC[i]
+            b_dict['pl'] = value(m.pl[b])
+    else:
+        for b,b_dict in buses.items():
+            b_dict['pl'] = value(m.pl[b])
+            if dcopf_model_generator == create_btheta_dcopf_model:
+                b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
+                b_dict['va'] = value(m.va[b])
+            elif dcopf_model_generator == create_ptdf_dcopf_model:
+                b_dict['lmp'] = value(m.dual[m.eq_p_balance])
+                for k, k_dict in branches.items():
+                    b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
+            else:
+                raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
 
     unscale_ModelData_to_pu(md, inplace=True)
 
@@ -612,14 +687,16 @@ if __name__ == '__main__':
     from pyutilib.misc.timing import TicTocTimer
 
     timer = TicTocTimer()
-    timer.tic('loading instance model_data')
     path = os.path.dirname(__file__)
+    #filename = 'pglib_opf_case6468_rte.m'
+    #filename = 'pglib_opf_case2383wp_k.m'
     #filename = 'pglib_opf_case1354_pegase.m'
-    filename = 'pglib_opf_case240_pserc.m'
-    #filename = 'pglib_opf_case300_ieee.m'
+    #filename = 'pglib_opf_case240_pserc.m'
+    filename = 'pglib_opf_case300_ieee.m'
     #filename = 'pglib_opf_case118_ieee.m'
     #filename = 'pglib_opf_case30_ieee.m'
     #filename = 'pglib_opf_case5_pjm.m'
+    timer.tic('loading instance {} model_data'.format(filename))
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
     timer.toc('data_loaded')
@@ -627,9 +704,10 @@ if __name__ == '__main__':
     kwargs = {'include_feasibility_slack':'True'}
     #kwargs = {}
     solver='gurobi_persistent'
+    #solver='ipopt'
     #options = {'optimality_tol':1e-09, 'feasibility_tol':1e-09}
-    #options = {'method':1}
-    options = {}
+    options = {'method':1}
+    #options = {}
 
     timer.tic('solving btheta DCOPF using '+solver)
     mdo_bt = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
