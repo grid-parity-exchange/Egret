@@ -15,7 +15,7 @@ def populate_default_ptdf_options(ptdf_options_dict):
     if 'rel_flow_tol' not in ptdf_options_dict:
         ptdf_options_dict['rel_flow_tol'] = 1.e-5
     if 'lazy_rel_flow_tol' not in ptdf_options_dict:
-        ptdf_options_dict['lazy_rel_flow_tol'] = -0.05
+        ptdf_options_dict['lazy_rel_flow_tol'] = -0.15
 
 def check_and_scale_ptdf_options(ptdf_options_dict, baseMVA):
     ## scale to base MVA
@@ -67,14 +67,14 @@ def check_violations(PTDF_dict, bus_nw_exprs):
 def _generate_flow_viol_warning(sense, bn, flow, limit, baseMVA, time):
     ret_str = "WARNING: line {0} ({1}) is in the  monitored set".format(bn, sense)
     if time is not None:
-        ret_str += "at time {}".format(time)
+        ret_str += " at time {}".format(time)
     ret_str += ", but flow exceeds limit!!\n\t flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA, sense)
     return ret_str
 
 def _generate_flow_monitor_message(sense, bn, flow, limit, baseMVA, time): 
     ret_str = "Adding line {0} ({1}) to monitored set".format(bn, sense)
     if time is not None:
-        ret_str += "at time {}".format(time)
+        ret_str += " at time {}".format(time)
     ret_str += ", flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA)
     return ret_str
 
@@ -105,15 +105,9 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
         for i in viol_set:
             bn = branches_idx[i]
             branch = branches[bn]
-            if 'ptdf' in branch:
-                ## This case should be rare, but it could happen that
-                ## we've already added the lower (upper) constraint
-                ## also need to add the upper (lower) constraint
-                ## If lazy_rel_flow_tol < 0, this could also be the case
-                pass
-            else:
-                ## add the ptdf row for this branch, and the flow-tracking expression
-                branch['ptdf'] = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
+            if mb.pf[bn].expr is None:
+                if 'ptdf' not in branch:
+                    branch['ptdf'] = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
                 expr = libbranch.get_power_flow_expr_ptdf_approx(mb, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol, approximation_type=ApproximationType.PTDF)
                 mb.pf[bn] = expr
             yield i, bn, branch
@@ -146,4 +140,46 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
 
     all_viol_in_mb = (len(lt_viol) == lt_viol_in_constr) \
                       and (len(gt_viol) == gt_viol_in_constr)
+
+
+def _binary_var_generator(instance):
+    regulation = hasattr(instance, 'regulation')
+
+    for t in instance.TimePeriods:
+        for g in instance.ThermalGenerators:
+            if instance.status_vars in ['CA_1bin_vars', 'garver_3bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars']:
+                yield instance.UnitOn[g,t]
+            if instance.status_vars in ['ALS_state_transition_vars']:
+                yield instance.UnitStayOn[g,t]
+            if instance.status_vars in ['garver_3bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
+                yield instance.UnitStart[g,t]
+            if instance.status_vars in ['garver_3bin_vars', 'ALS_state_transition_vars']:
+                yield instance.UnitStop[g,t]
+        if regulation:
+            for g in instance.AGC_Generators:
+                yield instance.RegulationOn[g,t]
+
+        for s in instance.Storage:
+                yield instance.OutputStorage[s,t]
+
+    if instance.startup_costs in ['KOW_startup_costs']:
+        for g,t_prime,t in instance.StartupIndicator_domain:
+            yield instance.StartupIndicator[g,t_prime,t]
+    elif instance.startup_costs in ['MLR_startup_costs', 'MLR_startup_costs2',]:
+        for g,s,t in instance.StartupCostsIndexSet:
+            yield instance.delta[g,s,t]
+
+def uc_instance_binary_relaxer(model, solver):
+    persistent_solver = isinstance(solver, PersistentSolver)
+    for var in _binary_var_generator(model):
+        var.domain = pe.UnitInterval
+        if persistent_solver:
+            solver.update_var(var)
+
+def uc_instance_binary_enforcer(model, solver):
+    persistent_solver = isinstance(solver, PersistentSolver)
+    for var in _binary_var_generator(model):
+        var.domain = pe.Binary
+        if persistent_solver:
+            solver.update_var(var)
 

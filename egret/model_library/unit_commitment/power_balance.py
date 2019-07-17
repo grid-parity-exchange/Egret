@@ -15,7 +15,7 @@ from .uc_utils import add_model_attr
 from .power_vars import _add_reactive_power_vars
 from .generation_limits import _add_reactive_limits
 
-import pyomo.environ as pe
+import numpy as np
 import egret.model_library.transmission.tx_utils as tx_utils
 import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
@@ -34,6 +34,48 @@ def _copperplate_approx_network_model(md,block):
     shunts = dict(md.elements(element_type='shunt'))
     branches = { key: val for key,val in md.elements(element_type='branch') \
                  if ('planned_outage' not in val) or (not val['planned_outage']) }
+
+    inlet_branches_by_bus, outlet_branches_by_bus = \
+        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+
+    ## this is not the "real" gens by bus, but the
+    gens_by_bus = block.gens_by_bus
+
+    ### declare (and fix) the loads at the buses
+    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+
+    ## index of net injections from the UC model
+    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
+    block.pl.fix()
+
+    ### declare the fixed shunts at the buses
+    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+
+    ### declare the p balance
+    libbus.declare_eq_p_balance_ed(model=block,
+                                   index_set=buses.keys(),
+                                   bus_p_loads=bus_p_loads,
+                                   gens_by_bus=gens_by_bus,
+                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                   )
+
+def _lazy_ptdf_dcopf_network_model(md,block):
+    buses = dict(md.elements(element_type='bus'))
+    loads = dict(md.elements(element_type='load'))
+    shunts = dict(md.elements(element_type='shunt'))
+    branches = dict()
+    branches_out = list()
+
+    for key, val in md.elements(element_type='branch'):
+        if ('planned_outage' in val) and (val['planned_outage']):
+            branches_out.append(key)
+        else:
+            branches[key] = val
+
+    ## this will serve as a key into our dict of PTDF matricies,
+    ## so that we can avoid recalculating them each time step
+    ## with the same network topology
+    branches_out = tuple(branches_out)
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
@@ -58,22 +100,121 @@ def _copperplate_approx_network_model(md,block):
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                    )
 
+    ### add "blank" power flow expressions
+    libbranch.declare_expr_pf(model=block,
+                             index_set=branches.keys(),
+                             )
+
+    ### add "blank" real power flow limits
+    libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
+                                                 index_set=branches.keys(),
+                                                 branches=branches,
+                                                 p_thermal_limits=None,
+                                                 approximation_type=None,
+                                                 )
+    ### end initial set-up
+    m = block.model()
+    if branches_out in m._PTDFs_dict:
+        ## create a pointer on this block to all this PTDF data,
+        ## for easy iteration within the solve loop
+        block._PTDF_dict = m._PTDFs_dict[branches_out]
+
+
+        ## this information is specific to each block
+        block._PTDF_bus_nw_exprs = \
+          [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
+          sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses]
+        block._PTDF_bus_p_loads = bus_p_loads
+    else:
+        _PTDF_dict = dict()
+        ## to keep things in order
+        buses_idx = list(buses.keys())
+        branches_idx = list(branches.keys())
+
+        reference_bus = md.data['system']['reference_bus']
+
+        ## calculate PTDFs, but don't do anything with them (for now..)
+        #from pyutilib.misc.timing import TicTocTimer
+        #timer = TicTocTimer()
+        #timer.tic('starting PTDF calculation')
+        PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
+        #timer.toc('done')
+
+        ## store some information we'll need when iterating on the model object
+        _PTDF_dict['PTDFM'] = PTDFM
+        _PTDF_dict['buses_idx'] = buses_idx
+        _PTDF_dict['branches_idx'] = branches_idx
+        _PTDF_dict['branch_limits'] = np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ])
+        _PTDF_dict['branches'] = branches
+        _PTDF_dict['gens_by_bus'] = gens_by_bus
+        _PTDF_dict['bus_gs_fixed_shunts'] = bus_gs_fixed_shunts
+
+        m._PTDFs_dict[branches_out] = _PTDF_dict
+
+        block._PTDF_dict = _PTDF_dict
+
+        ## this expression is specific to each block
+        block._PTDF_bus_nw_exprs = \
+          [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
+          sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses]
+        block._PTDF_bus_p_loads = bus_p_loads
+
+
+
 def _ptdf_dcopf_network_model(md,block):
+
+    ## TODO: unhardcode these
+    rel_ptdf_tol=1e-6
+    abs_ptdf_tol=1e-10
+
+    baseMVA = md.data['system']['baseMVA']
+    abs_ptdf_tol /= baseMVA
+
     buses = dict(md.elements(element_type='bus'))
     loads = dict(md.elements(element_type='load'))
     shunts = dict(md.elements(element_type='shunt'))
-    branches = { key: val for key,val in md.elements(element_type='branch') \
-                 if ('planned_outage' not in val) or (not val['planned_outage']) }
+    branches = dict()
+    branches_out = list()
 
-    ## to keep things in order
-    buses_idx = list(buses.keys())
-    branches_idx = list(branches.keys())
+    for key, val in md.elements(element_type='branch'):
+        if ('planned_outage' in val) and (val['planned_outage']):
+            branches_out.append(key)
+        else:
+            branches[key] = val
 
-    reference_bus = md.data['system']['reference_bus']
+    ## this will serve as a key into our dict of PTDF matricies,
+    ## so that we can avoid recalculating them each time step
+    ## with the same network topology
+    branches_out = tuple(branches_out)
 
-    ## TODO: just do this once, not for every time step, while keeping line outages in mind
-    ## equivalent to data_utils.create_dicts_of_ptdf()
-    PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
+    m = block.model()
+    if branches_out in m._PTDFs_dict:
+        ## grab the ptdf matrix from this model
+        _PTDF_dict = m._PTDFs_dict[branches_out]
+        PTDFM = _PTDF_dict['PTDFM']
+        buses_idx = _PTDF_dict['buses_idx']
+        branches_idx = _PTDF_dict['branches_idx']
+    else:
+        _PTDF_dict = dict()
+        ## to keep things in order
+        buses_idx = list(buses.keys())
+        branches_idx = list(branches.keys())
+
+        reference_bus = md.data['system']['reference_bus']
+
+        ## calculate PTDFs, but don't do anything with them (for now..)
+        #from pyutilib.misc.timing import TicTocTimer
+        #timer = TicTocTimer()
+        #timer.tic('starting PTDF calculation')
+        PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
+        #timer.toc('done')
+
+        ## store some information we'll need when iterating on the model object
+        _PTDF_dict['PTDFM'] = PTDFM
+        _PTDF_dict['buses_idx'] = buses_idx
+        _PTDF_dict['branches_idx'] = branches_idx
+        m._PTDFs_dict[branches_out] = _PTDF_dict
+
     for i,branch_name in enumerate(branches_idx):
         branch = branches[branch_name]
         ptdf_row = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
@@ -108,7 +249,9 @@ def _ptdf_dcopf_network_model(md,block):
                                                   branches=branches,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
-                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts
+                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                                  abs_ptdf_tol=abs_ptdf_tol,
+                                                  rel_ptdf_tol=rel_ptdf_tol
                                                   )
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=block,
@@ -350,7 +493,17 @@ def copperplate_power_flow(model, slacks=True):
                                             'storage_service': None,
                                             })
 def ptdf_power_flow(model, slacks=True):
+    model._PTDFs_dict = dict()
     _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
+
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'power_vars': None,
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
+                                            })
+def lazy_ptdf_power_flow(model, slacks=True):
+    model._PTDFs_dict = dict()
+    _add_egret_power_flow(model, _lazy_ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,

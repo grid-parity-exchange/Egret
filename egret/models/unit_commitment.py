@@ -18,6 +18,7 @@ from egret.model_library.unit_commitment.uc_model_generator \
         import UCFormulation, generate_model 
 from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
+import egret.models.lazy_ptdf_utils as lpu
 
 def _get_uc_model(model_data, formulation_list, relax_binaries):
     formulation = UCFormulation(*formulation_list)
@@ -507,6 +508,84 @@ def create_CA_unit_commitment_model(model_data,
                        ]
     return _get_uc_model(model_data, formulation_list, relaxed)
 
+def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, add_all_lazy_violations=False):
+    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+    import numpy as np
+
+    persistent_solver = isinstance(solver, PersistentSolver)
+    duals = hasattr(m, 'dual')
+
+    ptdf_options_dict = m._ptdf_options_dict
+
+    PVF = dict()
+    viol_num = dict()
+    viols_tup = dict()
+    all_viol_in_model = dict()
+
+    for i in range(iteration_limit):
+        for t in m.TimePeriods:
+            b = m.TransmissionBlock[t]
+
+            PTDF_dict = b._PTDF_dict
+            bus_nw_exprs = b._PTDF_bus_nw_exprs
+            bus_p_loads = b._PTDF_bus_p_loads
+
+            ## these should only need to be gathered once
+            if 'lazy_branch_limits' not in PTDF_dict:
+                branch_limits = PTDF_dict['branch_limits']
+                rel_flow_tol = ptdf_options_dict['rel_flow_tol']
+                abs_flow_tol = ptdf_options_dict['abs_flow_tol']
+                lazy_rel_flow_tol = ptdf_options_dict['lazy_rel_flow_tol']
+
+                ## if lazy_rel_flow_tol < 0, this narrows the branch limits
+                PTDF_dict['lazy_branch_limits'] = branch_limits*(1+lazy_rel_flow_tol)
+                ## only enforce the relative and absolute, within tollerance
+                PTDF_dict['enforced_branch_limits'] = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+
+            PVF[t], viol_num[t], viols_tup[t] = lpu.check_violations(PTDF_dict, bus_nw_exprs)
+
+        total_viol_num = sum(val for val in viol_num.values())
+        print("iteration {0}, found {1} violation(s)".format(i,total_viol_num))
+        if total_viol_num <= 0 and not add_all_lazy_violations:
+            if persistent_solver and duals:
+                solver.load_duals()
+            break
+
+        all_times_all_viol_in_model = True
+        for t in m.TimePeriods:
+            b = m.TransmissionBlock[t]
+
+            PTDF_dict = b._PTDF_dict
+            bus_nw_exprs = b._PTDF_bus_nw_exprs
+            bus_p_loads = b._PTDF_bus_p_loads
+
+            all_viol_in_model[t] = lpu.add_violations(viols_tup[t], PVF[t],b, md, solver, ptdf_options_dict, PTDF_dict, bus_nw_exprs, bus_p_loads, time=t)
+            if all_times_all_viol_in_model and (not all_viol_in_model[t]):
+                all_times_all_viol_in_model = False
+
+        if all_times_all_viol_in_model or (total_viol_num <= 0.):
+            if all_times_all_viol_in_model:
+                print('WARNING: Terminating with monitored violations!')
+                print('         Result is not transmission feasible.')
+            if persistent_solver and duals:
+                solver.load_duals()
+            break
+
+        if persistent_solver:
+            solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+            solver.load_vars()
+        else:
+            m.preprocess()
+            solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
+
+    else:
+        if warn_on_max_iter:
+            print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
+            print('         Result is not transmission feasible.')
+        if persistent_solver and duals:
+            solver.load_duals()
+
+
 def _time_series_dict(values):
     return {'data_type':'time_series', 'values':values}
 
@@ -519,7 +598,8 @@ def solve_unit_commitment(model_data,
                           options = None,
                           uc_model_generator = create_tight_unit_commitment_model,
                           relaxed = False,
-                          return_model = False):
+                          return_model = False,
+                          ptdf_options = None):
     '''
     Create and solve a new unit commitment model
 
@@ -548,19 +628,48 @@ def solve_unit_commitment(model_data,
         If True, creates a relaxed unit commitment model
     return_model : bool (optional)
         If True, returns the pyomo model object
+    ptdf_options : None, dict (optional)
+        IF dict, contains the various options for lazy ptdf control
     '''
 
     import pyomo.environ as pe
     from pyomo.environ import value
     from egret.common.solver_interface import _solve_model
 
+    if ptdf_options is None:
+        ptdf_options = dict()
+
+    lpu.populate_default_ptdf_options(ptdf_options)
+
+    baseMVA = model_data.data['system']['baseMVA']
+    lpu.check_and_scale_ptdf_options(ptdf_options, baseMVA)
+
     m = uc_model_generator(model_data, relaxed=relaxed)
+
+    if m.power_balance == 'lazy_ptdf_power_flow':
+        m._ptdf_options_dict = ptdf_options
 
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
         m.rc = pe.Suffix(direction=pe.Suffix.IMPORT)
+    elif m.power_balance == 'lazy_ptdf_power_flow':
+        from pyomo.core.plugins.transform.relax_integrality import RelaxIntegrality
+        ## implement relaxation loop
+        ## BK -- be a bit more aggressive bring in PTDF constraints
+        ##       from the relaxation
+        relax_add_flow_tol = 0.05
+        m._ptdf_options_dict['lazy_rel_flow_tol'] -= relax_add_flow_tol
 
-    m, results = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options)
+        lpu.uc_instance_binary_relaxer(m, None)
+        m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
+        _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=100, warn_on_max_iter=False, add_all_lazy_violations=True)
+        lpu.uc_instance_binary_enforcer(m, solver)
+
+        m._ptdf_options_dict['lazy_rel_flow_tol'] += relax_add_flow_tol
+
+    m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
+    if m.power_balance == 'lazy_ptdf_power_flow':
+        _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, warn_on_max_iter=False)
 
     md = m.model_data
 

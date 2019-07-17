@@ -526,16 +526,8 @@ def solve_dcopf(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    ## we need to create the solver object here for lazy_ptdf
-    if isinstance(solver, str):
-        solver = po.SolverFactory(solver)
-    elif isinstance(solver, po.base.OptSolver):
-        pass
-    else:
-        raise Exception('solver must be string or an instanciated pyomo solver')
-
-    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+    m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
     if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
         _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=100)

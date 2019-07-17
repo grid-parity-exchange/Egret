@@ -73,7 +73,8 @@ def _solve_model(model,
                  timelimit = None,
                  solver_tee = True,
                  symbolic_solver_labels = False,
-                 options = None):
+                 options = None,
+                 return_solver = False):
     '''
     Create and solve an Egret power system optimization model
 
@@ -94,6 +95,8 @@ def _solve_model(model,
         Use symbolic solver labels. Useful for debugging; default is False.
     options : dict (optional)
         Other options to pass into the solver. Default is dict().
+    return_solver : bool (optional)
+        Returns the solver object
 
     Returns
     -------
@@ -133,6 +136,8 @@ def _solve_model(model,
                               symbolic_solver_labels=symbolic_solver_labels)
 
     if results.solver.termination_condition not in safe_termination_conditions:
-        raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.terminataion_condition))
+        raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))
 
+    if return_solver:
+        return model, results, solver
     return model, results
