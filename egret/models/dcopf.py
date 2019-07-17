@@ -18,6 +18,7 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
+import egret.models.lazy_ptdf_utils as lpu
 
 import egret.data.data_utils as data_utils
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
@@ -187,8 +188,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     ## scale to base MVA
-    if abs_ptdf_tol is not None:
-        abs_ptdf_tol /= md.data['system']['baseMVA']
+    abs_ptdf_tol /= baseMVA
 
     data_utils.create_dicts_of_ptdf(md)
 
@@ -295,29 +295,20 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
 
     return model, md
 
-def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
-                                 rel_ptdf_tol=1e-6, abs_ptdf_tol=1e-10,
-                                 abs_flow_tol=1e-3, rel_flow_tol=1e-5,
-                                 lazy_rel_flow_tol=-0.05):
+
+def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options_dict=None):
+    
+    if ptdf_options_dict is None:
+        ptdf_options_dict = dict()
+
+    lpu.populate_default_ptdf_options(ptdf_options_dict)
 
     baseMVA = model_data.data['system']['baseMVA']
-    if abs_flow_tol/baseMVA < lazy_rel_flow_tol:
-        raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
-                        " abs_flow_tol={0}, lazy_flow_tol={1}, baseMVA={2}".format(abs_flow_tol, lazy_flow_tol, baseMVA))
-    if abs_flow_tol/baseMVA < 1e-6:
-        print("WARNING: abs_flow_tol={0}, which is below the numeric threshold of most solvers.".format(abs_flow_tol))
-    if abs_flow_tol/baseMVA < rel_ptdf_tol*10:
-        print("WARNING: abs_flow_tol={0}, rel_ptdf_tol={1}, which will likely result in violations. Consider raising abs_flow_tol or lowering rel_ptdf_tol.".format(abs_flow_tol, rel_ptdf_tol))
-    if rel_ptdf_tol < 1e-6:
-        print("WARNING: rel_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing rel_ptdf_tol.".format(rel_ptdf_tol))
-    if abs_ptdf_tol/baseMVA < 1e-12:
-        print("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol.".format(abs_ptdf_tol))
+    lpu.check_and_scale_ptdf_options(ptdf_options_dict, baseMVA)
+    
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
-    ## scale to base MVA
-    abs_ptdf_tol /= md.data['system']['baseMVA']
-    abs_flow_tol /= md.data['system']['baseMVA']
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -406,90 +397,52 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
     #timer.toc('done')
 
     ## store some information we'll need when iterating on the model object
-    model._PTDFM = PTDFM
-    model._PTDF_bus_idx = buses_idx
-    model._PTDF_branch_idx = branches_idx
-
+    model._PTDF_dict = {'PTDFM' : PTDFM,
+                        'buses_idx': buses_idx,
+                        'branches_idx' : branches_idx,
+                        'branch_limits' : np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ]),
+                        'branches' : branches,
+                        'gens_by_bus' : gens_by_bus,
+                        'bus_gs_fixed_shunts' : bus_gs_fixed_shunts,
+                        }
     model._PTDF_bus_nw_exprs = [ model.pl[bus] + bus_gs_fixed_shunts[bus] - \
                      sum(model.pg[g] for g in gens_by_bus[bus]) for bus in buses_idx]
 
-    model._PTDF_branch_limits = np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ])
-
-    model._PTDF_branches = branches
     model._PTDF_bus_p_loads = bus_p_loads
-    model._PTDF_gens_by_bus = gens_by_bus
-    model._PTDF_bus_gs_fixed_shunts = bus_gs_fixed_shunts
 
-    model._PTDF_rel_ptdf_tol = rel_ptdf_tol
-    model._PTDF_abs_ptdf_tol = abs_ptdf_tol
-    model._PTDF_abs_flow_tol = abs_flow_tol
-    model._PTDF_rel_flow_tol = rel_flow_tol
-    model._PTDF_lazy_rel_flow_tol = lazy_rel_flow_tol
+    model._ptdf_options_dict = ptdf_options_dict
 
     return model, md
 
-def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=True,flow_vio_tol=1.e-5,iteration_limit=100000):
+def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
-    buses_idx = m._PTDF_bus_idx
-    branches_idx = m._PTDF_branch_idx
+    PTDF_dict = m._PTDF_dict
     bus_nw_exprs = m._PTDF_bus_nw_exprs
-    branch_limits = m._PTDF_branch_limits
-    PTDFM = m._PTDFM
-    
-    branches = m._PTDF_branches
     bus_p_loads = m._PTDF_bus_p_loads
-    gens_by_bus = m._PTDF_gens_by_bus
-    bus_gs_fixed_shunts = m._PTDF_bus_gs_fixed_shunts
 
-    rel_ptdf_tol = m._PTDF_rel_ptdf_tol
-    abs_ptdf_tol = m._PTDF_abs_ptdf_tol
+    ptdf_options_dict = m._ptdf_options_dict
 
-    abs_flow_tol = m._PTDF_abs_flow_tol
-    rel_flow_tol = m._PTDF_rel_flow_tol
-    lazy_rel_flow_tol = m._PTDF_lazy_rel_flow_tol
-
-    def _iter_over_viol_set(viol_set):
-        for i in viol_set:
-            bn = branches_idx[i]
-            branch = branches[bn]
-            if 'ptdf' in branch:
-                ## This case should be rare, but it could happen that
-                ## we've already added the lower (upper) constraint
-                ## also need to add the upper (lower) constraint
-                ## If lazy_rel_flow_tol < 0, this could also be the case
-                pass
-            else:
-                ## add the ptdf row for this branch, and the flow-tracking expression
-                branch['ptdf'] = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
-                expr = libbranch.get_power_flow_expr_ptdf_approx(m, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol, approximation_type=ApproximationType.PTDF)
-                m.pf[bn] = expr
-            yield i, bn, branch
 
     persistent_solver = isinstance(solver, PersistentSolver)
 
-    baseMVA = md.data['system']['baseMVA']
+    lazy_rel_flow_tol = ptdf_options_dict['lazy_rel_flow_tol']
+
+    rel_flow_tol = ptdf_options_dict['rel_flow_tol']
+    abs_flow_tol = ptdf_options_dict['abs_flow_tol']
+
+    branch_limits = PTDF_dict['branch_limits']
 
     ## if lazy_rel_flow_tol < 0, this narrows the branch limits
-    lazy_branch_limits = branch_limits*(1+lazy_rel_flow_tol)
+    PTDF_dict['lazy_branch_limits'] = branch_limits*(1+lazy_rel_flow_tol)
 
     ## only enforce the relative and absolute, within tollerance
-    enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+    PTDF_dict['enforced_branch_limits'] = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
 
     for i in range(iteration_limit):
 
-        NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
+        PFV, viol_num, viols_tup = lpu.check_violations(PTDF_dict, bus_nw_exprs)
 
-        PFV  = np.dot(PTDFM, NWV)
-
-        ## get the indices of the violations, but do it in numpy
-        gt_viol_lazy = np.nonzero(np.greater(PFV, lazy_branch_limits))[0]
-        lt_viol_lazy = np.nonzero(np.less(PFV, -lazy_branch_limits))[0]
-
-        gt_viol = np.nonzero(np.greater(PFV, enforced_branch_limits))[0]
-        lt_viol = np.nonzero(np.less(PFV, -enforced_branch_limits))[0]
-
-        viol_num = len(gt_viol)+len(lt_viol)
         print("iteration {0}, found {1} violation(s)".format(i,viol_num))
 
         if viol_num <= 0:
@@ -499,34 +452,8 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
                 solver.load_duals()
             break
 
-        lt_viol_in_constr = 0
-        for i, bn, branch in _iter_over_viol_set(lt_viol_lazy):
-            constr = m.ineq_pf_branch_thermal_lb
-            thermal_limit = branch['rating_long_term']
-            if bn in constr and i in lt_viol:
-                print("WARNING: line {0} (LB) is in the  monitored set, but flow exceeds limit!!\n\t flow={1}, limit={2}".format(bn, PFV[i]*baseMVA, -thermal_limit*baseMVA))
-                lt_viol_in_constr += 1
-            elif bn not in constr: 
-                print("Adding line {0} (LB) to monitored set, flow={1}, limit={2}".format(bn, PFV[i]*baseMVA, -thermal_limit*baseMVA))
-                constr[bn] = (-thermal_limit, m.pf[bn], None)
-                if persistent_solver:
-                    solver.add_constraint(constr[bn])
+        all_viol_in_model = lpu.add_violations(viols_tup, PFV, m, md, solver, ptdf_options_dict, PTDF_dict, bus_nw_exprs, bus_p_loads,)
 
-        gt_viol_in_constr = 0
-        for i, bn, branch in _iter_over_viol_set(gt_viol_lazy):
-            constr = m.ineq_pf_branch_thermal_ub
-            thermal_limit = branch['rating_long_term']
-            if bn in constr and i in gt_viol:
-                print("WARNING: line {0} (UB) is in the  monitored set, but flow exceeds limit!!\n\t flow={1}, limit={2}".format(bn, PFV[i]*baseMVA, thermal_limit*baseMVA))
-                gt_viol_in_constr += 1
-            elif bn not in constr:
-                print("Adding line {0} (UB) to monitored set, flow={1}, limit={2}".format(bn, PFV[i]*baseMVA, branch['rating_long_term']*baseMVA))
-                constr[bn] = (None, m.pf[bn], thermal_limit)
-                if persistent_solver:
-                    solver.add_constraint(constr[bn])
-
-        all_viol_in_model = (len(lt_viol) == lt_viol_in_constr) \
-                            and (len(gt_viol) == gt_viol_in_constr)
         if all_viol_in_model:
             print('WARNING: Terminating with monitored violations!')
             print('         Result is not transmission feasible.')
@@ -630,9 +557,10 @@ def solve_dcopf(model_data,
     ## calculate the power flows from our PTDF matrix for maximum precision
     ## calculate the LMPC (LMP congestion) using numpy
     if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
+        PTDF_dict = m._PTDF_dict
         bus_nw_exprs = m._PTDF_bus_nw_exprs
-        PTDFM = m._PTDFM
-        branches_idx = m._PTDF_branch_idx
+        PTDFM = PTDF_dict['PTDFM']
+        branches_idx = PTDF_dict['branches_idx']
 
         NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
         PFV  = np.dot(PTDFM, NWV)
@@ -651,7 +579,7 @@ def solve_dcopf(model_data,
             k_dict['pf'] = value(m.pf[k])
 
     if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
-        buses_idx = m._PTDF_bus_idx
+        buses_idx = PTDF_dict['buses_idx']
         LMPE = value(m.dual[m.eq_p_balance])
         for i,b in enumerate(buses_idx):
             b_dict = buses[b]
