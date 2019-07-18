@@ -646,13 +646,15 @@ def solve_unit_commitment(model_data,
 
     m = uc_model_generator(model_data, relaxed=relaxed)
 
+    network = bool(len(model_data.data['elements']['branch']))
+
     if m.power_balance == 'lazy_ptdf_power_flow':
         m._ptdf_options_dict = ptdf_options
 
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
         m.rc = pe.Suffix(direction=pe.Suffix.IMPORT)
-    elif m.power_balance == 'lazy_ptdf_power_flow':
+    elif m.power_balance == 'lazy_ptdf_power_flow' and network:
         from pyomo.core.plugins.transform.relax_integrality import RelaxIntegrality
         ## implement relaxation loop
         ## BK -- be a bit more aggressive bring in PTDF constraints
@@ -663,12 +665,13 @@ def solve_unit_commitment(model_data,
         lpu.uc_instance_binary_relaxer(m, None)
         m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
         _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=100, warn_on_max_iter=False, add_all_lazy_violations=True)
+        solver._solver_model.write('test.lp')
         lpu.uc_instance_binary_enforcer(m, solver)
 
         m._ptdf_options_dict['lazy_rel_flow_tol'] += relax_add_flow_tol
 
     m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
-    if m.power_balance == 'lazy_ptdf_power_flow':
+    if m.power_balance == 'lazy_ptdf_power_flow' and network:
         _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, warn_on_max_iter=False)
 
     md = m.model_data

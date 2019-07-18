@@ -152,8 +152,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
 
 
 def _binary_var_generator(instance):
-    regulation = hasattr(instance, 'regulation')
-
+    regulation =  hasattr(instance, 'regulation_service')
     for t in instance.TimePeriods:
         for g in instance.ThermalGenerators:
             if instance.status_vars in ['CA_1bin_vars', 'garver_3bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars']:
@@ -169,7 +168,8 @@ def _binary_var_generator(instance):
                 yield instance.RegulationOn[g,t]
 
         for s in instance.Storage:
-                yield instance.OutputStorage[s,t]
+            yield instance.OutputStorage[s,t]
+            yield instance.InputStorage[s,t]
 
     if instance.startup_costs in ['KOW_startup_costs']:
         for g,t_prime,t in instance.StartupIndicator_domain:
