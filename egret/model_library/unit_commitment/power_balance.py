@@ -118,13 +118,6 @@ def _lazy_ptdf_dcopf_network_model(md,block):
         ## create a pointer on this block to all this PTDF data,
         ## for easy iteration within the solve loop
         block._PTDF_dict = m._PTDFs_dict[branches_out]
-
-
-        ## this information is specific to each block
-        block._PTDF_bus_nw_exprs = \
-          [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
-          sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses]
-        block._PTDF_bus_p_loads = bus_p_loads
     else:
         _PTDF_dict = dict()
         ## to keep things in order
@@ -153,11 +146,11 @@ def _lazy_ptdf_dcopf_network_model(md,block):
 
         block._PTDF_dict = _PTDF_dict
 
-        ## this expression is specific to each block
-        block._PTDF_bus_nw_exprs = \
-          [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
-          sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses]
-        block._PTDF_bus_p_loads = bus_p_loads
+    ## this expression is specific to each block
+    block._PTDF_bus_nw_exprs = \
+      [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
+      sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses]
+    block._PTDF_bus_p_loads = bus_p_loads
 
 
 
@@ -182,6 +175,19 @@ def _ptdf_dcopf_network_model(md,block):
         else:
             branches[key] = val
 
+    ## this is not the "real" gens by bus, but the
+    ## index of net injections from the UC model
+    gens_by_bus = block.gens_by_bus
+
+    ### declare (and fix) the loads at the buses
+    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+
+    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
+    block.pl.fix()
+
+    ### declare the fixed shunts at the buses
+    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+
     ## this will serve as a key into our dict of PTDF matricies,
     ## so that we can avoid recalculating them each time step
     ## with the same network topology
@@ -189,11 +195,11 @@ def _ptdf_dcopf_network_model(md,block):
 
     m = block.model()
     if branches_out in m._PTDFs_dict:
-        ## grab the ptdf matrix from this model
-        _PTDF_dict = m._PTDFs_dict[branches_out]
-        PTDFM = _PTDF_dict['PTDFM']
-        buses_idx = _PTDF_dict['buses_idx']
-        branches_idx = _PTDF_dict['branches_idx']
+        ## create a pointer on this block to all this PTDF data,
+        ## for easy iteration within the solve loop
+        block._PTDF_dict = m._PTDFs_dict[branches_out]
+
+
     else:
         _PTDF_dict = dict()
         ## to keep things in order
@@ -215,6 +221,21 @@ def _ptdf_dcopf_network_model(md,block):
         _PTDF_dict['branches_idx'] = branches_idx
         m._PTDFs_dict[branches_out] = _PTDF_dict
 
+        block._PTDF_dict = _PTDF_dict
+
+    ## this expression is specific to each block
+    block._PTDF_bus_nw_exprs = \
+      [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
+      sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses]
+    block._PTDF_bus_p_loads = bus_p_loads
+
+    ### get the sets for this block, based on the logic above
+    PTDF_dict = block._PTDF_dict
+
+    PTDFM = PTDF_dict['PTDFM']
+    buses_idx = PTDF_dict['buses_idx']
+    branches_idx = PTDF_dict['branches_idx']
+
     for i,branch_name in enumerate(branches_idx):
         branch = branches[branch_name]
         ptdf_row = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
@@ -222,19 +243,6 @@ def _ptdf_dcopf_network_model(md,block):
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-
-    ## this is not the "real" gens by bus, but the
-    ## index of net injections from the UC model
-    gens_by_bus = block.gens_by_bus
-
-    ### declare (and fix) the loads at the buses
-    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
-
-    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
-    block.pl.fix()
-
-    ### declare the fixed shunts at the buses
-    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
 
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
 

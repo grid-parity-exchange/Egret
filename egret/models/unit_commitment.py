@@ -19,6 +19,7 @@ from egret.model_library.unit_commitment.uc_model_generator \
 from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 import egret.models.lazy_ptdf_utils as lpu
+import numpy as np
 
 def _get_uc_model(model_data, formulation_list, relax_binaries):
     formulation = UCFormulation(*formulation_list)
@@ -510,7 +511,6 @@ def create_CA_unit_commitment_model(model_data,
 
 def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, add_all_lazy_violations=False):
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
-    import numpy as np
 
     persistent_solver = isinstance(solver, PersistentSolver)
     duals = hasattr(m, 'dual')
@@ -870,8 +870,58 @@ def solve_unit_commitment(model_data,
                     lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
-    elif m.power_balance == 'ptdf_power_flow':
-        print("TODO: Implement data scrape from PTDF")
+    elif m.power_balance == 'lazy_ptdf_power_flow' or m.power_balance == 'ptdf_power_flow':
+        flows_dict = dict()
+        if relaxed:
+            lmps_dict = dict()
+        for mt in m.TimePeriods:
+            b = m.TransmissionBlock[mt]
+            flows_dict[mt] = dict()
+            PTDF_dict = b._PTDF_dict
+            bus_nw_exprs = b._PTDF_bus_nw_exprs
+            PTDFM = PTDF_dict['PTDFM']
+            branches_idx = PTDF_dict['branches_idx']
+            NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
+            PFV = np.dot(PTDFM, NWV)
+            for i,bn in enumerate(branches_idx):
+                flows_dict[mt][bn] = PFV[i]
+            if relaxed:
+                PFD = np.zeros(len(branches_idx))
+                for i,bn in enumerate(branches_idx):
+                    if bn in b.ineq_pf_branch_thermal_lb:
+                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_lb[bn]])
+                    if bn in b.ineq_pf_branch_thermal_ub:
+                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_ub[bn]])
+                ## TODO: PFD is likely to be sparse, implying we just need a few
+                ##       rows of the PTDF matrix (or columns in its transpose).
+                LMPC = np.dot(-PTDFM.T, PFD)
+                LMPE = value(m.dual[b.eq_p_balance])
+                buses_idx = PTDF_dict['buses_idx']
+                lmps_dict[mt] = dict()
+                for i,bn in enumerate(buses_idx):
+                    lmps_dict[mt][bn] = LMPE + LMPC[i]
+
+        for l,l_dict in branches.items():
+            pf_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                ## if the key doesn't exist, it is because that line was out
+                pf_dict[dt] = flows_dict[mt].get(l, 0.)
+            l_dict['pf'] = _time_series_dict(pf_dict)
+
+        for b,b_dict in buses.items():
+            va_dict = {}
+            p_balance_violation_dict = {}
+            pl_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
+                pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
+            b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
+            b_dict['pl'] = _time_series_dict(pl_dict)
+            if relaxed:
+                lmp_dict = {}
+                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                    lmp_dict[dt] = lmps_dict[mt][b]
+                b_dict['lmp'] = _time_series_dict(lmp_dict)
 
     elif m.power_balance == 'power_balance_constraints':
         for l,l_dict in branches.items():
