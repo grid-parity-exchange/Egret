@@ -18,7 +18,7 @@ from egret.model_library.unit_commitment.uc_model_generator \
         import UCFormulation, generate_model 
 from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
-import egret.models.lazy_ptdf_utils as lpu
+import egret.common.lazy_ptdf_utils as lpu
 import numpy as np
 
 def _get_uc_model(model_data, formulation_list, relax_binaries):

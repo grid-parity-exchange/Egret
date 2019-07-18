@@ -18,7 +18,7 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
-import egret.models.lazy_ptdf_utils as lpu
+import egret.common.lazy_ptdf_utils as lpu
 
 import egret.data.data_utils as data_utils
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
