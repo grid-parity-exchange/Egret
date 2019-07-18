@@ -601,42 +601,13 @@ def solve_dcopf(model_data,
     return md
 
 
-if __name__ == '__main__':
-    import os
-    from egret.parsers.matpower_parser import create_ModelData
-    from pyutilib.misc.timing import TicTocTimer
-
-    timer = TicTocTimer()
-    path = os.path.dirname(__file__)
-    #filename = 'pglib_opf_case6468_rte.m'
-    #filename = 'pglib_opf_case2383wp_k.m'
-    #filename = 'pglib_opf_case1354_pegase.m'
-    #filename = 'pglib_opf_case240_pserc.m'
-    filename = 'pglib_opf_case300_ieee.m'
-    #filename = 'pglib_opf_case118_ieee.m'
-    #filename = 'pglib_opf_case30_ieee.m'
-    #filename = 'pglib_opf_case5_pjm.m'
-    timer.tic('loading instance {} model_data'.format(filename))
-    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-    md = create_ModelData(matpower_file)
-    timer.toc('data_loaded')
-
-    kwargs = {'include_feasibility_slack':'True'}
-    #kwargs = {}
-    solver='gurobi_persistent'
-    #solver='ipopt'
-    #options = {'optimality_tol':1e-09, 'feasibility_tol':1e-09}
-    options = {'method':1}
-    #options = {}
-
-    timer.tic('solving btheta DCOPF using '+solver)
-    mdo_bt = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
-    timer.toc('solved btheta DCOPF using '+solver)
-
-    timer.tic('solving full PTDF DCOPF using '+solver)
-    mdo_fp = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_ptdf_dcopf_model, **kwargs)
-    timer.toc('solved full PTDF DCOPF using '+solver)
-
-    timer.tic('solving lazy PTDF DCOPF using '+solver)
-    mdo_lp = solve_dcopf(md, solver, options=options, dcopf_model_generator=create_lazy_ptdf_dcopf_model, **kwargs)
-    timer.toc('solved lazy PTDF DCOPF using '+solver)
+# if __name__ == '__main__':
+#     import os
+#     from egret.parsers.matpower_parser import create_ModelData
+#
+#     path = os.path.dirname(__file__)
+#     filename = 'pglib_opf_case3_lmbd.m'
+#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+#     md = create_ModelData(matpower_file)
+#     kwargs = {'include_feasibility_slack':'True'}
+#     md = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, **kwargs)
