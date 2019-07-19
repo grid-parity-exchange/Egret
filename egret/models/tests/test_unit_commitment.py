@@ -124,3 +124,32 @@ def test_uc_runner():
         reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
         md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
         assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+
+def test_uc_transmission_models():
+    def make_get_dcopf_uc_model(network):
+        def get_dcopf_uc_model(model_data, relaxed=False):
+            return create_tight_unit_commitment_model(model_data,
+                                    network_constraints=network,
+                                    relaxed=relaxed)
+        return get_dcopf_uc_model
+    tc_networks = ['btheta_power_flow', 'ptdf_power_flow', 'lazy_ptdf_power_flow', 'power_balance_constraints',]
+    no_network = 'copperplate_power_flow'
+    test_name = 'tiny_uc_tc' ## based on tiny_uc_1
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+    for tc in tc_networks:
+
+        md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = make_get_dcopf_uc_model(tc))
+        reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
+        md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+        assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+
+    ## test copperplate
+    test_name = 'tiny_uc_1'
+    md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = make_get_dcopf_uc_model(no_network))
+    reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
+    md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+
+
