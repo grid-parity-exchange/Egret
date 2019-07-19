@@ -457,7 +457,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
             ## load the duals now too, if we're using a persistent solver
             if persistent_solver:
                 solver.load_duals()
-            break
+            return lpu.LazyPTDFTerminationCondition.NORMAL
 
         all_viol_in_model = lpu.add_violations(viols_tup, PFV, m, md, solver, ptdf_options_dict, PTDF_dict, bus_nw_exprs, bus_p_loads,)
 
@@ -466,7 +466,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
             print('         Result is not transmission feasible.')
             if persistent_solver:
                 solver.load_duals()
-            break
+            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
 
         #m.ineq_pf_branch_thermal_lb.pprint()
         #m.ineq_pf_branch_thermal_ub.pprint()
@@ -481,6 +481,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
         print('         Result is not transmission feasible.')
         if persistent_solver:
             solver.load_duals()
+        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT
 
 
 def solve_dcopf(model_data,
@@ -537,7 +538,8 @@ def solve_dcopf(model_data,
                               symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
     if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
-        _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=100)
+        iter_limit = m._ptdf_options_dict['iteration_limit']
+        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))

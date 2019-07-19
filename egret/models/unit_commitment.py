@@ -585,7 +585,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         if total_viol_num <= 0 and not add_all_lazy_violations:
             if persistent_solver and duals:
                 solver.load_duals()
-            break
+            return lpu.LazyPTDFTerminationCondition.NORMAL
 
         all_times_all_viol_in_model = True
         for t in m.TimePeriods:
@@ -605,7 +605,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
                 print('         Result is not transmission feasible.')
             if persistent_solver and duals:
                 solver.load_duals()
-            break
+            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
 
         if persistent_solver:
             solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
@@ -620,6 +620,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
             print('         Result is not transmission feasible.')
         if persistent_solver and duals:
             solver.load_duals()
+        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT
 
 
 def _time_series_dict(values):
@@ -674,7 +675,7 @@ def solve_unit_commitment(model_data,
 
     m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
 
-    network = ('branch' not in model_data.data['elements']) or bool(len(model_data.data['elements']['branch']))
+    network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
 
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
@@ -685,16 +686,18 @@ def solve_unit_commitment(model_data,
         relax_add_flow_tol = 0.05
         m._ptdf_options_dict['lazy_rel_flow_tol'] -= relax_add_flow_tol
 
+        iter_limit = m._ptdf_options_dict['lp_iteration_limit']
+
         lpu.uc_instance_binary_relaxer(m, None)
         m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
-        _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=100, warn_on_max_iter=False, add_all_lazy_violations=True)
+        lp_termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=iter_limit, warn_on_max_iter=False, add_all_lazy_violations=True)
         lpu.uc_instance_binary_enforcer(m, solver)
-
         m._ptdf_options_dict['lazy_rel_flow_tol'] += relax_add_flow_tol
 
     m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
     if m.power_balance == 'lazy_ptdf_power_flow' and network:
-        _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, warn_on_max_iter=False)
+        iter_limit = m._ptdf_options_dict['iteration_limit']
+        termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True)
 
     md = m.model_data
 
