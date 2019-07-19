@@ -188,6 +188,9 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
     baseMVA = model_data.data['system']['baseMVA']
     lpu.check_and_scale_ptdf_options(ptdf_options_dict, baseMVA)
 
+    rel_ptdf_tol = ptdf_options_dict['rel_ptdf_tol']
+    abs_ptdf_tol = ptdf_options_dict['abs_ptdf_tol']
+
     md = model_data.clone_in_service()
 
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
