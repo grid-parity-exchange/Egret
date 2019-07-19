@@ -296,10 +296,12 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
     return model, md
 
 
-def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options_dict=None):
+def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options=None):
     
-    if ptdf_options_dict is None:
+    if ptdf_options is None:
         ptdf_options_dict = dict()
+    else:
+        ptdf_options_dict = ptdf_options
 
     lpu.populate_default_ptdf_options(ptdf_options_dict)
 
