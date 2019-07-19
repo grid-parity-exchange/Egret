@@ -379,6 +379,9 @@ def get_power_flow_expr_ptdf_approx(model, branch, bus_p_loads, gens_by_bus, bus
     elif approximation_type == ApproximationType.PTDF_LOSSES:
         ptdf = branch['ptdf_r']
     max_coef = max(abs(coef) for coef in ptdf.values())
+    ## This case is weird, but could happen, causing divison by 0 below
+    if max_coef == 0:
+        return expr
     for bus_name, coef in ptdf.items():
         if abs(coef) < abs_ptdf_tol:
             ## no point in excuting the rest of the for loop
@@ -448,22 +451,24 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, 
 
         ptdf = branch['ldf']
         max_coef = max(abs(coef) for coef in ptdf.values())
-        for bus_name, coef in ptdf.items():
-            if abs(coef) < abs_ptdf_tol:
-                ## no point in excuting the rest of the for loop
-                continue
-            if abs(coef)/max_coef < rel_ptdf_tol:
-                ## no point in excuting the rest of the for loop
-                continue
+        ## This case is weird, but could happen, causing divison by 0 below
+        if max_coef != 0:
+            for bus_name, coef in ptdf.items():
+                if abs(coef) < abs_ptdf_tol:
+                    ## no point in excuting the rest of the for loop
+                    continue
+                if abs(coef)/max_coef < rel_ptdf_tol:
+                    ## no point in excuting the rest of the for loop
+                    continue
 
-            if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_gs_fixed_shunts[bus_name]
+                if bus_gs_fixed_shunts[bus_name] != 0.0:
+                    expr += coef * bus_gs_fixed_shunts[bus_name]
 
-            if bus_p_loads[bus_name] != 0.0:
-                expr += coef * m.pl[bus_name]
+                if bus_p_loads[bus_name] != 0.0:
+                    expr += coef * m.pl[bus_name]
 
-            for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.pg[gen_name]
+                for gen_name in gens_by_bus[bus_name]:
+                    expr -= coef * m.pg[gen_name]
 
         expr += branch['ldf_c']
 
