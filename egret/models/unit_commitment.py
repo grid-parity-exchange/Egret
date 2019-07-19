@@ -28,7 +28,7 @@ def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
     return generate_model(md, formulation, relax_binaries, **kwargs)
 
 def create_tight_unit_commitment_model(model_data,
-                                       network_constraints='btheta_power_flow',
+                                       network_constraints='lazy_ptdf_power_flow',
                                        relaxed=False,
                                        **kwargs):
     '''
@@ -71,7 +71,7 @@ def create_tight_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_compact_unit_commitment_model(model_data,
-                                         network_constraints='btheta_power_flow',
+                                         network_constraints='lazy_ptdf_power_flow',
                                          relaxed=False,
                                          **kwargs):
     '''
@@ -114,7 +114,7 @@ def create_compact_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_KOW_unit_commitment_model(model_data,
-                                     network_constraints='btheta_power_flow',
+                                     network_constraints='lazy_ptdf_power_flow',
                                      relaxed=False,
                                      **kwargs):
     '''
@@ -157,7 +157,7 @@ def create_KOW_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_ALS_unit_commitment_model(model_data,
-                                     network_constraints='btheta_power_flow',
+                                     network_constraints='lazy_ptdf_power_flow',
                                      relaxed=False,
                                      **kwargs):
     '''
@@ -200,7 +200,7 @@ def create_ALS_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_MLR_unit_commitment_model(model_data,
-                                     network_constraints='btheta_power_flow',
+                                     network_constraints='lazy_ptdf_power_flow',
                                      relaxed=False,
                                      **kwargs):
     '''
@@ -242,7 +242,7 @@ def create_MLR_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_random1_unit_commitment_model(model_data,
-                                         network_constraints='btheta_power_flow',
+                                         network_constraints='lazy_ptdf_power_flow',
                                          relaxed=False,
                                          **kwargs):
     '''
@@ -285,7 +285,7 @@ def create_random1_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_random2_unit_commitment_model(model_data,
-                                         network_constraints='btheta_power_flow',
+                                         network_constraints='lazy_ptdf_power_flow',
                                          relaxed=False,
                                          **kwargs):
     '''
@@ -328,7 +328,7 @@ def create_random2_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_unit_commitment_model(model_data,
-                                     network_constraints='btheta_power_flow',
+                                     network_constraints='lazy_ptdf_power_flow',
                                      relaxed=False,
                                      **kwargs):
     '''
@@ -371,7 +371,7 @@ def create_OAV_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_tighter_unit_commitment_model(model_data,
-                                             network_constraints='btheta_power_flow',
+                                             network_constraints='lazy_ptdf_power_flow',
                                             relaxed=False,
                                             **kwargs):
     '''
@@ -417,7 +417,7 @@ def create_OAV_tighter_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_original_unit_commitment_model(model_data,
-                                              network_constraints='btheta_power_flow',
+                                              network_constraints='lazy_ptdf_power_flow',
                                               relaxed=False,
                                               **kwargs):
     '''
@@ -460,7 +460,7 @@ def create_OAV_original_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_up_downtime_unit_commitment_model(model_data,
-                                                 network_constraints='btheta_power_flow',
+                                                 network_constraints='lazy_ptdf_power_flow',
                                                  relaxed=False,
                                                  **kwargs):
     '''
@@ -503,7 +503,7 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_CA_unit_commitment_model(model_data,
-                                    network_constraints='btheta_power_flow',
+                                    network_constraints='lazy_ptdf_power_flow',
                                     relaxed=False,
                                     **kwargs):
     '''
