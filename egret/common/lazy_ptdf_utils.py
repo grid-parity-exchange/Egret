@@ -14,6 +14,13 @@ from egret.model_library.defn import ApproximationType
 import pyomo.environ as pe
 import numpy as np
 
+from enum import Enum
+
+class LazyPTDFTerminationCondition(Enum):
+    NORMAL = 1
+    ITERATION_LIMIT = 2
+    FLOW_VIOLATION = 3
+
 def populate_default_ptdf_options(ptdf_options_dict):
     if 'rel_ptdf_tol' not in ptdf_options_dict:
         ptdf_options_dict['rel_ptdf_tol'] = 1.e-6
@@ -25,6 +32,10 @@ def populate_default_ptdf_options(ptdf_options_dict):
         ptdf_options_dict['rel_flow_tol'] = 1.e-5
     if 'lazy_rel_flow_tol' not in ptdf_options_dict:
         ptdf_options_dict['lazy_rel_flow_tol'] = -0.15
+    if 'iteration_limit' not in ptdf_options_dict:
+        ptdf_options_dict['iteration_limit'] = 100000
+    if 'lp_iteration_limit' not in ptdf_options_dict:
+        ptdf_options_dict['lp_iteration_limit'] = 100
 
 def check_and_scale_ptdf_options(ptdf_options_dict, baseMVA):
     ## scale to base MVA
