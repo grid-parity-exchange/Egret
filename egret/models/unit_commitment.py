@@ -21,15 +21,16 @@ from egret.model_library.transmission.tx_utils import \
 import egret.common.lazy_ptdf_utils as lpu
 import numpy as np
 
-def _get_uc_model(model_data, formulation_list, relax_binaries):
+def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
     formulation = UCFormulation(*formulation_list)
     md = model_data.clone_in_service()
     scale_ModelData_to_pu(md, inplace=True)
-    return generate_model(md, formulation, relax_binaries)
+    return generate_model(md, formulation, relax_binaries, **kwargs)
 
 def create_tight_unit_commitment_model(model_data,
                                        network_constraints='btheta_power_flow',
-                                       relaxed=False):
+                                       relaxed=False,
+                                       **kwargs):
     '''
     Create a new unit commitment model based on the "Tight" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -47,6 +48,8 @@ def create_tight_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -65,11 +68,12 @@ def create_tight_unit_commitment_model(model_data,
                         'KOW_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_compact_unit_commitment_model(model_data,
                                          network_constraints='btheta_power_flow',
-                                         relaxed=False):
+                                         relaxed=False,
+                                         **kwargs):
     '''
     Create a new unit commitment model based on the "Compact" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -87,6 +91,8 @@ def create_compact_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -105,11 +111,12 @@ def create_compact_unit_commitment_model(model_data,
                          'MLR_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_KOW_unit_commitment_model(model_data,
                                      network_constraints='btheta_power_flow',
-                                     relaxed=False):
+                                     relaxed=False,
+                                     **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "A Novel Matching 
@@ -127,6 +134,8 @@ def create_KOW_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -145,11 +154,12 @@ def create_KOW_unit_commitment_model(model_data,
                          'KOW_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_ALS_unit_commitment_model(model_data,
                                      network_constraints='btheta_power_flow',
-                                     relaxed=False):
+                                     relaxed=False,
+                                     **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Atakan, Semih, Guglielmo Lulli, and Suvrajeet Sen. "A state transition 
@@ -167,6 +177,8 @@ def create_ALS_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -185,11 +197,12 @@ def create_ALS_unit_commitment_model(model_data,
                          'ALS_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_MLR_unit_commitment_model(model_data,
                                      network_constraints='btheta_power_flow',
-                                     relaxed=False):
+                                     relaxed=False,
+                                     **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Morales-España, Germán, Jesus M. Latorre, and Andres Ramos. "Tight and
@@ -207,6 +220,8 @@ def create_MLR_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -224,11 +239,12 @@ def create_MLR_unit_commitment_model(model_data,
                          'MLR_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_random1_unit_commitment_model(model_data,
                                          network_constraints='btheta_power_flow',
-                                         relaxed=False):
+                                         relaxed=False,
+                                         **kwargs):
     '''
     Create a new unit commitment model based on the "Random1" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -246,6 +262,8 @@ def create_random1_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -264,11 +282,12 @@ def create_random1_unit_commitment_model(model_data,
                         'MLR_startup_costs2',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_random2_unit_commitment_model(model_data,
                                          network_constraints='btheta_power_flow',
-                                         relaxed=False):
+                                         relaxed=False,
+                                         **kwargs):
     '''
     Create a new unit commitment model based on the "Random2" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -286,6 +305,8 @@ def create_random2_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -304,11 +325,12 @@ def create_random2_unit_commitment_model(model_data,
                         'MLR_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_unit_commitment_model(model_data,
                                      network_constraints='btheta_power_flow',
-                                     relaxed=False):
+                                     relaxed=False,
+                                     **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Ostrowski, James, Miguel F. Anjos, and Anthony Vannelli. "Tight mixed 
@@ -326,6 +348,8 @@ def create_OAV_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -344,11 +368,12 @@ def create_OAV_unit_commitment_model(model_data,
                         'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_tighter_unit_commitment_model(model_data,
                                              network_constraints='btheta_power_flow',
-                                             relaxed=False):
+                                            relaxed=False,
+                                            **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Ostrowski, James, Miguel F. Anjos, and Anthony Vannelli. "Tight mixed 
@@ -369,6 +394,8 @@ def create_OAV_tighter_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -387,11 +414,12 @@ def create_OAV_tighter_unit_commitment_model(model_data,
                          'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_original_unit_commitment_model(model_data,
                                               network_constraints='btheta_power_flow',
-                                              relaxed=False):
+                                              relaxed=False,
+                                              **kwargs):
     '''
     Create a new unit commitment model based on the "original" formulation from
     Ostrowski, James, Miguel F. Anjos, and Anthony Vannelli. "Tight mixed 
@@ -409,6 +437,8 @@ def create_OAV_original_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -427,11 +457,12 @@ def create_OAV_original_unit_commitment_model(model_data,
                          'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_up_downtime_unit_commitment_model(model_data,
                                                  network_constraints='btheta_power_flow',
-                                                 relaxed=False):
+                                                 relaxed=False,
+                                                 **kwargs):
     '''
     Create a new unit commitment model based on the "up/downtime" formulation from
     Ostrowski, James, Miguel F. Anjos, and Anthony Vannelli. "Tight mixed 
@@ -449,6 +480,8 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -467,11 +500,12 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
                          'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_CA_unit_commitment_model(model_data,
                                     network_constraints='btheta_power_flow',
-                                    relaxed=False):
+                                    relaxed=False,
+                                    **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Carrión, Miguel, and José M. Arroyo. "A computationally efficient
@@ -489,6 +523,8 @@ def create_CA_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -507,7 +543,7 @@ def create_CA_unit_commitment_model(model_data,
                          'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, add_all_lazy_violations=False):
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
@@ -599,7 +635,7 @@ def solve_unit_commitment(model_data,
                           uc_model_generator = create_tight_unit_commitment_model,
                           relaxed = False,
                           return_model = False,
-                          ptdf_options = None):
+                          **kwargs):
     '''
     Create and solve a new unit commitment model
 
@@ -628,28 +664,17 @@ def solve_unit_commitment(model_data,
         If True, creates a relaxed unit commitment model
     return_model : bool (optional)
         If True, returns the pyomo model object
-    ptdf_options : None, dict (optional)
-        If dict, contains the various options for lazy ptdf control
+    kwargs : dictionary (optional)
+        Additional arguments for building model
     '''
 
     import pyomo.environ as pe
     from pyomo.environ import value
     from egret.common.solver_interface import _solve_model
 
-    if ptdf_options is None:
-        ptdf_options = dict()
-
-    lpu.populate_default_ptdf_options(ptdf_options)
-
-    baseMVA = model_data.data['system']['baseMVA']
-    lpu.check_and_scale_ptdf_options(ptdf_options, baseMVA)
-
-    m = uc_model_generator(model_data, relaxed=relaxed)
+    m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
 
     network = ('branch' not in model_data.data['elements']) or bool(len(model_data.data['elements']['branch']))
-
-    if m.power_balance == 'lazy_ptdf_power_flow':
-        m._ptdf_options_dict = ptdf_options
 
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)

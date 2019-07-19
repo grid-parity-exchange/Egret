@@ -177,18 +177,20 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
 
 
 def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False,
-                            rel_ptdf_tol=1e-6, abs_ptdf_tol=1e-10):
+                            ptdf_options=None):
+    if ptdf_options is None:
+        ptdf_options_dict = dict()
+    else:
+        ptdf_options_dict = ptdf_options
+
+    lpu.populate_default_ptdf_options(ptdf_options_dict)
+
     baseMVA = model_data.data['system']['baseMVA']
-    if rel_ptdf_tol < 1e-6:
-        print("WARNING: rel_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing rel_ptdf_tol".format(rel_ptdf_tol))
-    if abs_ptdf_tol/baseMVA < 1e-12:
-        print("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol".format(abs_ptdf_tol))
+    lpu.check_and_scale_ptdf_options(ptdf_options_dict, baseMVA)
 
     md = model_data.clone_in_service()
-    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
-    ## scale to base MVA
-    abs_ptdf_tol /= baseMVA
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     data_utils.create_dicts_of_ptdf(md)
 

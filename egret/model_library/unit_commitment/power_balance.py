@@ -155,12 +155,9 @@ def _lazy_ptdf_dcopf_network_model(md,block):
 
 def _ptdf_dcopf_network_model(md,block):
 
-    ## TODO: unhardcode these
-    rel_ptdf_tol=1e-6
-    abs_ptdf_tol=1e-10
-
-    baseMVA = md.data['system']['baseMVA']
-    abs_ptdf_tol /= baseMVA
+    m = block.model()
+    rel_ptdf_tol = m._ptdf_options_dict['rel_ptdf_tol']
+    abs_ptdf_tol = m._ptdf_options_dict['abs_ptdf_tol']
 
     buses = dict(md.elements(element_type='bus'))
     loads = dict(md.elements(element_type='load'))
@@ -192,7 +189,6 @@ def _ptdf_dcopf_network_model(md,block):
     ## with the same network topology
     branches_out = tuple(branches_out)
 
-    m = block.model()
     if branches_out not in m._PTDFs_dict:
         ## make a new PTDF matrix for this topology
 
