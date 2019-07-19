@@ -120,16 +120,6 @@ def basic_objective(model):
     
     model.CommitmentStageCost = Expression(model.StageSet, rule=commitment_stage_cost_expression_rule)
 
-    def compute_load_mismatch_cost_rule(m, t):
-        return m.LoadMismatchPenalty*m.TimePeriodLengthHours*sum(m.posLoadGenerateMismatch[b, t] + m.negLoadGenerateMismatch[b, t] for b in m.Buses) 
-    model.LoadMismatchCost = Expression(model.TimePeriods, rule=compute_load_mismatch_cost_rule)
-
-    if model.reactive_power:
-        def compute_q_load_mismatch_cost_rule(m, t):
-            return m.LoadMismatchPenaltyReactive*m.TimePeriodLengthHours*sum(
-                        m.posLoadGenerateMismatchReactive[b, t] + m.negLoadGenerateMismatchReactive[b, t] for b in m.Buses) 
-        model.LoadMismatchCostReactive = Expression(model.TimePeriods, rule=compute_q_load_mismatch_cost_rule)
-
     def compute_reserve_shortfall_cost_rule(m, t):
         return m.ReserveShortfallPenalty*m.TimePeriodLengthHours*m.ReserveShortfall[t]
     model.ReserveShortfallCost = Expression(model.TimePeriods, rule=compute_reserve_shortfall_cost_rule)

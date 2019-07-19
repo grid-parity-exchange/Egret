@@ -114,11 +114,8 @@ def _lazy_ptdf_dcopf_network_model(md,block):
                                                  )
     ### end initial set-up
     m = block.model()
-    if branches_out in m._PTDFs_dict:
-        ## create a pointer on this block to all this PTDF data,
-        ## for easy iteration within the solve loop
-        block._PTDF_dict = m._PTDFs_dict[branches_out]
-    else:
+    if branches_out not in m._PTDFs_dict:
+        ## make a new PTDF matrix for this topology
         _PTDF_dict = dict()
         ## to keep things in order
         buses_idx = list(buses.keys())
@@ -144,7 +141,9 @@ def _lazy_ptdf_dcopf_network_model(md,block):
 
         m._PTDFs_dict[branches_out] = _PTDF_dict
 
-        block._PTDF_dict = _PTDF_dict
+    ## create a pointer on this block to all this PTDF data,
+    ## for easy iteration within the solve loop
+    block._PTDF_dict = m._PTDFs_dict[branches_out]
 
     ## this expression is specific to each block
     block._PTDF_bus_nw_exprs = \
@@ -194,13 +193,9 @@ def _ptdf_dcopf_network_model(md,block):
     branches_out = tuple(branches_out)
 
     m = block.model()
-    if branches_out in m._PTDFs_dict:
-        ## create a pointer on this block to all this PTDF data,
-        ## for easy iteration within the solve loop
-        block._PTDF_dict = m._PTDFs_dict[branches_out]
+    if branches_out not in m._PTDFs_dict:
+        ## make a new PTDF matrix for this topology
 
-
-    else:
         _PTDF_dict = dict()
         ## to keep things in order
         buses_idx = list(buses.keys())
@@ -221,7 +216,9 @@ def _ptdf_dcopf_network_model(md,block):
         _PTDF_dict['branches_idx'] = branches_idx
         m._PTDFs_dict[branches_out] = _PTDF_dict
 
-        block._PTDF_dict = _PTDF_dict
+    ## create a pointer on this block to all this PTDF data,
+    ## for easy iteration within the solve loop
+    block._PTDF_dict = m._PTDFs_dict[branches_out]
 
     ## this expression is specific to each block
     block._PTDF_bus_nw_exprs = \
@@ -360,6 +357,47 @@ def _btheta_dcopf_network_model(md,block):
 
     return block
 
+def _add_system_load_mismatch(model):
+
+    #####################################################
+    # load "shedding" can be both positive and negative #
+    #####################################################
+    model.posLoadGenerateMismatch = Var(model.TimePeriods, within=NonNegativeReals) # load shedding
+    model.negLoadGenerateMismatch = Var(model.TimePeriods, within=NonNegativeReals) # over generation
+
+    md = model.model_data
+
+    if 'reference_bus' in md.data['system'] and md.data['system']['reference_bus'] in model.Buses:
+        reference_bus = md.data['system']['reference_bus']
+    else:
+        reference_bus = list(sorted(m.Buses))[0]
+    
+    ## for interfacing with the rest of the model code
+    def define_pos_neg_load_generate_mismatch_rule(m, b, t):
+        if b == reference_bus:
+            return m.posLoadGenerateMismatch[t] - m.negLoadGenerateMismatch[t]
+        else:
+            return 0
+    model.LoadGenerateMismatch = Expression(model.Buses, model.TimePeriods, rule = define_pos_neg_load_generate_mismatch_rule )
+
+    # the following constraints are necessarily, at least in the case of CPLEX 12.4, to prevent
+    # the appearance of load generation mismatch component values in the range of *negative* e-5.
+    # what these small negative values do is to cause the optimal objective to be a very large negative,
+    # due to obviously large penalty values for under or over-generation. JPW would call this a heuristic
+    # at this point, but it does seem to work broadly. we tried a single global constraint, across all
+    # buses, but that failed to correct the problem, and caused the solve times to explode.
+    
+    def pos_load_generate_mismatch_tolerance_rule(m):
+       return sum((m.posLoadGenerateMismatch[t] for t in m.TimePeriods)) >= 0.0
+    model.PosLoadGenerateMismatchTolerance = Constraint(rule=pos_load_generate_mismatch_tolerance_rule)
+    
+    def neg_load_generate_mismatch_tolerance_rule(m):
+       return sum((m.negLoadGenerateMismatch[t] for t in m.TimePeriods)) >= 0.0
+    model.NegLoadGenerateMismatchTolerance = Constraint(rule=neg_load_generate_mismatch_tolerance_rule)
+
+    def compute_load_mismatch_cost_rule(m, t):
+        return m.LoadMismatchPenalty*m.TimePeriodLengthHours*(m.posLoadGenerateMismatch[t] + m.negLoadGenerateMismatch[t]) 
+    model.LoadMismatchCost = Expression(model.TimePeriods, rule=compute_load_mismatch_cost_rule)
 
 def _add_load_mismatch(model):
 
@@ -388,6 +426,10 @@ def _add_load_mismatch(model):
     def neg_load_generate_mismatch_tolerance_rule(m, b):
        return sum((m.negLoadGenerateMismatch[b,t] for t in m.TimePeriods)) >= 0.0
     model.NegLoadGenerateMismatchTolerance = Constraint(model.Buses, rule=neg_load_generate_mismatch_tolerance_rule)
+
+    def compute_load_mismatch_cost_rule(m, t):
+        return m.LoadMismatchPenalty*m.TimePeriodLengthHours*sum(m.posLoadGenerateMismatch[b, t] + m.negLoadGenerateMismatch[b, t] for b in m.Buses) 
+    model.LoadMismatchCost = Expression(model.TimePeriods, rule=compute_load_mismatch_cost_rule)
 
 def _add_q_load_mismatch(model):
 
@@ -420,15 +462,22 @@ def _add_q_load_mismatch(model):
     model.NegLoadGenerateMismatchToleranceReactive = Constraint(model.Buses,
                                                                 rule=neg_load_generate_mismatch_tolerance_rule_reactive)
 
+    def compute_q_load_mismatch_cost_rule(m, t):
+        return m.LoadMismatchPenaltyReactive*m.TimePeriodLengthHours*sum(
+                    m.posLoadGenerateMismatchReactive[b, t] + m.negLoadGenerateMismatchReactive[b, t] for b in m.Buses) 
+    model.LoadMismatchCostReactive = Expression(model.TimePeriods, rule=compute_q_load_mismatch_cost_rule)
+
 def _add_blank_load_mismatch(model):
     model.LoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
     model.posLoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
     model.negLoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
+    model.LoadMismatchCost = Param(model.TimePeriods, default=0.)
 
 def _add_blank_q_load_mismatch(model):
     model.LoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
     model.posLoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
     model.negLoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
+    model.LoadMismatchCostReactive = Param(model.TimePeriods, default=0.)
 
 ## helper defining real power injection at a bus
 def _get_pg_expr_rule(t):
@@ -457,12 +506,22 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
     ## save flag for objective
     model.reactive_power = reactive_power
 
+    system_load_mismatch = (network_model_builder == _copperplate_approx_network_model)
+
     if slacks:
-        _add_load_mismatch(model)
+        if system_load_mismatch:
+            _add_system_load_mismatch(model)
+        else:
+            _add_load_mismatch(model)
     else:
-        _add_blank_load_mismatch(model)
+        if system_load_mismatch:
+            _add_blank_system_load_mismatch(model)
+        else:
+            _add_blank_load_mismatch(model)
 
     if reactive_power:
+        if system_load_mismatch:
+            raise Exception("Need to implement system mismatch for reactive power")
         _add_reactive_power_vars(model)
         _add_reactive_limits(model)
         if slacks:

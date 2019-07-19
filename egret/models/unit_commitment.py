@@ -629,7 +629,7 @@ def solve_unit_commitment(model_data,
     return_model : bool (optional)
         If True, returns the pyomo model object
     ptdf_options : None, dict (optional)
-        IF dict, contains the various options for lazy ptdf control
+        If dict, contains the various options for lazy ptdf control
     '''
 
     import pyomo.environ as pe
@@ -646,7 +646,7 @@ def solve_unit_commitment(model_data,
 
     m = uc_model_generator(model_data, relaxed=relaxed)
 
-    network = bool(len(model_data.data['elements']['branch']))
+    network = ('branch' not in model_data.data['elements']) or bool(len(model_data.data['elements']['branch']))
 
     if m.power_balance == 'lazy_ptdf_power_flow':
         m._ptdf_options_dict = ptdf_options
@@ -655,8 +655,6 @@ def solve_unit_commitment(model_data,
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
         m.rc = pe.Suffix(direction=pe.Suffix.IMPORT)
     elif m.power_balance == 'lazy_ptdf_power_flow' and network:
-        from pyomo.core.plugins.transform.relax_integrality import RelaxIntegrality
-        ## implement relaxation loop
         ## BK -- be a bit more aggressive bring in PTDF constraints
         ##       from the relaxation
         relax_add_flow_tol = 0.05
@@ -665,7 +663,6 @@ def solve_unit_commitment(model_data,
         lpu.uc_instance_binary_relaxer(m, None)
         m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
         _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=100, warn_on_max_iter=False, add_all_lazy_violations=True)
-        solver._solver_model.write('test.lp')
         lpu.uc_instance_binary_enforcer(m, solver)
 
         m._ptdf_options_dict['lazy_rel_flow_tol'] += relax_add_flow_tol
@@ -946,6 +943,17 @@ def solve_unit_commitment(model_data,
                 for dt, mt in zip(data_time_periods,m.TimePeriods):
                     lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
+    elif m.power_balance == 'copperplate_power_flow':
+        sys_dict = md.data['system']
+        p_viol_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            p_viol_dict[dt] = sum(value(m.LoadGenerateMismatch[b,mt]) for b in m.Buses)
+        sys_dict['p_balance_violation'] = _time_series_dict(p_viol_dict)
+        if relaxed:
+            p_price_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                p_price_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance])
+            sys_dict['p_price'] = _time_series_dict(p_price_dict)
     else:
         raise Exception("Unrecongized network type "+m.power_balance)
 
