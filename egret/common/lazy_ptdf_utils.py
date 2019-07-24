@@ -103,6 +103,8 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
                     PTDF_dict, bus_nw_exprs, bus_p_loads,
                     time=None):
 
+    model = mb.model()
+
     persistent_solver = isinstance(solver, PersistentSolver)
     baseMVA = md.data['system']['baseMVA']
 
@@ -116,9 +118,9 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
     buses_idx = PTDF_dict['buses_idx']
     branches_idx = PTDF_dict['branches_idx']
     branch_limits = PTDF_dict['branch_limits']
-    branches = PTDF_dict['branches']
-    gens_by_bus = PTDF_dict['gens_by_bus']
-    bus_gs_fixed_shunts = PTDF_dict['bus_gs_fixed_shunts']
+    gens_by_bus = mb.gens_by_bus
+    branches = model._branches
+    bus_gs_fixed_shunts = model._bus_gs_fixed_shunts
 
     ## helper for generating pf
     def _iter_over_viol_set(viol_set):

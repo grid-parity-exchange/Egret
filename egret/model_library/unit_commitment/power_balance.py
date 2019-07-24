@@ -28,73 +28,57 @@ from math import pi
 
 component_name = 'power_balance'
 
-def _copperplate_approx_network_model(md,block):
-    buses = dict(md.elements(element_type='bus'))
-    loads = dict(md.elements(element_type='load'))
-    shunts = dict(md.elements(element_type='shunt'))
-    branches = { key: val for key,val in md.elements(element_type='branch') \
-                 if ('planned_outage' not in val) or (not val['planned_outage']) }
-
-    inlet_branches_by_bus, outlet_branches_by_bus = \
-        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+def _copperplate_approx_network_model(md,block,tm,td):
+    m = block.model()
 
     ## this is not the "real" gens by bus, but the
     gens_by_bus = block.gens_by_bus
 
     ### declare (and fix) the loads at the buses
-    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
 
     ## index of net injections from the UC model
-    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
+    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
     block.pl.fix()
 
-    ### declare the fixed shunts at the buses
-    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=block,
-                                   index_set=buses.keys(),
+                                   index_set=m.Buses,
                                    bus_p_loads=bus_p_loads,
                                    gens_by_bus=gens_by_bus,
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                    )
 
-def _lazy_ptdf_dcopf_network_model(md,block):
-    buses = dict(md.elements(element_type='bus'))
-    loads = dict(md.elements(element_type='load'))
-    shunts = dict(md.elements(element_type='shunt'))
-    branches = dict()
-    branches_out = list()
+def _lazy_ptdf_dcopf_network_model(md,block,tm,td):
+    m = block.model()
 
-    for key, val in md.elements(element_type='branch'):
-        if ('planned_outage' in val) and (val['planned_outage']):
-            branches_out.append(key)
-        else:
-            branches[key] = val
+    buses = m._buses
+    branches = m._branches
 
+    branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
     ## this will serve as a key into our dict of PTDF matricies,
     ## so that we can avoid recalculating them each time step
     ## with the same network topology
-    branches_out = tuple(branches_out)
+    branches_out_service = tuple(l for l in m.TransmissionLines if value(m.LineOutOfService[l,tm]))
 
-    inlet_branches_by_bus, outlet_branches_by_bus = \
-        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = block.gens_by_bus
 
     ### declare (and fix) the loads at the buses
-    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
 
     ## this is not the "real" gens by bus, but the
     ## index of net injections from the UC model
-    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
+    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
     block.pl.fix()
 
-    ### declare the fixed shunts at the buses
-    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+    ### get the fixed shunts at the buses
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=block,
-                                   index_set=buses.keys(),
+                                   index_set=m.Buses,
                                    bus_p_loads=bus_p_loads,
                                    gens_by_bus=gens_by_bus,
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
@@ -102,24 +86,23 @@ def _lazy_ptdf_dcopf_network_model(md,block):
 
     ### add "blank" power flow expressions
     libbranch.declare_expr_pf(model=block,
-                             index_set=branches.keys(),
+                             index_set=branches_in_service,
                              )
 
     ### add "blank" real power flow limits
     libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
-                                                 index_set=branches.keys(),
+                                                 index_set=branches_in_service,
                                                  branches=branches,
                                                  p_thermal_limits=None,
                                                  approximation_type=None,
                                                  )
     ### end initial set-up
-    m = block.model()
-    if branches_out not in m._PTDFs_dict:
+    if branches_out_service not in m._PTDFs_dict:
         ## make a new PTDF matrix for this topology
         _PTDF_dict = dict()
         ## to keep things in order
-        buses_idx = list(buses.keys())
-        branches_idx = list(branches.keys())
+        buses_idx = tuple(buses.keys())
+        branches_idx = branches_in_service
 
         reference_bus = md.data['system']['reference_bus']
 
@@ -135,15 +118,12 @@ def _lazy_ptdf_dcopf_network_model(md,block):
         _PTDF_dict['buses_idx'] = buses_idx
         _PTDF_dict['branches_idx'] = branches_idx
         _PTDF_dict['branch_limits'] = np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ])
-        _PTDF_dict['branches'] = branches
-        _PTDF_dict['gens_by_bus'] = gens_by_bus
-        _PTDF_dict['bus_gs_fixed_shunts'] = bus_gs_fixed_shunts
 
-        m._PTDFs_dict[branches_out] = _PTDF_dict
+        m._PTDFs_dict[branches_out_service] = _PTDF_dict
 
     ## create a pointer on this block to all this PTDF data,
     ## for easy iteration within the solve loop
-    block._PTDF_dict = m._PTDFs_dict[branches_out]
+    block._PTDF_dict = m._PTDFs_dict[branches_out_service]
 
     ## this expression is specific to each block
     block._PTDF_bus_nw_exprs = \
@@ -153,49 +133,44 @@ def _lazy_ptdf_dcopf_network_model(md,block):
 
 
 
-def _ptdf_dcopf_network_model(md,block):
+def _ptdf_dcopf_network_model(md,block,tm,td):
 
     m = block.model()
     rel_ptdf_tol = m._ptdf_options_dict['rel_ptdf_tol']
     abs_ptdf_tol = m._ptdf_options_dict['abs_ptdf_tol']
 
-    buses = dict(md.elements(element_type='bus'))
-    loads = dict(md.elements(element_type='load'))
-    shunts = dict(md.elements(element_type='shunt'))
-    branches = dict()
-    branches_out = list()
+    buses = m._buses
+    branches = m._branches
+    shunts = m._shunts
 
-    for key, val in md.elements(element_type='branch'):
-        if ('planned_outage' in val) and (val['planned_outage']):
-            branches_out.append(key)
-        else:
-            branches[key] = val
+    branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
+
+    ## this will serve as a key into our dict of PTDF matricies,
+    ## so that we can avoid recalculating them each time step
+    ## with the same network topology
+    branches_out_service = tuple(l for l in m.TransmissionLines if value(m.LineOutOfService[l,tm]))
 
     ## this is not the "real" gens by bus, but the
     ## index of net injections from the UC model
     gens_by_bus = block.gens_by_bus
 
     ### declare (and fix) the loads at the buses
-    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
 
     libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
     block.pl.fix()
 
-    ### declare the fixed shunts at the buses
-    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+    ### get the fixed shunts at the buses
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
-    ## this will serve as a key into our dict of PTDF matricies,
-    ## so that we can avoid recalculating them each time step
-    ## with the same network topology
-    branches_out = tuple(branches_out)
 
-    if branches_out not in m._PTDFs_dict:
+    if branches_out_service not in m._PTDFs_dict:
         ## make a new PTDF matrix for this topology
 
         _PTDF_dict = dict()
         ## to keep things in order
-        buses_idx = list(buses.keys())
-        branches_idx = list(branches.keys())
+        buses_idx = tuple(buses.keys())
+        branches_idx = branches_in_service
 
         reference_bus = md.data['system']['reference_bus']
 
@@ -210,11 +185,11 @@ def _ptdf_dcopf_network_model(md,block):
         _PTDF_dict['PTDFM'] = PTDFM
         _PTDF_dict['buses_idx'] = buses_idx
         _PTDF_dict['branches_idx'] = branches_idx
-        m._PTDFs_dict[branches_out] = _PTDF_dict
+        m._PTDFs_dict[branches_out_service] = _PTDF_dict
 
     ## create a pointer on this block to all this PTDF data,
     ## for easy iteration within the solve loop
-    block._PTDF_dict = m._PTDFs_dict[branches_out]
+    block._PTDF_dict = m._PTDFs_dict[branches_out_service]
 
     ## this expression is specific to each block
     block._PTDF_bus_nw_exprs = \
@@ -234,19 +209,16 @@ def _ptdf_dcopf_network_model(md,block):
         ptdf_row = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
         branch['ptdf'] = ptdf_row
 
-    inlet_branches_by_bus, outlet_branches_by_bus = \
-        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-
-    p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+    p_max = {k: branches[k]['rating_long_term'] for k in branches_idx}
 
     ### declare the power flows and their limits
     libbranch.declare_expr_pf(model=block,
-                             index_set=branches.keys(),
+                             index_set=branches_in_service,
                              )
 
     ### declare the branch power flow approximation constraints
     libbranch.declare_eq_branch_power_ptdf_approx(model=block,
-                                                  index_set=branches.keys(),
+                                                  index_set=branches_in_service,
                                                   branches=branches,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
@@ -264,34 +236,49 @@ def _ptdf_dcopf_network_model(md,block):
 
     ### declare the real power flow limits
     libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
-                                                 index_set=branches.keys(),
+                                                 index_set=branches_in_service,
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
                                                  approximation_type=ApproximationType.PTDF
                                                  )
 
-def _btheta_dcopf_network_model(md,block):
-    buses = dict(md.elements(element_type='bus'))
-    loads = dict(md.elements(element_type='load'))
-    shunts = dict(md.elements(element_type='shunt'))
-    branches = { key: val for key,val in md.elements(element_type='branch') \
-                 if ('planned_outage' not in val) or (not val['planned_outage']) }
+def _btheta_dcopf_network_model(md,block,tm,td):
+    m = block.model()
 
-    inlet_branches_by_bus, outlet_branches_by_bus = \
-        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+    buses = m._buses
+    branches = m._branches
+
+    branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
+    ## this will serve as a key into our dict of PTDF matricies,
+    ## so that we can avoid recalculating them each time step
+    ## with the same network topology
+    branches_out_service = tuple(l for l in m.TransmissionLines if value(m.LineOutOfService[l,tm]))
+
+    ## need the inlet/outlet relationship given some lines may be out
+    inlet_branches_by_bus = dict()
+    outlet_branches_by_bus = dict()
+    for b in m.Buses:
+        inlet_branches_by_bus[b] = list()
+        for l in m.LinesTo[b]:
+            if l not in branches_out_service:
+                inlet_branches_by_bus[b].append(l)
+        outlet_branches_by_bus[b] = list()
+        for l in m.LinesFrom[b]:
+            if l not in branches_out_service:
+                outlet_branches_by_bus[b].append(l)
 
     ## this is not the "real" gens by bus, but the
     ## index of net injections from the UC model
     gens_by_bus = block.gens_by_bus
 
     ### declare (and fix) the loads at the buses
-    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
 
     libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
     block.pl.fix()
 
-    ### declare the fixed shunts at the buses
-    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+    ### get the fixed shunts at the buses
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in buses.keys()}
@@ -309,19 +296,19 @@ def _btheta_dcopf_network_model(md,block):
                          ' a reference bus angle of 0 degrees, but an angle'
                          ' of {} degrees was found.'.format(ref_angle))
 
-    p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    p_lbub = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
+    p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
+    p_lbub = {k: (-p_max[k],p_max[k]) for k in branches_in_service}
     pf_bounds = p_lbub
 
     libbranch.declare_var_pf(model=block,
-                             index_set=branches.keys(),
+                             index_set=branches_in_service,
                              initialize=None,
                              bounds=pf_bounds
                              )
 
     ### declare the branch power flow approximation constraints
     libbranch.declare_eq_branch_power_btheta_approx(model=block,
-                                                    index_set=branches.keys(),
+                                                    index_set=branches_in_service,
                                                     branches=branches
                                                     )
 
@@ -338,7 +325,7 @@ def _btheta_dcopf_network_model(md,block):
 
     ### declare the real power flow limits
     libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
-                                                 index_set=branches.keys(),
+                                                 index_set=branches_in_service,
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
                                                  approximation_type=ApproximationType.BTHETA
@@ -346,7 +333,7 @@ def _btheta_dcopf_network_model(md,block):
 
     ### declare angle difference limits on interconnected buses
     libbranch.declare_ineq_angle_diff_branch_lbub(model=block,
-                                                  index_set=branches.keys(),
+                                                  index_set=branches_in_service,
                                                   branches=branches,
                                                   coordinate_type=CoordinateType.POLAR
                                                   )
@@ -540,7 +527,7 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
             b.qg = Expression(model.Buses, rule=_get_qg_expr_rule(tm))
         b.gens_by_bus = {bus : [bus] for bus in model.Buses}
         md_t = md.clone_at_timestamp(td)
-        network_model_builder(md_t,b)
+        network_model_builder(md_t,b,tm,td)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
