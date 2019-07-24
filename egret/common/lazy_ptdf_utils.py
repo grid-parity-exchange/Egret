@@ -166,42 +166,38 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
 
 def _binary_var_generator(instance):
     regulation =  hasattr(instance, 'regulation_service')
-    for t in instance.TimePeriods:
-        for g in instance.ThermalGenerators:
-            if instance.status_vars in ['CA_1bin_vars', 'garver_3bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars']:
-                yield instance.UnitOn[g,t]
-            if instance.status_vars in ['ALS_state_transition_vars']:
-                yield instance.UnitStayOn[g,t]
-            if instance.status_vars in ['garver_3bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
-                yield instance.UnitStart[g,t]
-            if instance.status_vars in ['garver_3bin_vars', 'ALS_state_transition_vars']:
-                yield instance.UnitStop[g,t]
-        if regulation:
-            for g in instance.AGC_Generators:
-                yield instance.RegulationOn[g,t]
+    if instance.status_vars in ['CA_1bin_vars', 'garver_3bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars']:
+        yield instance.UnitOn
+    if instance.status_vars in ['ALS_state_transition_vars']:
+        yield instance.UnitStayOn
+    if instance.status_vars in ['garver_3bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
+        yield instance.UnitStart
+    if instance.status_vars in ['garver_3bin_vars', 'ALS_state_transition_vars']:
+        yield instance.UnitStop
+    if regulation:
+        yield instance.RegulationOn
 
-        for s in instance.Storage:
-            yield instance.OutputStorage[s,t]
-            yield instance.InputStorage[s,t]
+    yield instance.OutputStorage
+    yield instance.InputStorage
 
     if instance.startup_costs in ['KOW_startup_costs']:
-        for g,t_prime,t in instance.StartupIndicator_domain:
-            yield instance.StartupIndicator[g,t_prime,t]
+        yield instance.StartupIndicator
     elif instance.startup_costs in ['MLR_startup_costs', 'MLR_startup_costs2',]:
-        for g,s,t in instance.StartupCostsIndexSet:
-            yield instance.delta[g,s,t]
+        yield instance.delta
 
 def uc_instance_binary_relaxer(model, solver):
     persistent_solver = isinstance(solver, PersistentSolver)
-    for var in _binary_var_generator(model):
-        var.domain = pe.UnitInterval
+    for ivar in _binary_var_generator(model):
+        ivar.domain = pe.UnitInterval
         if persistent_solver:
-            solver.update_var(var)
+            for var in ivar.itervalues():
+                solver.update_var(var)
 
 def uc_instance_binary_enforcer(model, solver):
     persistent_solver = isinstance(solver, PersistentSolver)
-    for var in _binary_var_generator(model):
-        var.domain = pe.Binary
+    for ivar in _binary_var_generator(model):
+        ivar.domain = pe.Binary
         if persistent_solver:
-            solver.update_var(var)
+            for var in ivar.itervalues():
+                solver.update_var(var)
 
