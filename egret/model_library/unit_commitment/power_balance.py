@@ -106,12 +106,12 @@ def _lazy_ptdf_dcopf_network_model(md,block,tm,td):
 
         reference_bus = md.data['system']['reference_bus']
 
-        ## calculate PTDFs, but don't do anything with them (for now..)
-        #from pyutilib.misc.timing import TicTocTimer
-        #timer = TicTocTimer()
-        #timer.tic('starting PTDF calculation')
+        ## calculate PTDFs
+        from pyutilib.misc.timing import TicTocTimer
+        timer = TicTocTimer()
+        timer.tic('starting PTDF calculation')
         PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
-        #timer.toc('done')
+        timer.toc('done')
 
         ## store some information we'll need when iterating on the model object
         _PTDF_dict['PTDFM'] = PTDFM
@@ -124,11 +124,12 @@ def _lazy_ptdf_dcopf_network_model(md,block,tm,td):
     ## create a pointer on this block to all this PTDF data,
     ## for easy iteration within the solve loop
     block._PTDF_dict = m._PTDFs_dict[branches_out_service]
+    buses_idx = block._PTDF_dict['buses_idx']
 
     ## this expression is specific to each block
     block._PTDF_bus_nw_exprs = \
       [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
-      sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses]
+      sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses_idx]
     block._PTDF_bus_p_loads = bus_p_loads
 
 
@@ -191,18 +192,19 @@ def _ptdf_dcopf_network_model(md,block,tm,td):
     ## for easy iteration within the solve loop
     block._PTDF_dict = m._PTDFs_dict[branches_out_service]
 
-    ## this expression is specific to each block
-    block._PTDF_bus_nw_exprs = \
-      [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
-      sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses]
-    block._PTDF_bus_p_loads = bus_p_loads
-
     ### get the sets for this block, based on the logic above
     PTDF_dict = block._PTDF_dict
 
     PTDFM = PTDF_dict['PTDFM']
     buses_idx = PTDF_dict['buses_idx']
     branches_idx = PTDF_dict['branches_idx']
+
+    ## this expression is specific to each block
+    block._PTDF_bus_nw_exprs = \
+      [ block.pl[bus] + bus_gs_fixed_shunts[bus] - \
+      sum(block.pg[g] for g in gens_by_bus[bus]) for bus in buses_idx]
+    block._PTDF_bus_p_loads = bus_p_loads
+
 
     for i,branch_name in enumerate(branches_idx):
         branch = branches[branch_name]
