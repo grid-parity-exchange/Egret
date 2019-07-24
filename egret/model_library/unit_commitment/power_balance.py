@@ -219,15 +219,14 @@ def _ptdf_dcopf_network_model(md,block,tm,td):
                              )
 
     ### declare the branch power flow approximation constraints
-    libbranch.declare_eq_branch_power_ptdf_approx(model=block,
-                                                  index_set=branches_in_service,
-                                                  branches=branches,
-                                                  bus_p_loads=bus_p_loads,
-                                                  gens_by_bus=gens_by_bus,
-                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  abs_ptdf_tol=abs_ptdf_tol,
-                                                  rel_ptdf_tol=rel_ptdf_tol
-                                                  )
+    libbranch.declare_eq_branch_power_ptdf_approx_from_nwe(model=block,
+                                                           index_set=branches_in_service,
+                                                           branches=branches,
+                                                           buses_index = buses_idx,
+                                                           bus_nw_exprs = block._PTDF_bus_nw_exprs,
+                                                           abs_ptdf_tol=abs_ptdf_tol,
+                                                           rel_ptdf_tol=rel_ptdf_tol
+                                                           )
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=block,
                                    index_set=buses.keys(),

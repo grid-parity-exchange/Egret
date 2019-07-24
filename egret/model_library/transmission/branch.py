@@ -367,12 +367,13 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
 
 
 def get_power_flow_expr_ptdf_approx(model, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
-    expr = 0
 
     if rel_ptdf_tol is None:
         rel_ptdf_tol = 0.
     if abs_ptdf_tol is None:
         abs_ptdf_tol = 0.
+
+    expr = 0
 
     if approximation_type == ApproximationType.PTDF:
         ptdf = branch['ptdf']
@@ -407,6 +408,12 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
     Create the equality constraints for power (from PTDF approximation)
     in the branch
     """
+
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
     m = model
 
     con_set = decl.declare_set("_con_eq_branch_power_ptdf_approx_set", model, index_set)
@@ -430,6 +437,69 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
         else:
             m.pf[branch_name] = expr
 
+
+def get_power_flow_expr_ptdf_approx_from_nwe(model, branch, buses_index, bus_nw_exprs, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
+
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
+    expr = 0
+
+    if approximation_type == ApproximationType.PTDF:
+        ptdf = branch['ptdf']
+    elif approximation_type == ApproximationType.PTDF_LOSSES:
+        ptdf = branch['ptdf_r']
+    max_coef = max(abs(coef) for coef in ptdf.values())
+    ## This case is weird, but could happen, causing divison by 0 below
+    if max_coef == 0:
+        return expr
+    for i, bus in enumerate(buses_index):
+        coef = ptdf[bus]
+        if abs(coef) < abs_ptdf_tol:
+            ## no point in excuting the rest of the for loop
+            continue
+        if abs(coef)/max_coef < rel_ptdf_tol:
+            ## no point in excuting the rest of the for loop
+            continue
+        expr += coef*bus_nw_exprs[i]
+
+    return expr
+
+
+def declare_eq_branch_power_ptdf_approx_from_nwe(model, index_set, branches, buses_index, bus_nw_exprs, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
+    """
+    Create the equality constraints for power (from PTDF approximation)
+    in the branch
+    """
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_power_ptdf_approx_set", model, index_set)
+
+    pf_is_var = isinstance(m.pf, pe.Var)
+    if not pf_is_var:
+        if not isinstance(m.pf, pe.Expression):
+            raise Exception("Unrecognized type for m.pf", m.pf.pprint())
+
+    if pf_is_var:
+        m.eq_pf_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+
+        expr = \
+            get_power_flow_expr_ptdf_approx_from_nwe(m, branch, buses_index, bus_nw_exprs, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol, approximation_type=approximation_type)
+
+        if pf_is_var:
+            m.eq_pf_branch[branch_name] = \
+                m.pf[branch_name] == expr
+        else:
+            m.pf[branch_name] = expr
 
 def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, rel_ptdf_tol=None, abs_ptdf_tol=None):
     """

@@ -118,9 +118,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
     buses_idx = PTDF_dict['buses_idx']
     branches_idx = PTDF_dict['branches_idx']
     branch_limits = PTDF_dict['branch_limits']
-    gens_by_bus = mb.gens_by_bus
     branches = model._branches
-    bus_gs_fixed_shunts = model._bus_gs_fixed_shunts
 
     ## helper for generating pf
     def _iter_over_viol_set(viol_set):
@@ -130,7 +128,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
             if mb.pf[bn].expr is None:
                 if 'ptdf' not in branch:
                     branch['ptdf'] = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
-                expr = libbranch.get_power_flow_expr_ptdf_approx(mb, branch, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol, approximation_type=ApproximationType.PTDF)
+                expr = libbranch.get_power_flow_expr_ptdf_approx_from_nwe(mb, branch, buses_idx, bus_nw_exprs, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol, approximation_type=ApproximationType.PTDF)
                 mb.pf[bn] = expr
             yield i, bn, branch
 
