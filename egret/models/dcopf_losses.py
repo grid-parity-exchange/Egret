@@ -28,7 +28,7 @@ from egret.model_library.defn import CoordinateType, ApproximationType, Relaxati
 from egret.data.model_data import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack
 from egret.models.dcopf import _include_feasibility_slack
-from math import pi
+from math import pi, radians
 
 
 def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC, include_angle_diff_limits=False, include_feasibility_slack=False):
@@ -81,13 +81,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
-    model.va[ref_bus].fix(0.0)
-
     ref_angle = md.data['system']['reference_bus_angle']
-    if ref_angle != 0.0:
-        raise ValueError('The BTHETA WITH LOSSES DCOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
+    model.va[ref_bus].fix(radians(ref_angle))
 
     ### declare the generator real power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
