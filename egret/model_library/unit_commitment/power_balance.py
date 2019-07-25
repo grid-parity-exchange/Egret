@@ -187,14 +187,9 @@ def _get_pg_expr_rule(t):
     def pg_expr_rule(block,b):
         m = block.model()
         # bus b, time t (S)
-        if m.storage_services:
-            return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
-                + sum(m.PowerOutputStorage[s, t]*m.OutputEfficiencyEnergy[s] for s in m.StorageAtBus[b])\
+        return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
+                + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
                 - sum(m.PowerInputStorage[s, t] for s in m.StorageAtBus[b])\
-                + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
-                + m.LoadGenerateMismatch[b,t]
-        else:
-            return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
                 + m.LoadGenerateMismatch[b,t]
     return pg_expr_rule
@@ -247,17 +242,17 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
-                                            'non_dispatchable_vars': None
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
                                             })
 def btheta_power_flow(model, slacks=True):
     _add_egret_power_flow(model, _btheta_dcopf_network_model, reactive_power=False, slacks=slacks)
 
 
-#TODO: this doesn't check if storage_services is added first, 
-#      but this will only happen when there are storage_services!
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
-                                            'non_dispatchable_vars': None
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
                                             })
 def power_balance_constraints(model, slacks=True):
     '''
@@ -302,8 +297,7 @@ def power_balance_constraints(model, slacks=True):
     # Power balance at each node (S)
     def power_balance(m, b, t):
         # bus b, time t (S)
-        if m.storage_services:
-            return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
+        return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
                 + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
                 - sum(m.PowerInputStorage[s, t] for s in m.StorageAtBus[b])\
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
@@ -311,14 +305,6 @@ def power_balance_constraints(model, slacks=True):
                 - sum(m.LinePower[l,t] for l in m.LinesFrom[b]) \
                 + m.LoadGenerateMismatch[b,t] \
                 == m.Demand[b, t] 
-        else:
-            return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
-                + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
-                + sum(m.LinePower[l,t] for l in m.LinesTo[b]) \
-                - sum(m.LinePower[l,t] for l in m.LinesFrom[b]) \
-                + m.LoadGenerateMismatch[b,t] \
-                == m.Demand[b, t] 
-    
     model.PowerBalance = Constraint(model.Buses, model.TimePeriods, rule=power_balance)
 
     return

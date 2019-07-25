@@ -580,17 +580,20 @@ def solve_unit_commitment(model_data,
     nspin = False
     supp = False
     flex = False
-    if m.ancillary_services:
-        if hasattr(m, 'regulation_service'):
-            regulation = True
-        if hasattr(m, 'spinning_reserve'):
-            spin = True
-        if hasattr(m, 'non_spinning_reserve'):
-            nspin = True
-        if hasattr(m, 'supplemental_reserve'):
-            supp = True
-        if hasattr(m, 'flexible_ramping'):
-            flex = True
+    if hasattr(m, 'regulation_service'):
+        regulation = True
+    if hasattr(m, 'spinning_reserve'):
+        spin = True
+    if hasattr(m, 'non_spinning_reserve'):
+        nspin = True
+    if hasattr(m, 'supplemental_reserve'):
+        supp = True
+    if hasattr(m, 'flexible_ramping'):
+        flex = True
+
+    fs = False
+    if hasattr(m, 'fuel_supply'):
+        fs = True
 
     for g,g_dict in thermal_gens.items():
         pg_dict = {}
@@ -632,6 +635,9 @@ def solve_unit_commitment(model_data,
         if flex:
             flex_up_supp = {}
             flex_dn_supp = {}
+        gfs = (fs and (g in m.FuelSupplyGenerators))
+        if gfs:
+            fuel_consumed = {}
 
         for dt, mt in zip(data_time_periods,m.TimePeriods):
             pg_dict[dt] = value(m.PowerGenerated[g,mt])
@@ -670,9 +676,8 @@ def solve_unit_commitment(model_data,
             if flex:
                 flex_up_supp[dt] = value(m.FlexUpProvided[g,mt])
                 flex_dn_supp[dt] = value(m.FlexDnProvided[g,mt])
-
-            ## we can use pe.Constraint.slack() to calculate this...but we need some standard
-            ## constraint names in the unit commitment model library
+            if gfs:
+                fuel_consumed[dt] = value(m.FuelConsumed[g,mt])
 
             ## pyomo doesn't add constraints that are skiped to the index set, so we also
             ## need check here if the index exists.
@@ -703,6 +708,8 @@ def solve_unit_commitment(model_data,
         if flex:
             g_dict['flex_up_supplied'] = _time_series_dict(flex_up_supp)
             g_dict['flex_down_supplied'] = _time_series_dict(flex_dn_supp)
+        if gfs:
+            g_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
         g_dict['headroom'] = _time_series_dict(ramp_up_avail_dict)
 
     for g,g_dict in renewable_gens.items():
@@ -793,121 +800,132 @@ def solve_unit_commitment(model_data,
             sys_dict['reserve_price'] = _time_series_dict(sr_p_dict)
 
 
-    if m.ancillary_services:
-        ## TODO: Can the code above this be re-factored in a similar way?
-        ## as we add more zonal reserve products, they can be added here
-        _zonal_reserve_map = dict()
-        _system_reserve_map = dict()
-        if spin:
-            _zonal_reserve_map['spinning_reserve_requirement'] = {'shortfall' : 'spinning_reserve_shortfall',
-                                                                  'price'     : 'spinning_reserve_price',
-                                                                  'shortfall_m' : m.ZonalSpinningReserveShortfall,
-                                                                  'balance_m' : m.EnforceZonalSpinningReserveRequirement,
-                                                                 }
-            _system_reserve_map['spinning_reserve_requirement'] = {'shortfall' : 'spinning_reserve_shortfall',
-                                                                   'price'     : 'spinning_reserve_price',
-                                                                   'shortfall_m' : m.SystemSpinningReserveShortfall,
-                                                                   'balance_m' : m.EnforceSystemSpinningReserveRequirement,
-                                                                  }
-        if nspin:
-            _zonal_reserve_map['non_spinning_reserve_requirement'] = {'shortfall' : 'non_spinning_reserve_shortfall',
-                                                                      'price'     : 'non_spinning_reserve_price',
-                                                                      'shortfall_m' : m.ZonalNonSpinningReserveShortfall,
-                                                                      'balance_m' : m.EnforceNonSpinningZonalReserveRequirement,
-                                                                     }
-            _system_reserve_map['non_spinning_reserve_requirement'] = {'shortfall' : 'non_spinning_reserve_shortfall',
-                                                                       'price'     : 'non_spinning_reserve_price',
-                                                                       'shortfall_m' : m.SystemNonSpinningReserveShortfall,
-                                                                       'balance_m' : m.EnforceSystemNonSpinningReserveRequirement,
-                                                                       }
-        if regulation:
-            _zonal_reserve_map['regulation_up_requirement'] = {'shortfall' : 'regulation_up_shortfall',
-                                                               'price'    : 'regulation_up_price',
-                                                               'shortfall_m' : m.ZonalRegulationUpShortfall,
-                                                               'balance_m' : m.EnforceZonalRegulationUpRequirements,
+    ## TODO: Can the code above this be re-factored in a similar way?
+    ## as we add more zonal reserve products, they can be added here
+    _zonal_reserve_map = dict()
+    _system_reserve_map = dict()
+    if spin:
+        _zonal_reserve_map['spinning_reserve_requirement'] = {'shortfall' : 'spinning_reserve_shortfall',
+                                                              'price'     : 'spinning_reserve_price',
+                                                              'shortfall_m' : m.ZonalSpinningReserveShortfall,
+                                                              'balance_m' : m.EnforceZonalSpinningReserveRequirement,
+                                                             }
+        _system_reserve_map['spinning_reserve_requirement'] = {'shortfall' : 'spinning_reserve_shortfall',
+                                                               'price'     : 'spinning_reserve_price',
+                                                               'shortfall_m' : m.SystemSpinningReserveShortfall,
+                                                               'balance_m' : m.EnforceSystemSpinningReserveRequirement,
                                                               }
-            _system_reserve_map['regulation_up_requirement'] = {'shortfall' : 'regulation_up_shortfall',
-                                                                'price'    : 'regulation_up_price',
-                                                                'shortfall_m' : m.SystemRegulationUpShortfall,
-                                                                'balance_m' : m.EnforceSystemRegulationUpRequirement,
-                                                               }
-            _zonal_reserve_map['regulation_down_requirement'] = {'shortfall' : 'regulation_down_shortfall',
-                                                                 'price'     : 'regulation_down_price',
-                                                                 'shortfall_m' : m.ZonalRegulationDnShortfall,
-                                                                 'balance_m' : m.EnforceZonalRegulationDnRequirements,
-                                                                }
-            _system_reserve_map['regulation_down_requirement'] = {'shortfall' : 'regulation_down_shortfall',
-                                                                  'price'     : 'regulation_down_price',
-                                                                  'shortfall_m' : m.SystemRegulationDnShortfall,
-                                                                  'balance_m' : m.EnforceSystemRegulationDnRequirement,
-                                                                 } 
-        if flex:
-            _zonal_reserve_map['flexible_ramp_up_requirement'] = { 'shortfall' : 'flexible_ramp_up_shortfall',
-                                                                  'price' : 'flexible_ramp_up_price',
-                                                                  'shortfall_m' : m.ZonalFlexUpShortfall,
-                                                                  'balance_m' : m.ZonalFlexUpRequirementConstr,
+    if nspin:
+        _zonal_reserve_map['non_spinning_reserve_requirement'] = {'shortfall' : 'non_spinning_reserve_shortfall',
+                                                                  'price'     : 'non_spinning_reserve_price',
+                                                                  'shortfall_m' : m.ZonalNonSpinningReserveShortfall,
+                                                                  'balance_m' : m.EnforceNonSpinningZonalReserveRequirement,
                                                                  }
-            _system_reserve_map['flexible_ramp_up_requirement'] = {'shortfall' : 'flexible_ramp_up_shortfall',
-                                                                   'price' : 'flexible_ramp_up_price',
-                                                                   'shortfall_m' : m.SystemFlexUpShortfall,
-                                                                   'balance_m' : m.SystemFlexUpRequirementConstr,
-                                                                  }
-            _zonal_reserve_map['flexible_ramp_down_requirement'] = {'shortfall' : 'flexible_ramp_down_shortfall',
-                                                                    'price'    : 'flexible_ramp_down_price',
-                                                                    'shortfall_m' : m.ZonalFlexDnShortfall,
-                                                                    'balance_m' : m.ZonalFlexDnRequirementConstr,
+        _system_reserve_map['non_spinning_reserve_requirement'] = {'shortfall' : 'non_spinning_reserve_shortfall',
+                                                                   'price'     : 'non_spinning_reserve_price',
+                                                                   'shortfall_m' : m.SystemNonSpinningReserveShortfall,
+                                                                   'balance_m' : m.EnforceSystemNonSpinningReserveRequirement,
                                                                    }
-            _system_reserve_map['flexible_ramp_down_requirement'] = {'shortfall' : 'flexible_ramp_down_shortfall',
-                                                                     'price'    : 'flexible_ramp_down_price',
-                                                                     'shortfall_m' : m.SystemFlexDnShortfall,
-                                                                     'balance_m' : m.SystemFlexDnRequirementConstr,
-                                                                    }
-        if supp:
-            _zonal_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_shortfall',
-                                                                     'price' : 'supplemental_price',
-                                                                     'shortfall_m' : m.ZonalSupplementalReserveShortfall,
-                                                                     'balance_m' : m.EnforceZonalSupplementalReserveRequirement,
-                                                                     }
+    if regulation:
+        _zonal_reserve_map['regulation_up_requirement'] = {'shortfall' : 'regulation_up_shortfall',
+                                                           'price'    : 'regulation_up_price',
+                                                           'shortfall_m' : m.ZonalRegulationUpShortfall,
+                                                           'balance_m' : m.EnforceZonalRegulationUpRequirements,
+                                                          }
+        _system_reserve_map['regulation_up_requirement'] = {'shortfall' : 'regulation_up_shortfall',
+                                                            'price'    : 'regulation_up_price',
+                                                            'shortfall_m' : m.SystemRegulationUpShortfall,
+                                                            'balance_m' : m.EnforceSystemRegulationUpRequirement,
+                                                           }
+        _zonal_reserve_map['regulation_down_requirement'] = {'shortfall' : 'regulation_down_shortfall',
+                                                             'price'     : 'regulation_down_price',
+                                                             'shortfall_m' : m.ZonalRegulationDnShortfall,
+                                                             'balance_m' : m.EnforceZonalRegulationDnRequirements,
+                                                            }
+        _system_reserve_map['regulation_down_requirement'] = {'shortfall' : 'regulation_down_shortfall',
+                                                              'price'     : 'regulation_down_price',
+                                                              'shortfall_m' : m.SystemRegulationDnShortfall,
+                                                              'balance_m' : m.EnforceSystemRegulationDnRequirement,
+                                                             } 
+    if flex:
+        _zonal_reserve_map['flexible_ramp_up_requirement'] = { 'shortfall' : 'flexible_ramp_up_shortfall',
+                                                              'price' : 'flexible_ramp_up_price',
+                                                              'shortfall_m' : m.ZonalFlexUpShortfall,
+                                                              'balance_m' : m.ZonalFlexUpRequirementConstr,
+                                                             }
+        _system_reserve_map['flexible_ramp_up_requirement'] = {'shortfall' : 'flexible_ramp_up_shortfall',
+                                                               'price' : 'flexible_ramp_up_price',
+                                                               'shortfall_m' : m.SystemFlexUpShortfall,
+                                                               'balance_m' : m.SystemFlexUpRequirementConstr,
+                                                              }
+        _zonal_reserve_map['flexible_ramp_down_requirement'] = {'shortfall' : 'flexible_ramp_down_shortfall',
+                                                                'price'    : 'flexible_ramp_down_price',
+                                                                'shortfall_m' : m.ZonalFlexDnShortfall,
+                                                                'balance_m' : m.ZonalFlexDnRequirementConstr,
+                                                               }
+        _system_reserve_map['flexible_ramp_down_requirement'] = {'shortfall' : 'flexible_ramp_down_shortfall',
+                                                                 'price'    : 'flexible_ramp_down_price',
+                                                                 'shortfall_m' : m.SystemFlexDnShortfall,
+                                                                 'balance_m' : m.SystemFlexDnRequirementConstr,
+                                                                }
+    if supp:
+        _zonal_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_shortfall',
+                                                                 'price' : 'supplemental_price',
+                                                                 'shortfall_m' : m.ZonalSupplementalReserveShortfall,
+                                                                 'balance_m' : m.EnforceZonalSupplementalReserveRequirement,
+                                                                 }
 
-            _system_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_shortfall',
-                                                                       'price' : 'supplemental_price',
-                                                                       'shortfall_m' : m.SystemSupplementalReserveShortfall,
-                                                                       'balance_m' : m.EnforceSystemSupplementalReserveRequirement,
-                                                                       }
+        _system_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_shortfall',
+                                                                   'price' : 'supplemental_price',
+                                                                   'shortfall_m' : m.SystemSupplementalReserveShortfall,
+                                                                   'balance_m' : m.EnforceSystemSupplementalReserveRequirement,
+                                                                   }
 
-        def _populate_zonal_reserves(elements_dict, string_handle):
-            for e,e_dict in elements_dict.items():
-                me = string_handle+e
-                for req, req_dict in _zonal_reserve_map.items():
-                    if req in e_dict:
-                        req_shortfall_dict = {}
-                        for dt, mt in zip(data_time_periods, m.TimePeriods):
-                            req_shortfall_dict[dt] = value(req_dict['shortfall_m'][me,mt])
-                        e_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
-                        if relaxed:
-                            req_price_dict = {}
-                            for dt, mt in zip(data_time_periods, m.TimePeriods):
-                                req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])
-                            e_dict[req_dict['price']] = _time_series_dict(req_price_dict)
-
-        def _populate_system_reserves(sys_dict):
-            for req, req_dict in _system_reserve_map.items():
-                if req in sys_dict:
+    def _populate_zonal_reserves(elements_dict, string_handle):
+        for e,e_dict in elements_dict.items():
+            me = string_handle+e
+            for req, req_dict in _zonal_reserve_map.items():
+                if req in e_dict:
                     req_shortfall_dict = {}
                     for dt, mt in zip(data_time_periods, m.TimePeriods):
-                        req_shortfall_dict[dt] = value(req_dict['shortfall_m'][mt])
-                    sys_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
+                        req_shortfall_dict[dt] = value(req_dict['shortfall_m'][me,mt])
+                    e_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                     if relaxed:
                         req_price_dict = {}
                         for dt, mt in zip(data_time_periods, m.TimePeriods):
-                            req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])
-                        sys_dict[req_dict['price']] = _time_series_dict(req_price_dict)
-        
-        _populate_zonal_reserves(areas, 'area_')
-        _populate_zonal_reserves(zones, 'zone_')
+                            req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])
+                        e_dict[req_dict['price']] = _time_series_dict(req_price_dict)
 
-        _populate_system_reserves(md.data['system'])
-    ## end if
+    def _populate_system_reserves(sys_dict):
+        for req, req_dict in _system_reserve_map.items():
+            if req in sys_dict:
+                req_shortfall_dict = {}
+                for dt, mt in zip(data_time_periods, m.TimePeriods):
+                    req_shortfall_dict[dt] = value(req_dict['shortfall_m'][mt])
+                sys_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
+                if relaxed:
+                    req_price_dict = {}
+                    for dt, mt in zip(data_time_periods, m.TimePeriods):
+                        req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])
+                    sys_dict[req_dict['price']] = _time_series_dict(req_price_dict)
+    
+    _populate_zonal_reserves(areas, 'area_')
+    _populate_zonal_reserves(zones, 'zone_')
+
+    _populate_system_reserves(md.data['system'])
+
+    if fs:
+        fuel_supplies = dict(md.elements(element_type='fuel_supply'))
+        for f, f_dict in fuel_supplies.items():
+            fuel_consumed = {}
+            fuel_supply_type = f_dict['fuel_supply_type']
+            if fuel_supply_type == 'instantaneous':
+                for dt, mt in zip(data_time_periods, m.TimePeriods):
+                    fuel_consumed[dt] = value(m.TotalFuelConsumedAtInstFuelSupply[f,mt])
+            else:
+                print('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
+            f_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
+
     md.data['system']['total_cost'] = value(m.TotalCostObjective)
 
     unscale_ModelData_to_pu(md, inplace=True)
