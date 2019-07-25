@@ -45,7 +45,7 @@ class TestBThetaDCOPF(unittest.TestCase):
 
         kwargs = {}
         if include_kwargs:
-            kwargs = {'include_feasibility_slack': 'True'}
+            kwargs = {'include_feasibility_slack':True}
         md, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
@@ -64,7 +64,7 @@ class TestBThetaDCOPF(unittest.TestCase):
 
         kwargs = {}
         if include_kwargs:
-            kwargs = {'include_feasibility_slack': 'True'}
+            kwargs = {'include_feasibility_slack':True}
         md, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)

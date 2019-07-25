@@ -46,7 +46,7 @@ class TestPSVACOPF(unittest.TestCase):
 
         kwargs = {}
         if include_kwargs:
-            kwargs = {'include_feasibility_slack': 'True'}
+            kwargs = {'include_feasibility_slack':True}
         md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
@@ -75,7 +75,7 @@ class TestRSVACOPF(unittest.TestCase):
 
         kwargs = {}
         if include_kwargs:
-            kwargs = {'include_feasibility_slack': 'True'}
+            kwargs = {'include_feasibility_slack':True}
         md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
@@ -104,7 +104,7 @@ class TestRIVACOPF(unittest.TestCase):
 
         kwargs = {}
         if include_kwargs:
-            kwargs = {'include_feasibility_slack': 'True'}
+            kwargs = {'include_feasibility_slack':True}
         md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)

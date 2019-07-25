@@ -777,9 +777,9 @@ def solve_acopf(model_data,
 #     from egret.parsers.matpower_parser import create_ModelData
 #
 #     path = os.path.dirname(__file__)
-#     filename = 'pglib_opf_case3_lmbd.m'
+#     filename = 'pglib_opf_case300_ieee.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
-#     kwargs = {'include_feasibility_slack':'True'}
-#     md = solve_acopf(md, "ipopt",**kwargs)
+#     kwargs = {'include_feasibility_slack':False}
+#     md,m,results = solve_acopf(md, "ipopt",acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
 #
