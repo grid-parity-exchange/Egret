@@ -497,7 +497,6 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
     ref_bus = md.data['system']['reference_bus']
     ref_angle = md.data['system']['reference_bus_angle']
     if ref_angle != 0.0:
-        print("IN HERE")
         libbus.declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus)
     else:
         model.vj[ref_bus].fix(0.0)
