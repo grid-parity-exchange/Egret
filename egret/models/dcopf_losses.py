@@ -408,7 +408,6 @@ def solve_dcopf_losses(model_data,
 #     from egret.parsers.matpower_parser import create_ModelData
 #
 #     path = os.path.dirname(__file__)
-#     print(path)
 #     filename = 'pglib_opf_case300_ieee.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
@@ -417,5 +416,6 @@ def solve_dcopf_losses(model_data,
 #     md_btheta, m_btheta, results_btheta = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
 #
 #     from acopf import solve_acopf
+#     md = create_ModelData(matpower_file)
 #     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
 #     md_ptdf, m_ptdf, results_ptdf = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model, return_model=True, return_results=True, **kwargs)

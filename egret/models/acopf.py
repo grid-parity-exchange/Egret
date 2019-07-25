@@ -22,7 +22,7 @@ import egret.model_library.transmission.gen as libgen
 
 from egret.model_library.defn import FlowType, CoordinateType
 from egret.data.model_data import map_items, zip_items
-from math import pi
+from math import pi, radians
 
 
 def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads, penalty=1000):
@@ -105,13 +105,8 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
-    model.va[ref_bus].fix(0.0)
-
     ref_angle = md.data['system']['reference_bus_angle']
-    if ref_angle != 0.0:
-        raise ValueError('The RIV ACOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
+    model.va[ref_bus].fix(radians(ref_angle))
 
     ### declare the generator real and reactive power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -304,14 +299,12 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
-    model.vj[ref_bus].fix(0.0)
-    model.vr[ref_bus].setlb(0.0)
-
     ref_angle = md.data['system']['reference_bus_angle']
     if ref_angle != 0.0:
-        raise ValueError('The RSV ACOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
+        libbus.declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus)
+    else:
+        model.vj[ref_bus].fix(0.0)
+        model.vr[ref_bus].setlb(0.0)
 
     ### declare the generator real and reactive power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -502,14 +495,13 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
-    model.vj[ref_bus].fix(0.0)
-    model.vr[ref_bus].setlb(0.0)
-
     ref_angle = md.data['system']['reference_bus_angle']
     if ref_angle != 0.0:
-        raise ValueError('The RIV ACOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
+        print("IN HERE")
+        libbus.declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus)
+    else:
+        model.vj[ref_bus].fix(0.0)
+        model.vr[ref_bus].setlb(0.0)
 
     ### declare the generator real and reactive power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -772,14 +764,17 @@ def solve_acopf(model_data,
         return md, results
     return md
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     filename = 'pglib_opf_case300_ieee.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
-#     kwargs = {'include_feasibility_slack':False}
-#     md,m,results = solve_acopf(md, "ipopt",acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
-#
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    filename = 'pglib_opf_case14_ieee.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+    model_data = create_ModelData(matpower_file)
+    kwargs = {'include_feasibility_slack':False}
+    md,m,results = solve_acopf(model_data, "ipopt",acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
+    md,m,results = solve_acopf(model_data, "ipopt",acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
+    md,m,results = solve_acopf(model_data, "ipopt",acopf_model_generator=create_riv_acopf_model,return_model=True, return_results=True,**kwargs)
+
+

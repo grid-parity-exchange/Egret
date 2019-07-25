@@ -437,7 +437,7 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
             tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
             g = tx_calc.calculate_conductance(branch)
-            #expr += (g/tau) * shift**2
+            expr += (g/tau) * shift**2
 
         ldf = branch['ldf']
         for bus_name, coef in ldf.items():
