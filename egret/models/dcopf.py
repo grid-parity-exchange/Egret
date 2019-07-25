@@ -351,8 +351,7 @@ def solve_dcopf(model_data,
         if dcopf_model_generator == create_ptdf_dcopf_model:
             b_dict['lmp'] = value(m.dual[m.eq_p_balance])
             for k, k_dict in branches.items():
-                if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
-                    b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
+                b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
 
     for k, k_dict in branches.items():
         k_dict['pf'] = value(m.pf[k])
