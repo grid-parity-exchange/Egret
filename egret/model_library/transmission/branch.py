@@ -456,11 +456,11 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
             for gen_name in gens_by_bus[bus_name]:
                 expr -= coef * m.pg[gen_name]
 
-            # for _, phi_loss in phi_loss_from.items():
-            #     expr += coef * phi_loss
-            #
-            # for _, phi_loss in phi_loss_to.items():
-            #     expr -= coef * phi_loss
+            for _, phi_loss in phi_loss_from.items():
+                expr += coef * phi_loss
+
+            for _, phi_loss in phi_loss_to.items():
+                expr -= coef * phi_loss
 
         expr += branch['ldf_c']
 
