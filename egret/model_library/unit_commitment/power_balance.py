@@ -385,35 +385,83 @@ def _add_system_load_mismatch(model):
 
 def _add_load_mismatch(model):
 
-    #####################################################
-    # load "shedding" can be both positive and negative #
-    #####################################################
-    model.LoadGenerateMismatch = Var(model.Buses, model.TimePeriods, within=Reals)
-    model.posLoadGenerateMismatch = Var(model.Buses, model.TimePeriods, within=NonNegativeReals) # load shedding
-    model.negLoadGenerateMismatch = Var(model.Buses, model.TimePeriods, within=NonNegativeReals) # over generation
-    
-    def define_pos_neg_load_generate_mismatch_rule(m, b, t):
-        return m.posLoadGenerateMismatch[b, t] - m.negLoadGenerateMismatch[b, t] == m.LoadGenerateMismatch[b, t]
-    model.DefinePosNegLoadGenerateMismatch = Constraint(model.Buses, model.TimePeriods, rule = define_pos_neg_load_generate_mismatch_rule)
+    def load_shedding_bus_times(m):
+        for b in m.Buses:
+            for t in m.TimePeriods:
+                if value(m.Demand[b,t]) > 0:
+                    yield b,t
+    model.LoadSheddingBusTimes = Set(dimen=2, initialize=load_shedding_bus_times)
 
+    load_shedding_times_per_bus = {b: list() for b in model.Buses}
+    for b,t in model.LoadSheddingBusTimes:
+        load_shedding_times_per_bus[b].append(t)
+
+    def load_shedding_bounds_times(m,b,t):
+        ## NOTE: depends on above which ensures no engative demand
+        return (0, value(m.Demand[b,t]))
+    model.LoadShedding = Var(model.LoadSheddingBusTimes, within=NonNegativeReals, bounds=load_shedding_bounds_times) # load shedding
+
+    over_gen_maxes = {}
+    over_gen_times_per_bus = {b: list() for b in model.Buses}
+    for b in model.Buses:
+        gen = sum(value(model.MaximumPowerOutput[g]) for g in model.ThermalGeneratorsAtBus[b])
+        for t in model.TimePeriods:
+            total_gen = gen + sum(value(model.MinNondispatchablePower[n,t]) for n in model.NondispatchableGeneratorsAtBus[b])
+            total_gen -= value(model.Demand[b,t])
+            if total_gen > 0:
+                over_gen_maxes[b,t] = total_gen
+                over_gen_times_per_bus[b].append(t)
+
+    model.OverGenerationBusTimes = Set(dimen=2, initialize=over_gen_maxes.keys())
+
+    def get_over_gen_bounds(m,b,t):
+        return (0,over_gen_maxes[b,t])
+    model.OverGeneration = Var(model.OverGenerationBusTimes, within=NonNegativeReals, bounds=get_over_gen_bounds) # over generation
+    
     # the following constraints are necessarily, at least in the case of CPLEX 12.4, to prevent
     # the appearance of load generation mismatch component values in the range of *negative* e-5.
     # what these small negative values do is to cause the optimal objective to be a very large negative,
     # due to obviously large penalty values for under or over-generation. JPW would call this a heuristic
     # at this point, but it does seem to work broadly. we tried a single global constraint, across all
     # buses, but that failed to correct the problem, and caused the solve times to explode.
-    
+
+
     def pos_load_generate_mismatch_tolerance_rule(m, b):
-       return sum((m.posLoadGenerateMismatch[b,t] for t in m.TimePeriods)) >= 0.0
-    model.PosLoadGenerateMismatchTolerance = Constraint(model.Buses, rule=pos_load_generate_mismatch_tolerance_rule)
+        if load_shedding_times_per_bus[b]:
+            return sum(m.LoadShedding[b,t] for t in load_shedding_times_per_bus[b]) >= 0
+        else:
+            return Constraint.Feasible
+    model.PosLoadGenerateMismatchTolerance = Constraint(model.Buses, 
+                                                                rule=pos_load_generate_mismatch_tolerance_rule)
     
     def neg_load_generate_mismatch_tolerance_rule(m, b):
-       return sum((m.negLoadGenerateMismatch[b,t] for t in m.TimePeriods)) >= 0.0
-    model.NegLoadGenerateMismatchTolerance = Constraint(model.Buses, rule=neg_load_generate_mismatch_tolerance_rule)
+        if over_gen_times_per_bus[b]:
+            return sum(m.OverGeneration[b,t] for t in m.TimePeriods if (b,t) in m.OverGenerationBusTimes) >= 0
+        else:
+            return Constraint.Feasible
+    model.NegLoadGenerateMismatchTolerance = Constraint(model.Buses,
+                                                                rule=neg_load_generate_mismatch_tolerance_rule)
+    
+    #####################################################
+    # load "shedding" can be both positive and negative #
+    #####################################################
+    model.LoadGenerateMismatch = Expression(model.Buses, model.TimePeriods)
+    for b in model.Buses:
+        for t in model.TimePeriods:
+            model.LoadGenerateMismatch[b,t].expr = 0
+    for b,t in model.LoadSheddingBusTimes:
+        model.LoadGenerateMismatch[b,t].expr += model.LoadShedding[b,t]
+    for b,t in model.OverGenerationBusTimes:
+        model.LoadGenerateMismatch[b,t].expr -= model.OverGeneration[b,t]
 
-    def compute_load_mismatch_cost_rule(m, t):
-        return m.LoadMismatchPenalty*m.TimePeriodLengthHours*sum(m.posLoadGenerateMismatch[b, t] + m.negLoadGenerateMismatch[b, t] for b in m.Buses) 
-    model.LoadMismatchCost = Expression(model.TimePeriods, rule=compute_load_mismatch_cost_rule)
+    model.LoadMismatchCost = Expression(model.TimePeriods)
+    for t in model.TimePeriods:
+        model.LoadMismatchCost[t].expr = 0
+    for b,t in model.LoadSheddingBusTimes:
+        model.LoadMismatchCost[t].expr += model.LoadMismatchPenalty*model.TimePeriodLengthHours*model.LoadShedding[b,t]
+    for b,t in model.OverGenerationBusTimes:
+        model.LoadMismatchCost[t].expr += model.LoadMismatchPenalty*model.TimePeriodLengthHours*model.OverGeneration[b,t]
+
 
 def _add_q_load_mismatch(model):
 
