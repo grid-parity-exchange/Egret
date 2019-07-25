@@ -23,7 +23,7 @@ import egret.data.data_utils as data_utils
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
 from egret.data.model_data import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack
-from math import pi
+from math import pi, radians
 
 
 def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, penalty=1000):
@@ -88,13 +88,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
-    model.va[ref_bus].fix(0.0)
-
     ref_angle = md.data['system']['reference_bus_angle']
-    if ref_angle != 0.0:
-        raise ValueError('The BTHETA DCOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
+    model.va[ref_bus].fix(radians(ref_angle))
 
     ### declare the generator real power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
