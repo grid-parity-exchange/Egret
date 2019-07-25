@@ -243,13 +243,6 @@ def create_model_data_dict(matpower_filename):
                 bus_dict['matpower_bustype'] = bus_types[BUS_TYPE]
 
                 if BUS_TYPE == 3: # Reference bus
-                    if VA != 0:
-                        if abs(VA) >= 1e-16:
-                            raise ValueError('EGRET only supports reference buses with an angle of 0 degrees.')
-                        msg = "\nEgret only supports reference buses with an angle of 0 degrees. \nFound a " \
-                                      "reference bus with an angle close to 0. \n" \
-                                      "Value: {0}".format(VA) + "\nSetting reference bus angle to 0."
-                        logger.warning(msg)
                     system["reference_bus"] = str(BUS_I)
                     system["reference_bus_angle"] = float(VA)
 

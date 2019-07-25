@@ -289,10 +289,8 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=Base
         to_bus = branch['to_bus']
 
         tau = 1.0
-        shift = 0.0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
 
         if approximation_type == ApproximationType.PTDF:
             x = branch['reactance']
@@ -310,11 +308,12 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
+
         idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
-        J11[idx_row][idx_col] = -b * vn * vm * cos(tn - tm - shift)
+        J11[idx_row][idx_col] = -b * vn * vm * cos(tn - tm)
 
         idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
-        J11[idx_row][idx_col] = b * vn * vm * cos(tn - tm - shift)
+        J11[idx_row][idx_col] = b * vn * vm * cos(tn - tm)
 
     return J11
 
@@ -337,10 +336,8 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=Base
         to_bus = branch['to_bus']
 
         tau = 1.0
-        shift = 0.0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
         g = calculate_conductance(branch)/tau
 
         if base_point == BasePointType.FLATSTART:
@@ -355,12 +352,92 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             tm = buses[to_bus]['va']
 
         idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
-        L11[idx_row][idx_col] = 2 * g * vn * vm * sin(tn - tm - shift)
+        L11[idx_row][idx_col] = 2 * g * vn * vm * sin(tn - tm)
 
         idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
-        L11[idx_row][idx_col] = -2 * g * vn * vm * sin(tn - tm - shift)
+        L11[idx_row][idx_col] = -2 * g * vn * vm * sin(tn - tm)
 
     return L11
+
+
+def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF):
+    """
+    Compute the phase shifter constant for fixed phase shift transformers
+    """
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    phi_from = np.zeros((_len_bus,_len_branch))
+    phi_to = np.zeros((_len_bus,_len_branch))
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+
+        b = 0.
+        if approximation_type == ApproximationType.PTDF:
+            x = branch['reactance']
+            b = -(1/x)*(shift/tau)
+        elif approximation_type == ApproximationType.PTDF_LOSSES:
+            b = calculate_susceptance(branch)*(shift/tau)
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        phi_from[idx_col][idx_row] = b
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        phi_to[idx_col][idx_row] = b
+
+    return phi_from, phi_to
+
+
+def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF_LOSSES):
+    """
+    Compute the phase shifter constant for fixed phase shift transformers
+    """
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    phi_loss_from = np.zeros((_len_bus,_len_branch))
+    phi_loss_to = np.zeros((_len_bus,_len_branch))
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+
+        g = 0.
+        if approximation_type == ApproximationType.PTDF:
+            r = branch['resistance']
+            g = (1/r)*(1/tau)*shift**2
+        elif approximation_type == ApproximationType.PTDF_LOSSES:
+            g = calculate_conductance(branch)*(1/tau)*shift**2
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        phi_loss_from[idx_col][idx_row] = g
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        phi_loss_to[idx_col][idx_row] = g
+
+    return phi_loss_from, phi_loss_to
 
 
 def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
@@ -400,7 +477,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
             tm = buses[to_bus]['va']
 
         pf_constant[idx_row] = 0.5 * g * ((vn/tau) ** 2 - vm ** 2) \
-                               - b * vn * vm * (sin(tn - tm - shift) - cos(tn - tm - shift)*(tn - tm))
+                               - b * vn * vm * (sin(tn - tm + shift) - cos(tn - tm + shift)*(tn - tm))
 
     return pf_constant
 
@@ -443,7 +520,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             tm = buses[to_bus]['va']
 
         pfl_constant[idx_row] = g2 * (vn ** 2) + _g * (vm ** 2) \
-                              - 2 * g * vn * vm * (sin(tn - tm - shift) * (tn - tm) + cos(tn - tm - shift))
+                              - 2 * g * vn * vm * (sin(tn - tm + shift) * (tn - tm) + cos(tn - tm + shift))
 
     return pfl_constant
 

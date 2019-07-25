@@ -14,7 +14,7 @@ typically used for buses (including loads and shunts)
 import pyomo.environ as pe
 import egret.model_library.decl as decl
 from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
-
+from math import tan,  radians
 
 def declare_var_vr(model, index_set, **kwargs):
     """
@@ -96,6 +96,13 @@ def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
                 m.shunt_p[bus_name] = shunt_attrs['gs'][bus_name]*vmsq
                 m.shunt_q[bus_name] = -shunt_attrs['bs'][bus_name]*vmsq
 
+
+def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
+    """
+    Create an equality constraint to enforce tan(\theta) = vj/vr at  the reference bus
+    """
+    m = model
+    m.eq_ref_bus_nonzero = pe.Constraint(expr = tan(radians(ref_angle)) == m.vj[ref_bus]/m.vr[ref_bus])
 
 def declare_eq_i_aggregation_at_bus(model, index_set,
                                     bus_bs_fixed_shunts, bus_gs_fixed_shunts,
