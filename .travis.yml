@@ -15,9 +15,6 @@ cache:
     directories:
         - $HOME/.ccache
 
-before_script: 
-    - "export DISPLAY=:99.0"
-
 # setup miniconda for numpy, scipy, pandas
 before_install:
     - echo "before install"
