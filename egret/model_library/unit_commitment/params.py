@@ -478,18 +478,32 @@ def load_params(model, model_data):
     
     def startup_lags_init_rule(m, g):
         startup_cost = thermal_gens[g].get('startup_cost')
-        if startup_cost is None:
+        startup_fuel = thermal_gens[g].get('startup_fuel')
+        if startup_cost is not None and startup_fuel is not None:
+            print("WARNING: found startup_fuel for generator {}, ignoring startup_cost".format(g))
+        if startup_fuel is None and startup_cost is None:
             return [value(m.MinimumDownTime[g])] 
+        elif startup_cost is None:
+            return [i[0] for i in startup_fuel]
         else:
             return [i[0] for i in startup_cost]
     model.StartupLags = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_lags_init_rule) # units are hours / time periods.
     
     def startup_costs_init_rule(m, g):
         startup_cost = thermal_gens[g].get('startup_cost')
-        if startup_cost is None:
-            return [0.0] 
+        startup_fuel = thermal_gens[g].get('startup_fuel')
+        fixed_startup_cost = thermal_gens[g].get('non_fuel_startup_cost')
+        if fixed_startup_cost is None:
+            fixed_startup_cost = 0.
+        if startup_fuel is None and startup_cost is None:
+            return [fixed_startup_cost]
+        elif startup_cost is None:
+            fuel_cost = thermal_gens[g].get('fuel_cost')
+            if fuel_cost is None:
+                raise Exception("No fuel cost for generator {}, but data is provided for fuel tracking".format(g))
+            return [fixed_startup_cost+fuel_cost*i[1] for i in startup_fuel]
         else:
-            return [i[1] for i in startup_cost]
+            return [fixed_startup_cost+i[1] for i in startup_cost]
     model.StartupCosts = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_costs_init_rule) # units are $.
     
     # startup lags must be monotonically increasing...
@@ -588,9 +602,8 @@ def load_params(model, model_data):
     # these *must* include the minimum and maximum power output points - a validation check
     # if performed below.
     # 
-    # CostPiecewiseValues are the absolute heat rates / costs associated with the corresponding 
-    # power output levels. the precise interpretation of whether a value is a heat rate or a cost
-    # depends on the value of the FuelCost parameter, specified below.
+    # CostPiecewiseValues are the absolute costs associated with the corresponding
+    # power output levels.
     
     # there are many ways to interpret the cost piecewise point/value data, when translating into
     # an actual piecewise construct for the model. this interpretation is controlled by the following
@@ -616,16 +629,34 @@ def load_params(model, model_data):
 
     def get_piecewise_tuple_index(g, tuple_index):
         cost = thermal_gens[g].get('p_cost')
-        if cost is None:
+        fuel = thermal_gens[g].get('p_fuel')
+        fuel_cost = thermal_gens[g].get('fuel_cost')
+        fixed_no_load = thermal_gens[g].get('non_fuel_no_load')
+        if cost is None and fuel is None and fixed_no_load is None:
             return list()
-        elif cost['data_type'] != 'cost_curve':
-            raise Exception("p_cost must be of data_type cost_curve.")
-        elif cost['cost_curve_type'] == 'polynomial':
-            return list()
-        elif cost['cost_curve_type'] == 'piecewise':
-            return (i[tuple_index] for i in cost['values'])
+        if fixed_no_load is None or (tuple_index == 0): ## don't add for cost piecewise points
+            fixed_no_load = 0.
+        if cost is not None and fuel is not None:
+            print("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
+        if fuel is None:
+            if cost['data_type'] != 'cost_curve':
+                raise Exception("p_cost must be of data_type cost_curve.")
+            elif cost['cost_curve_type'] == 'polynomial':
+                return list()
+            elif cost['cost_curve_type'] == 'piecewise':
+                return (fixed_no_load + i[tuple_index] for i in cost['values'])
+            else:
+                raise Exception("Unexpected cost_curve type")
         else:
-            raise Exception("Unexpected cost_curve type")
+            if fuel['data_type'] != 'fuel_curve':
+                raise Exception("p_cost must be of data_type fuel_curve for generator {}".format(g))
+            if fuel_cost is None:
+                raise Exception("must supply fuel costs for generator {} with p_fuel".format(g))
+            if tuple_index == 0: ## don't multiply for cost piecewise points
+                return (i[tuple_index] for i in fuel['values'])
+            return (fixed_no_load + fuel_cost*i[tuple_index] for i in fuel['values'])
+
+
     
     def piecewise_points_init(m, g):
         return get_piecewise_tuple_index(g, 0)
@@ -681,18 +712,14 @@ def load_params(model, model_data):
 
     model.ValidateCostPiecewisePoints = BuildCheck(model.ThermalGenerators, rule=validate_cost_piecewise_points_and_values_rule)
     
-    # Sets the cost of fuel to the generator.  Defaults to 1 so that we could just input cost as heat rates.
-    model.FuelCost = Param(model.ThermalGenerators, default=1.0) 
-    
     # Minimum production cost (needed because Piecewise constraint on ProductionCost 
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
     # back in to the objective if a unit is on
     def minimum_production_cost(m, g):
         if len(m.CostPiecewisePoints[g]) > 1:
-            return m.CostPiecewiseValues[g].first() * m.FuelCost[g]
+            return m.CostPiecewiseValues[g].first()
         else:
-            return  m.FuelCost[g] * \
-                   (m.ProductionCostA0[g] + \
+            return (m.ProductionCostA0[g] + \
                     m.ProductionCostA1[g] * m.MinimumPowerOutput[g] + \
                     m.ProductionCostA2[g] * (m.MinimumPowerOutput[g]**2))
     model.MinimumProductionCost = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=minimum_production_cost, mutable=True)
@@ -722,17 +749,13 @@ def load_params(model, model_data):
     # NOTE: the values are relative to the minimum production cost, i.e., the values represent
     # incremental costs relative to the minimum production cost.
     
-    # IMPORTANT: These values are *not* scaled by the FuelCost of the generator. This scaling is
-    #            performed subsequently, in the "_production_cost_function" code, which is used
-    #            by Piecewise to compute the production cost of the generator. all values must
-    #            be non-negative.
     model.PowerGenerationPiecewiseValues = {}
     
     def power_generation_piecewise_points_rule(m, g, t):
     
         # factor out the fuel cost here, as the piecewise approximation is scaled by fuel cost
         # elsewhere in the model (i.e., in the Piecewise construct below).
-        minimum_production_cost = value(m.MinimumProductionCost[g]) / value(m.FuelCost[g])
+        minimum_production_cost = value(m.MinimumProductionCost[g])
     
         # minimum output
         minimum_power_output = value(m.MinimumPowerOutput[g])
