@@ -22,7 +22,7 @@ component_name = 'production_costs'
 # a function for use in piecewise linearization of the cost function.
 @lru_cache()
 def _production_cost_function(m, g, t, x):
-    return m.TimePeriodLengthHours * m.PowerGenerationPiecewiseValues[g,t][x] * m.FuelCost[g]
+    return m.TimePeriodLengthHours * m.PowerGenerationPiecewiseValues[g,t][x]
 
 def _compute_total_production_cost(model):
 
