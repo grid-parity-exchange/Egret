@@ -402,9 +402,7 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
 
     phi_adjust_array = np.array([phi_from[i].sum()-phi_to[i].sum() for i,_ in enumerate(buses_idx)])
 
-    branch_list = [ branches[bn] for bn in branches_idx ]
-
-    phase_shift_array = np.array([ -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in branch_list])
+    phase_shift_array = np.array([ -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in (branches[bn] for bn in branches_idx)])
 
     ## store some information we'll need when iterating on the model object
     model._PTDF_dict = {'PTDFM' : PTDFM,
