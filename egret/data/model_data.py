@@ -324,7 +324,7 @@ class ModelData(object):
         """
         import json
 
-        with open(filename,'w') as f:
+        with open(filename + '.json','w') as f:
             json.dump(self.data, f)
 
     def _replace_timeseries_with_value(self, node, timestamp):

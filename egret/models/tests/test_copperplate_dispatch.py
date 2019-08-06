@@ -43,11 +43,11 @@ class TestCopperPlateDispatch(unittest.TestCase):
 
         kwargs = {}
         if include_kwargs:
-            kwargs = {'include_feasibility_slack': 'True'}
+            kwargs = {'include_feasibility_slack':True}
         md, results = solve_copperplate_dispatch(md_dict, "ipopt", solver_tee=False, return_results=True, **kwargs)
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
-        comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-4)
+        comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
 
 

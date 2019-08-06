@@ -118,7 +118,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
     buses_idx = PTDF_dict['buses_idx']
     branches_idx = PTDF_dict['branches_idx']
     branch_limits = PTDF_dict['branch_limits']
-    branches = model._branches
+    branches = PTDF_dict['branches']
 
     ## helper for generating pf
     def _iter_over_viol_set(viol_set):

@@ -4,6 +4,10 @@ import datetime
 import textwrap
 
 import matplotlib as mpl
+## catch when we're running linux without X
+if os.name == 'posix' and 'DISPLAY' not in os.environ:
+        mpl.use('Agg')
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np

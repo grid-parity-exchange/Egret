@@ -28,7 +28,7 @@ from egret.model_library.defn import CoordinateType, ApproximationType, Relaxati
 from egret.data.model_data import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack
 from egret.models.dcopf import _include_feasibility_slack
-from math import pi
+from math import pi, radians
 
 
 def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC, include_angle_diff_limits=False, include_feasibility_slack=False):
@@ -81,13 +81,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
-    model.va[ref_bus].fix(0.0)
-
     ref_angle = md.data['system']['reference_bus_angle']
-    if ref_angle != 0.0:
-        raise ValueError('The BTHETA WITH LOSSES DCOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
+    model.va[ref_bus].fix(radians(ref_angle))
 
     ### declare the generator real power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -266,6 +261,7 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False):
     libbranch.declare_eq_branch_power_ptdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
+                                                  buses=buses,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
                                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
@@ -276,6 +272,7 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False):
     libbranch.declare_eq_branch_loss_ptdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
+                                                  buses=buses,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
                                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts
@@ -384,9 +381,8 @@ def solve_dcopf_losses(model_data,
         if dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:
             b_dict['lmp'] = value(m.dual[m.eq_p_balance])
             for k, k_dict in branches.items():
-                if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
-                    b_dict['lmp'] += k_dict['ptdf_r'][b]*value(m.dual[m.eq_pf_branch[k]])
-                    b_dict['lmp'] += k_dict['ldf'][b]*value(m.dual[m.eq_pfl_branch[k]])
+                b_dict['lmp'] += k_dict['ptdf_r'][b]*value(m.dual[m.eq_pf_branch[k]])
+                b_dict['lmp'] += k_dict['ldf'][b]*value(m.dual[m.eq_pfl_branch[k]])
 
     for k, k_dict in branches.items():
         k_dict['pf'] = value(m.pf[k])
@@ -402,20 +398,19 @@ def solve_dcopf_losses(model_data,
     return md
 
 
-if __name__ == '__main__':
-    import os
-    from egret.parsers.matpower_parser import create_ModelData
-
-    path = os.path.dirname(__file__)
-    case = 'pglib_opf_case30_ieee'
-    filename = case + '.m'
-    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-    md = create_ModelData(matpower_file)
-    model_data, model, results = solve_dcopf_losses(md, "ipopt", return_model=True, return_results=True)
-
-    from acopf import solve_acopf
-    model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-    kwargs = {'include_feasibility_slack': 'True'}
-    md = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model, **kwargs)
-
-
+# if __name__ == '__main__':
+#     import os
+#     from egret.parsers.matpower_parser import create_ModelData
+#
+#     path = os.path.dirname(__file__)
+#     filename = 'pglib_opf_case300_ieee.m'
+#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+#     md = create_ModelData(matpower_file)
+#
+#     kwargs = {'include_feasibility_slack':False}
+#     md_btheta, m_btheta, results_btheta = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
+#
+#     from acopf import solve_acopf
+#     md = create_ModelData(matpower_file)
+#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
+#     md_ptdf, m_ptdf, results_ptdf = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
