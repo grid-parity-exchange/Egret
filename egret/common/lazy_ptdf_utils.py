@@ -68,10 +68,14 @@ def check_violations(PTDF_dict, bus_nw_exprs):
     PTDFM = PTDF_dict['PTDFM']
     enforced_branch_limits = PTDF_dict['enforced_branch_limits']
     lazy_branch_limits = PTDF_dict['lazy_branch_limits']
+    phi_adjust_array = PTDF_dict['phi_adjust_array']
+    phase_shift_array = PTDF_dict['phase_shift_array']
 
     NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
+    NWV += phi_adjust_array
 
     PFV  = np.dot(PTDFM, NWV)
+    PFV += phase_shift_array
 
     ## get the indices of the violations, but do it in numpy
     gt_viol_lazy = np.nonzero(np.greater(PFV, lazy_branch_limits))[0]
@@ -84,11 +88,12 @@ def check_violations(PTDF_dict, bus_nw_exprs):
 
     return PFV, viol_num, (gt_viol, lt_viol, gt_viol_lazy, lt_viol_lazy)
     
-def _generate_flow_viol_warning(sense, bn, flow, limit, baseMVA, time):
+def _generate_flow_viol_warning(sense, mb, bn, flow, limit, baseMVA, time):
     ret_str = "WARNING: line {0} ({1}) is in the  monitored set".format(bn, sense)
     if time is not None:
         ret_str += " at time {}".format(time)
     ret_str += ", but flow exceeds limit!!\n\t flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA, sense)
+    ret_str += ", model_flow={}".format(pe.value(mb.pf[bn])*baseMVA)
     return ret_str
 
 def _generate_flow_monitor_message(sense, bn, flow, limit, baseMVA, time): 
@@ -119,6 +124,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
     branches_idx = PTDF_dict['branches_idx']
     branch_limits = PTDF_dict['branch_limits']
     branches = PTDF_dict['branches']
+    phi_adjust_array = PTDF_dict['phi_adjust_array']
 
     ## helper for generating pf
     def _iter_over_viol_set(viol_set):
@@ -128,7 +134,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
             if mb.pf[bn].expr is None:
                 if 'ptdf' not in branch:
                     branch['ptdf'] = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
-                expr = libbranch.get_power_flow_expr_ptdf_approx_from_nwe(mb, branch, buses_idx, bus_nw_exprs, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol, approximation_type=ApproximationType.PTDF)
+                expr = libbranch.get_power_flow_expr_ptdf_approx_from_nwe(mb, branch, buses_idx, bus_nw_exprs, phi_adjust_array, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol, approximation_type=ApproximationType.PTDF)
                 mb.pf[bn] = expr
             yield i, bn, branch
 
@@ -137,7 +143,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
         constr = mb.ineq_pf_branch_thermal_lb
         thermal_limit = branch['rating_long_term']
         if bn in constr and i in lt_viol:
-            print(_generate_flow_viol_warning('LB', bn, PFV[i], -thermal_limit, baseMVA, time))
+            print(_generate_flow_viol_warning('LB', mb, bn, PFV[i], -thermal_limit, baseMVA, time))
             lt_viol_in_constr += 1
         elif bn not in constr: 
             print(_generate_flow_monitor_message('LB', bn, PFV[i], -thermal_limit, baseMVA, time))
@@ -150,7 +156,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
         constr = mb.ineq_pf_branch_thermal_ub
         thermal_limit = branch['rating_long_term']
         if bn in constr and i in gt_viol:
-            print(_generate_flow_viol_warning('UB', bn, PFV[i], thermal_limit, baseMVA, time))
+            print(_generate_flow_viol_warning('UB', mb, bn, PFV[i], thermal_limit, baseMVA, time))
             gt_viol_in_constr += 1
         elif bn not in constr:
             print(_generate_flow_monitor_message('UB', bn, PFV[i], thermal_limit, baseMVA, time))

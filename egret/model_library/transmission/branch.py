@@ -461,7 +461,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
             m.pf[branch_name] = expr
 
 
-def get_power_flow_expr_ptdf_approx_from_nwe(model, branch, buses_index, bus_nw_exprs, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
+def get_power_flow_expr_ptdf_approx_from_nwe(model, branch, buses_index, bus_nw_exprs, phi_adjust_array, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
 
     if rel_ptdf_tol is None:
         rel_ptdf_tol = 0.
@@ -470,28 +470,28 @@ def get_power_flow_expr_ptdf_approx_from_nwe(model, branch, buses_index, bus_nw_
 
     expr = 0
 
-    tau = 1.0
-    shift = 0.0
-    if branch['branch_type'] == 'transformer':
-        tau = branch['transformer_tap_ratio']
-        shift = math.radians(branch['transformer_phase_shift'])
-
     if approximation_type == ApproximationType.PTDF:
         ptdf = branch['ptdf']
-        if shift != 0.:
-            b = -(1 / branch['reactance'])
-            expr += b * (shift / tau)
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+            if shift != 0.:
+                b = -(1 / branch['reactance'])
+                expr += b * (shift / tau)
     elif approximation_type == ApproximationType.PTDF_LOSSES:
         ptdf = branch['ptdf_r']
-        if shift != 0.:
-            b = tx_calc.calculate_susceptance(branch)
-            expr += b * (shift / tau)
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+            if shift != 0.:
+                b = tx_calc.calculate_susceptance(branch)
+                expr += b * (shift / tau)
 
     max_coef = max(abs(coef) for coef in ptdf.values())
     ## This case is weird, but could happen, causing divison by 0 below
     if max_coef == 0:
         return expr
-    for i, bus in enumerate(buses_index):
+    for bus,bus_nw_expr,phi_adjust in zip(buses_index,bus_nw_exprs,phi_adjust_array):
         coef = ptdf[bus]
         if abs(coef) < abs_ptdf_tol:
             ## no point in excuting the rest of the for loop
@@ -499,7 +499,7 @@ def get_power_flow_expr_ptdf_approx_from_nwe(model, branch, buses_index, bus_nw_
         if abs(coef)/max_coef < rel_ptdf_tol:
             ## no point in excuting the rest of the for loop
             continue
-        expr += coef*bus_nw_exprs[i]
+        expr += coef*bus_nw_expr+coef*phi_adjust
 
     return expr
 

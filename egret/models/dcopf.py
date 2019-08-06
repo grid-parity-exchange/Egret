@@ -400,6 +400,12 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
     #timer.toc('done')
     phi_from, phi_to = tx_calc.calculate_phi_constant(branches,branches_idx, buses_idx,)
 
+    phi_adjust_array = np.array([phi_from[i].sum()-phi_to[i].sum() for i,_ in enumerate(buses_idx)])
+
+    branch_list = [ branches[bn] for bn in branches_idx ]
+
+    phase_shift_array = np.array([ -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in branch_list])
+
     ## store some information we'll need when iterating on the model object
     model._PTDF_dict = {'PTDFM' : PTDFM,
                         'buses_idx': buses_idx,
@@ -408,11 +414,11 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
                         'branches' : branches,
                         'gens_by_bus' : gens_by_bus,
                         'bus_gs_fixed_shunts' : bus_gs_fixed_shunts,
+                        'phi_adjust_array': phi_adjust_array,
+                        'phase_shift_array': phase_shift_array,
                         }
     model._PTDF_bus_nw_exprs = [ model.pl[bus] + bus_gs_fixed_shunts[bus] \
                     - sum(model.pg[g] for g in gens_by_bus[bus])
-                    + phi_from[i].sum()
-                    - phi_to[i].sum()
                      for i,bus in enumerate(buses_idx)]
 
     model._PTDF_bus_p_loads = bus_p_loads
