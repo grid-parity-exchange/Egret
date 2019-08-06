@@ -160,6 +160,7 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
 
     all_viol_in_mb = (len(lt_viol) == lt_viol_in_constr) \
                       and (len(gt_viol) == gt_viol_in_constr)
+    return all_viol_in_mb
 
 
 def _binary_var_generator(instance):
