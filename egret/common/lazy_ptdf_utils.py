@@ -123,8 +123,8 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
     buses_idx = PTDF_dict['buses_idx']
     branches_idx = PTDF_dict['branches_idx']
     branch_limits = PTDF_dict['branch_limits']
-    branches = PTDF_dict['branches']
     phi_adjust_array = PTDF_dict['phi_adjust_array']
+    branches = model._branches
 
     ## helper for generating pf
     def _iter_over_viol_set(viol_set):
@@ -164,7 +164,8 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
             if persistent_solver:
                 solver.add_constraint(constr[bn])
 
-    all_viol_in_mb = (len(lt_viol) == lt_viol_in_constr) \
+    all_viol_in_mb = (len(lt_viol) > 0 or len(gt_viol) > 0) and \
+                    (len(lt_viol) == lt_viol_in_constr) \
                       and (len(gt_viol) == gt_viol_in_constr)
     return all_viol_in_mb
 

@@ -409,9 +409,6 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
                         'buses_idx': buses_idx,
                         'branches_idx' : branches_idx,
                         'branch_limits' : np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ]),
-                        'branches' : branches,
-                        'gens_by_bus' : gens_by_bus,
-                        'bus_gs_fixed_shunts' : bus_gs_fixed_shunts,
                         'phi_adjust_array': phi_adjust_array,
                         'phase_shift_array': phase_shift_array,
                         }
@@ -422,6 +419,7 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
     model._PTDF_bus_p_loads = bus_p_loads
 
     model._ptdf_options_dict = ptdf_options_dict
+    model._branches = branches
 
     return model, md
 
