@@ -107,17 +107,26 @@ def _lazy_ptdf_dcopf_network_model(md,block,tm,td):
         reference_bus = md.data['system']['reference_bus']
 
         ## calculate PTDFs
-        from pyutilib.misc.timing import TicTocTimer
-        timer = TicTocTimer()
-        timer.tic('starting PTDF calculation')
+        #from pyutilib.misc.timing import TicTocTimer
+        #timer = TicTocTimer()
+        #timer.tic('starting PTDF calculation')
         PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
-        timer.toc('done')
+        #timer.toc('done')
+
+        phi_from, phi_to = tx_calc.calculate_phi_constant(branches,branches_idx, buses_idx,)
+
+        phi_adjust_array = np.array([phi_from[i].sum()-phi_to[i].sum() for i,_ in enumerate(buses_idx)])
+
+        phase_shift_array = np.array([ -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in (branches[bn] for bn in branches_idx)])
 
         ## store some information we'll need when iterating on the model object
-        _PTDF_dict['PTDFM'] = PTDFM
-        _PTDF_dict['buses_idx'] = buses_idx
-        _PTDF_dict['branches_idx'] = branches_idx
-        _PTDF_dict['branch_limits'] = np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ])
+        _PTDF_dict = {'PTDFM' : PTDFM,
+                      'buses_idx': buses_idx,
+                      'branches_idx' : branches_idx,
+                      'branch_limits' : np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ]),
+                      'phi_adjust_array': phi_adjust_array,
+                      'phase_shift_array': phase_shift_array,
+                      }
 
         m._PTDFs_dict[branches_out_service] = _PTDF_dict
 
@@ -181,11 +190,14 @@ def _ptdf_dcopf_network_model(md,block,tm,td):
         #timer.tic('starting PTDF calculation')
         PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
         #timer.toc('done')
+        phi_from, phi_to = tx_calc.calculate_phi_constant(branches,branches_idx, buses_idx,)
+        phi_adjust_array = np.array([phi_from[i].sum()-phi_to[i].sum() for i,_ in enumerate(buses_idx)])
 
         ## store some information we'll need when iterating on the model object
         _PTDF_dict['PTDFM'] = PTDFM
         _PTDF_dict['buses_idx'] = buses_idx
         _PTDF_dict['branches_idx'] = branches_idx
+        _PTDF_dict['phi_adjust_array'] = phi_adjust_array
         m._PTDFs_dict[branches_out_service] = _PTDF_dict
 
     ## create a pointer on this block to all this PTDF data,
@@ -198,6 +210,7 @@ def _ptdf_dcopf_network_model(md,block,tm,td):
     PTDFM = PTDF_dict['PTDFM']
     buses_idx = PTDF_dict['buses_idx']
     branches_idx = PTDF_dict['branches_idx']
+    phi_adjust_array = PTDF_dict['phi_adjust_array']
 
     ## this expression is specific to each block
     block._PTDF_bus_nw_exprs = \
@@ -224,6 +237,7 @@ def _ptdf_dcopf_network_model(md,block,tm,td):
                                                            branches=branches,
                                                            buses_index = buses_idx,
                                                            bus_nw_exprs = block._PTDF_bus_nw_exprs,
+                                                           phi_adjust_array = phi_adjust_array,
                                                            abs_ptdf_tol=abs_ptdf_tol,
                                                            rel_ptdf_tol=rel_ptdf_tol
                                                            )

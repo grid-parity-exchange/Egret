@@ -504,7 +504,7 @@ def get_power_flow_expr_ptdf_approx_from_nwe(model, branch, buses_index, bus_nw_
     return expr
 
 
-def declare_eq_branch_power_ptdf_approx_from_nwe(model, index_set, branches, buses_index, bus_nw_exprs, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
+def declare_eq_branch_power_ptdf_approx_from_nwe(model, index_set, branches, buses_index, bus_nw_exprs, phi_adjust_array, rel_ptdf_tol=None, abs_ptdf_tol=None, approximation_type=ApproximationType.PTDF):
     """
     Create the equality constraints for power (from PTDF approximation)
     in the branch
@@ -529,7 +529,7 @@ def declare_eq_branch_power_ptdf_approx_from_nwe(model, index_set, branches, bus
         branch = branches[branch_name]
 
         expr = \
-            get_power_flow_expr_ptdf_approx_from_nwe(m, branch, buses_index, bus_nw_exprs, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol, approximation_type=approximation_type)
+            get_power_flow_expr_ptdf_approx_from_nwe(m, branch, buses_index, bus_nw_exprs, phi_adjust_array, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol, approximation_type=approximation_type)
 
         if pf_is_var:
             m.eq_pf_branch[branch_name] = \
