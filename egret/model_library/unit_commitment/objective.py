@@ -86,7 +86,7 @@ def basic_objective(model):
     def compute_total_no_load_cost_rule(m,t):
         return sum(m.MinimumProductionCost[g]*m.UnitOn[g,t]*m.TimePeriodLengthHours for g in m.ThermalGenerators)
     
-    model.TotalNoLoadCost = Expression(model.TimePeriods, rule=compute_total_no_load_cost_rule)
+    model.NoLoadCost = Expression(model.SingleFuelGenerators, model.TimePeriods, rule=compute_total_no_load_cost_rule)
     
     _add_shutdown_costs(model)
 
@@ -112,8 +112,10 @@ def basic_objective(model):
         flex = True
     
     def commitment_stage_cost_expression_rule(m, st):
-        cc = sum(m.StartupCost[g,t] + m.ShutdownCost[g,t] for g in m.ThermalGenerators for t in m.CommitmentTimeInStage[st]) + \
-             sum(m.TotalNoLoadCost[t] for t in m.CommitmentTimeInStage[st])
+        cc = sum(sum(m.NoLoadCost[g,t] + m.StartupCost[g,t] for g in m.SingleFuelGenerators) + \
+                 sum(m.DualFuelCommitmentCost[g,t] for g in m.DualFuelGenerators) + \
+                 sum(m.ShutdownCost[g,t] for g in m.ThermalGenerators) 
+             for t in m.CommitmentTimeInStage[st])
         if regulation:
             cc += sum(m.RegulationCostCommitment[g,t] for g in m.AGC_Generators for t in m.CommitmentTimeInStage[st])
         return cc
@@ -135,7 +137,9 @@ def basic_objective(model):
     model.ReserveShortfallCost = Expression(model.TimePeriods, rule=compute_reserve_shortfall_cost_rule)
     
     def generation_stage_cost_expression_rule(m, st):
-        cc = sum(m.ProductionCost[g, t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) + \
+        cc = sum(sum(m.ProductionCost[g, t] for g in m.SingleFuelGenerators) + \
+                 sum(m.DualFuelProductionCost[g,t] for g in m.DualFuelGenerators)
+                for t in m.GenerationTimeInStage[st]) + \
               sum(m.LoadMismatchCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st])
         cc += sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])

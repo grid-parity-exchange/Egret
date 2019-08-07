@@ -48,7 +48,8 @@ def _compute_total_production_cost(model):
     model.ComputeProductionCosts = compute_production_costs_rule
     # compute the total production costs, across all generators and time periods.
     def compute_total_production_cost_rule(m, t):
-        return sum(m.ProductionCost[g, t] for g in m.ThermalGenerators)
+        return sum(m.ProductionCost[g, t] for g in m.SingleFuelGenerators) + \
+                sum(m.DualFuelProductionCost[g,t] for g in m.DualFuelGenerators)
     
     model.TotalProductionCost = Expression(model.TimePeriods, rule=compute_total_production_cost_rule)
 
@@ -93,7 +94,7 @@ def _basic_production_costs_vars(model):
 
 def _basic_production_costs_constr(model):
 
-    model.ProductionCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals )
+    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
@@ -105,7 +106,7 @@ def _basic_production_costs_constr(model):
         else:
             return m.ProductionCost[g,t] == 0.
     
-    model.ProductionCostConstr = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
+    model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
     _compute_total_production_cost(model)
 
@@ -126,7 +127,7 @@ def _rescaled_basic_production_costs_vars(model):
 
 def _rescaled_basic_production_costs_constr(model):
 
-    model.ProductionCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals )
+    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
@@ -138,7 +139,7 @@ def _rescaled_basic_production_costs_constr(model):
         else:
             return m.ProductionCost[g,t] == 0.
     
-    model.ProductionCostConstr = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
+    model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
     _compute_total_production_cost(model)
 
@@ -447,12 +448,12 @@ def _CW_production_costs_garver(model):
         return sum( m.PiecewiseProductionFrac[g,t,i] for i in range(1,len(m.PowerGenerationPiecewisePoints[g,t]))) <= m.UnitOn[g,t]
     model.PiecewiseProductionFracLimits = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_frac_limits_rule )
 
-    model.ProductionCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals )
+    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
         return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, m.PowerGenerationPiecewisePoints[g,t][i]))*m.PiecewiseProductionFrac[g,t,i] for i in range(1, len(m.PowerGenerationPiecewisePoints[g,t])))
 
-    model.ProductionCostConst = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
+    model.ProductionCostConst = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
     _compute_total_production_cost(model)
 
@@ -519,12 +520,12 @@ def _SLL_production_costs(model, ideal=True):
                     == (m.UnitOn[g,t] if ideal else 1)
     model.PiecewiseProductionFracLimits = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_frac_limits_rule )
 
-    model.ProductionCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals )
+    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
         return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, m.PowerGenerationPiecewisePoints[g,t][i]))*m.PiecewiseProductionFrac[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])))
 
-    model.ProductionCostConstr = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
+    model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
     _compute_total_production_cost(model)
 

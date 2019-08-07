@@ -631,7 +631,7 @@ def load_params(model, model_data):
         cost = thermal_gens[g].get('p_cost')
         fuel = thermal_gens[g].get('p_fuel')
         fuel_cost = thermal_gens[g].get('fuel_cost')
-        fixed_no_load = thermal_gens[g].get('non_fuel_no_load')
+        fixed_no_load = thermal_gens[g].get('non_fuel_no_load_cost')
         if cost is None and fuel is None and fixed_no_load is None:
             return list()
         if fixed_no_load is None or (tuple_index == 0): ## don't add for cost piecewise points
@@ -841,6 +841,47 @@ def load_params(model, model_data):
     model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, default=BigPenalty/2., mutable=True, initialize=system.get('q_load_mismatch_cost'))
 
     ## END PRODUCTION COST CALCULATIONS
+
+    ## FUEL-SUPPLY Sets
+
+    def fuel_supply_gens_init(m):
+        if 'fuel_supply' not in elements and ('fuel_supply' in thermal_gen_attrs or 'aux_fuel_supply' in thermal_gen_attrs):
+            print('WARNING: Some generators have \'fuel_supply\' marked, but no fuel supply was found on ModelData.data[\'system\']')
+            return iter(())
+        if 'fuel_supply' in elements and ('fuel_supply' not in thermal_gen_attrs and 'aux_fuel_supply' not in thermal_gen_attrs):
+            print('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
+            return iter(())
+        if 'fuel_supply' not in thermal_gen_attrs:
+            thermal_gen_attrs['fuel_supply'] = dict()
+        if 'aux_fuel_supply' not in thermal_gen_attrs:
+            thermal_gen_attrs['aux_fuel_supply'] = dict()
+        for g in thermal_gen_attrs['fuel_supply'].keys():
+            yield g
+        for g in thermal_gen_attrs['aux_fuel_supply'].keys():
+            yield g
+
+    def gen_cost_fuel_validator(m,g):
+        if 'p_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['p_fuel']:
+            pass
+        else:
+            print('ERROR: All fuel-constrained generators must have "p_fuel" attribute which tracks their fuel consumption')
+            print('ERROR: Could not find such an attribute for generator {}'.format(g))
+            return False
+        return True
+
+    model.FuelSupplyGenerators = Set(within=model.ThermalGenerators, initialize=fuel_supply_gens_init, validate=gen_cost_fuel_validator)
+
+    ## DUAL-FUEL Sets
+
+    def dual_fuel_init(m):
+        for g, g_dict in thermal_gens.items():
+            if 'aux_fuel_capable' in g_dict and g_dict['aux_fuel_capable']:
+                yield g
+model.DualFuelGenerators = Set(within=model.ThermalGenerators, initialize=dual_fuel_init)
+
+    ## This set is for modeling elements that are exhanged
+    ## in whole for the dual-fuel model
+    model.SingleFuelGenerators = model.ThermalGenerators - model.DualFuelGenerators
 
     #
     # STORAGE parameters
