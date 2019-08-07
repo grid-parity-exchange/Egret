@@ -31,7 +31,7 @@ def populate_default_ptdf_options(ptdf_options_dict):
     if 'rel_flow_tol' not in ptdf_options_dict:
         ptdf_options_dict['rel_flow_tol'] = 1.e-5
     if 'lazy_rel_flow_tol' not in ptdf_options_dict:
-        ptdf_options_dict['lazy_rel_flow_tol'] = -0.15
+        ptdf_options_dict['lazy_rel_flow_tol'] = -0.05
     if 'iteration_limit' not in ptdf_options_dict:
         ptdf_options_dict['iteration_limit'] = 100000
     if 'lp_iteration_limit' not in ptdf_options_dict:
