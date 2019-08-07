@@ -565,7 +565,7 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
         max_coef = max(abs(coef) for coef in ldf.values())
         ## This case is weird, but could happen, causing divison by 0 below
         if max_coef != 0:
-            for bus_name, coef in ptdf.items():
+            for bus_name, coef in ldf.items():
                 bus = buses[bus_name]
                 phi_loss_from = bus['phi_loss_from']
                 phi_loss_to = bus['phi_loss_to']
