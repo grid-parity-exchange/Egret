@@ -115,7 +115,7 @@ def test_CA_uc_model():
     _test_uc_model(create_CA_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_uc_runner():
-    test_names = ['tiny_uc_1', 'tiny_uc_2']
+    test_names = ['tiny_uc_{}'%i for i in range(1,5+1)]
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
         md_in = ModelData(json.load(open(input_json_file_name, 'r')))
