@@ -550,10 +550,6 @@ def solve_dcopf(model_data,
 
     md.data['system']['total_cost'] = value(m.obj)
 
-    from pyutilib.misc.timing import TicTocTimer
-
-    timer = TicTocTimer()
-
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
 
