@@ -32,6 +32,7 @@ def fuel_supply_model(model):
 
     ## instantaneous fuel supply model
     inst_fuel_supply_attrs = md.attributes(element_type='fuel_supply', fuel_supply_type='instantaneous')
+    thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
 
     model.InstantaneousFuelSupplies = Set(initialize=inst_fuel_supply_attrs['names'])
 

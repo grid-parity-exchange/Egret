@@ -877,7 +877,7 @@ def load_params(model, model_data):
         for g, g_dict in thermal_gens.items():
             if 'aux_fuel_capable' in g_dict and g_dict['aux_fuel_capable']:
                 yield g
-model.DualFuelGenerators = Set(within=model.ThermalGenerators, initialize=dual_fuel_init)
+    model.DualFuelGenerators = Set(within=model.ThermalGenerators, initialize=dual_fuel_init)
 
     ## This set is for modeling elements that are exhanged
     ## in whole for the dual-fuel model

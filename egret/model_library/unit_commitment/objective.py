@@ -83,12 +83,19 @@ def basic_objective(model):
     # constraints for computing cost components #
     #############################################
     
-    def compute_total_no_load_cost_rule(m,t):
+    def compute_no_load_cost_rule(m,g,t):
         return sum(m.MinimumProductionCost[g]*m.UnitOn[g,t]*m.TimePeriodLengthHours for g in m.ThermalGenerators)
     
-    model.NoLoadCost = Expression(model.SingleFuelGenerators, model.TimePeriods, rule=compute_total_no_load_cost_rule)
+    model.NoLoadCost = Expression(model.SingleFuelGenerators, model.TimePeriods, rule=compute_no_load_cost_rule)
     
     _add_shutdown_costs(model)
+
+    # compute the total production costs, across all generators and time periods.
+    def compute_total_production_cost_rule(m, t):
+        return sum(m.ProductionCost[g, t] for g in m.SingleFuelGenerators) + \
+                sum(m.DualFuelProductionCost[g,t] for g in m.DualFuelGenerators)
+    
+    model.TotalProductionCost = Expression(model.TimePeriods, rule=compute_total_production_cost_rule)
 
     # 
     # Cost computations

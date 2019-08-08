@@ -10,7 +10,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import build_uc_time_mapping
+from .uc_utils import add_model_attr, build_uc_time_mapping
 from .status_vars import _is_relaxed
 
 @add_model_attr('fuel_consumption', requires = {'data_loader': None,
@@ -42,7 +42,6 @@ def fuel_consumption_model(model):
     relaxed = _is_relaxed(model)
     ## generator fuel consumption model
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
-    #dual_fuel_attrs = md.attributes(element_type='generator', generator_type='thermal', aux_fuel_capable=True)
 
 
     model.FuelConsumedCommitment = Var(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
@@ -64,7 +63,7 @@ def fuel_consumption_model(model):
 
     def production_fuel_consumed_constr(m,g,t):
         return m.FuelConsumedProduction[g,t] == m.ProductionFuelConsumed[g,t]
-    model.ProductionFuelConsumedConstr = Constraint(model.FuelSupplyGenerators, model.TimePeriods, rule=production_fuel_consumed_rule)
+    model.ProductionFuelConsumedConstr = Constraint(model.FuelSupplyGenerators, model.TimePeriods, rule=production_fuel_consumed_constr)
 
     def _startup_fuel_consumed_function(m, g, i):
         return thermal_gen_attrs['startup_fuel'][g][i][1]
@@ -94,11 +93,11 @@ def fuel_consumption_model(model):
 
     def fuel_commitment_consumed_rule(m,g,t):
         return _fuel_consumed_function(m,g,0)*m.UnitOn[g,t] 
-    model.CommitmentFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=commitment_fule_consumed_rule)
+    model.CommitmentFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=fuel_commitment_consumed_rule)
 
     def commitment_fuel_consumed_constr(m,g,t):
         return m.FuelConsumedCommitment[g,t] == m.StartupFuelConsumed[g,t] + m.CommitmentFuelConsumed[g,t]
-    model.FuelConsumedCommitmentConstr = Constraint(model.FuelSupplyGenerators, mdoel.TimePeriods, rule=commitment_fuel_consumed_constr)
+    model.FuelConsumedCommitmentConstr = Constraint(model.FuelSupplyGenerators, model.TimePeriods, rule=commitment_fuel_consumed_constr)
 
     ## end generator fuel consumption model
 
@@ -106,13 +105,13 @@ def fuel_consumption_model(model):
     ## DUAL FUEL GENERATORS
 
     ## load and verify some parameters
+    dual_fuel_attrs = md.attributes(element_type='generator', generator_type='thermal', aux_fuel_capable=True)
 
     model.UnitSwitchOperating = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('aux_fuel_online_switching'))
 
     model.UnitFuelBlending = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('aux_fuel_blending'))
 
     def verify_dual_fuel_consistency(m, g):
-        gen = thermal_gens[g]
         if value(m.UnitFuelBlending[g]) and not value(m.UnitSwitchOperating[g]):
             print("DATA ERROR: Dual fuel generators which are fuel blending capable must also be online fuel switching capable")
             print("Generator {} had aux_fuel_blending = True and aux_fuel_online_switching=False".format(g))
@@ -151,21 +150,13 @@ def fuel_consumption_model(model):
         return m.AuxiliaryFuelConsumedCommitment[g,t] + m.AuxiliaryFuelConsumedProduction[g,t]
     model.AuxiliaryFuelConsumed = Expression(model.DualFuelGenerators, model.TimePeriods, rule=auxiliary_fuel_consumed)
 
-    def get_primary_fuel_cost(m,g):
-        return thermal_gen_attrs['fuel_cost'][g]
-    model.PrimaryFuelCost = Param(model.DualFuelGenerators, rule=get_primary_fuel_cost)
+    model.PrimaryFuelCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs['fuel_cost'], within=NonNegativeReals)
 
-    def get_auxiliary_fuel_cost(m,g):
-        return thermal_gen_attrs['aux_fuel_cost'][g]
-    model.AuxiliaryFuelCost = Param(model.DualFuelGenerators, rule=get_auxiliary_fuel_cost)
+    model.AuxiliaryFuelCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs['aux_fuel_cost'], within=NonNegativeReals)
 
-    def get_non_fuel_no_load_cost(m,g):
-        return thermal_gen_attrs['non_fuel_no_load_cost'][g]
-    model.NonFuelNoLoadCost = Param(model.DualFuelGenerators, rule=get_non_fuel_no_load)
+    model.NonFuelNoLoadCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs.get('non_fuel_no_load_cost'), default=0., within=Reals)
 
-    def get_non_fuel_startup_cost(m,g):
-        return thermal_gen_attrs['non_fuel_startup_cost'][g]
-    model.NonFuelStartupCost = Param(model.DualFuelGenerators, rule=get_non_fuel_startup_cost)
+    model.NonFuelStartupCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs.get('non_fuel_startup_cost'), default=0., within=Reals)
 
     def dual_fuel_startup_running_cost(m,g,t):
         return m.PrimaryFuelCost[g]*m.PrimaryFuelConsumedCommitment[g,t] \
@@ -182,7 +173,7 @@ def fuel_consumption_model(model):
     ## SINGLE-FIRE DUAL-FUEL UNITS 
     def init_single_fire(m):
         for g in m.DualFuelGenerators:
-            if value(m.UnitFuelBlending):
+            if value(m.UnitFuelBlending[g]):
                 continue
             else:
                 yield g
@@ -243,7 +234,7 @@ def fuel_consumption_model(model):
                 return Constraint.Skip
         else:
             return m.UnitOnPriFuel[g,t] - m.UnitOnPriFuel[g,t-1] == m.UnitStartPriFuel[g,t] - m.UnitStopPriFuel[g,t]
-    model.PriLogicalConst = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=pri_logical_constr)
+    model.PriLogicalConst = Constraint(model.OfflineSwitchingDualFuelGenerators, model.TimePeriods, rule=pri_logical_constr)
 
     def aux_logical_constr(m, g, t):
         if t==value(m.InitialTime):
@@ -254,5 +245,5 @@ def fuel_consumption_model(model):
                 return Constraint.Skip
         else:
             return m.UnitOnAuxFuel[g,t] - m.UnitOnAuxFuel[g,t-1] == m.UnitStartAuxFuel[g,t] - m.UnitStopAuxFuel[g,t]
-    model.AuxLogicalConst = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=pri_logical_constr)
+    model.AuxLogicalConst = Constraint(model.OfflineSwitchingDualFuelGenerators, model.TimePeriods, rule=pri_logical_constr)
 

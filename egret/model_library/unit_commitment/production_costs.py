@@ -46,12 +46,6 @@ def _compute_total_production_cost(model):
         return sum( (_production_cost_function(m,g,t,piecewise_points[l+1]) - _production_cost_function(m,g,t,piecewise_points[l])) / (piecewise_points[l+1] - piecewise_points[l]) * piecewise_eval[l] for l in range(len(piecewise_eval))) 
     
     model.ComputeProductionCosts = compute_production_costs_rule
-    # compute the total production costs, across all generators and time periods.
-    def compute_total_production_cost_rule(m, t):
-        return sum(m.ProductionCost[g, t] for g in m.SingleFuelGenerators) + \
-                sum(m.DualFuelProductionCost[g,t] for g in m.DualFuelGenerators)
-    
-    model.TotalProductionCost = Expression(model.TimePeriods, rule=compute_total_production_cost_rule)
 
 def _get_piecewise_production_generators(model):
 
