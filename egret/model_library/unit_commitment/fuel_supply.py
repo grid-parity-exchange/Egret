@@ -45,7 +45,7 @@ def fuel_supply_model(model):
     def gens_using_inst_fuel_supply_for_aux_init(m, f):
         for g in m.DualFuelGenerators:
             if 'aux_fuel_supply' in thermal_gen_attrs:
-                if thermal_gen_attrs['aux_fuel_supply'][g] == f:
+                if g in thermal_gen_attrs['aux_fuel_supply'] and thermal_gen_attrs['aux_fuel_supply'][g] == f:
                     yield g
     model.DualFuelGeneratorsUsingInstFuelSupplyForAuxFuel = Set(model.InstantaneousFuelSupplies, initialize=gens_using_inst_fuel_supply_for_aux_init,)
 
@@ -56,7 +56,7 @@ def fuel_supply_model(model):
     model.TotalFuelConsumedAtInstFuelSupply = Expression(model.InstantaneousFuelSupplies, model.TimePeriods, rule=total_fuel_consumed_expr)
 
     def total_fuel_consumed_rule(m, f, t):
-        if m.ThermalGeneratorsUsingInstFuelSupply[f]:
+        if m.ThermalGeneratorsUsingInstFuelSupply[f] or m.DualFuelGeneratorsUsingInstFuelSupplyForAuxFuel[f]:
             return m.TotalFuelConsumedAtInstFuelSupply[f,t] <= m.InstFuelSupply[f,t]
         else:
             if t == m.TimePeriods.first():

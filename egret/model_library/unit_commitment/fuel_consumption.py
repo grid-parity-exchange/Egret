@@ -187,7 +187,7 @@ def fuel_consumption_model(model):
     model.UnitOnLink = Constraint(model.SingleFireDualFuelGenerators, model.TimePeriods, rule=single_fire_rule)
 
     def init_fuel_ub(m,g):
-        return thermal_gen_attrs['p_fuel'][g]['values'][-1][1] + thermal_gen_attrs['startup_fuel'][g][-1][1]
+        return (thermal_gen_attrs['p_fuel'][g]['values'][-1][1])*m.TimePeriodLengthHours + thermal_gen_attrs['startup_fuel'][g][-1][1]
     model.FuelConsumedUB = Param(model.SingleFireDualFuelGenerators, initialize=init_fuel_ub)
 
     def enforce_single_fire_primary(m, g, t):
@@ -245,5 +245,5 @@ def fuel_consumption_model(model):
                 return Constraint.Skip
         else:
             return m.UnitOnAuxFuel[g,t] - m.UnitOnAuxFuel[g,t-1] == m.UnitStartAuxFuel[g,t] - m.UnitStopAuxFuel[g,t]
-    model.AuxLogicalConst = Constraint(model.OfflineSwitchingDualFuelGenerators, model.TimePeriods, rule=pri_logical_constr)
+    model.AuxLogicalConst = Constraint(model.OfflineSwitchingDualFuelGenerators, model.TimePeriods, rule=aux_logical_constr)
 
