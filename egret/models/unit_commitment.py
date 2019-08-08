@@ -594,6 +594,9 @@ def solve_unit_commitment(model_data,
     fs = False
     if hasattr(m, 'fuel_supply'):
         fs = True
+    fc = False
+    if hasattr(m, 'fuel_consumption'):
+        fc = True
 
     for g,g_dict in thermal_gens.items():
         pg_dict = {}
@@ -638,15 +641,26 @@ def solve_unit_commitment(model_data,
         gfs = (fs and (g in m.FuelSupplyGenerators))
         if gfs:
             fuel_consumed = {}
+        gdf = (fc and (g in m.DualFuelGenerators))
+        if gdf:
+            aux_fuel_consumed = {}
+        gdsf = (fc and (g in m.SingleFireDualFuelGenerators))
+        if gdsf:
+            aux_fuel_indicator = {}
+
 
         for dt, mt in zip(data_time_periods,m.TimePeriods):
             pg_dict[dt] = value(m.PowerGenerated[g,mt])
             if reserve_requirement:
                 rg_dict[dt] = value(m.ReserveProvided[g,mt])
             commitment_dict[dt] = value(m.UnitOn[g,mt])
-            commitment_cost_dict[dt] = value(m.StartupCost[g,mt]+m.ShutdownCost[g,mt]+\
-                                    m.MinimumProductionCost[g]*m.UnitOn[g,mt]*m.TimePeriodLengthHours)
-            production_cost_dict[dt] = value(m.ProductionCost[g,mt])
+            commitment_cost_dict[dt] = value(m.ShutdownCost[g,mt])
+            if g in m.DualFuelGenerators:
+                commitment_cost_dict[dt] += value(m.DualFuelCommitmentCost[g,mt])
+                production_cost_dict[dt] = value(m.DualFuelProductionCost[g,mt])
+            else:
+                commitment_cost_dict[dt] += value(m.NoLoadCost[g,mt]+m.StartupCost[g,mt])
+                production_cost_dict[dt] = value(m.ProductionCost[g,mt])
 
             if regulation:
                 if g in m.AGC_Generators:
@@ -677,7 +691,11 @@ def solve_unit_commitment(model_data,
                 flex_up_supp[dt] = value(m.FlexUpProvided[g,mt])
                 flex_dn_supp[dt] = value(m.FlexDnProvided[g,mt])
             if gfs:
-                fuel_consumed[dt] = value(m.FuelConsumed[g,mt])
+                fuel_consumed[dt] = value(m.PrimaryFuelConsumed[g,mt])
+            if gdsf:
+                aux_fuel_indicator[dt] = value(m.UnitOnAuxFuel[g,mt])
+            if gdf:
+                aux_fuel_consumed[dt] = value(m.AuxiliaryFuelConsumed[g,mt])
 
             ## pyomo doesn't add constraints that are skiped to the index set, so we also
             ## need check here if the index exists.
@@ -710,6 +728,10 @@ def solve_unit_commitment(model_data,
             g_dict['flex_down_supplied'] = _time_series_dict(flex_dn_supp)
         if gfs:
             g_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
+        if gdsf:
+            g_dict['aux_fuel_status'] = _time_series_dict(aux_fuel_indicator)
+        if gdf:
+            g_dict['aux_fuel_consumed'] = _time_series_dict(aux_fuel_consumed)
         g_dict['headroom'] = _time_series_dict(ramp_up_avail_dict)
 
     for g,g_dict in renewable_gens.items():
