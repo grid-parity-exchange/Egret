@@ -24,7 +24,7 @@ be extracted to pglib-opf-master in the current working directory.
 
 To run the script, execute the following at a terminal prompt:
    
-   > python get_pglib.py
+   > python get_pglib_opf.py
 
 """
 
@@ -34,13 +34,13 @@ from zipfile import ZipFile
 import pyomo.common.fileutils as futil
 import pyomo.common.download as dload
 # we specifically list the files to prevent extracting unexpected data
-from egret.thirdparty.pglib_files import pglib_files_to_extract as files
+from egret.thirdparty.pglib_opf_files import pglib_files_to_extract as files
 
-logger = logging.getLogger('egret.thirdparty.get_pglib')
+logger = logging.getLogger('egret.thirdparty.get_pglib_opf')
 
 _pglib_zip_url = 'https://github.com/power-grid-lib/pglib-opf/archive/master.zip'
 
-def get_pglib(download_dir=None):
+def get_pglib_opf(download_dir=None):
     print("\n\n##################################################################################\n"
                     "# This script downloads the Power Grid Lib - Optimal Power Flow benchmark library\n"
                     "# as a ZIP archive from GitHub at the following url:\n"
@@ -51,7 +51,7 @@ def get_pglib(download_dir=None):
     if download_dir is None:
         download_dir = os.path.join(os.getcwd())
 
-    zipfile_dest = os.path.join(download_dir, 'pglib-master.zip')
+    zipfile_dest = os.path.join(download_dir, 'pglib-opf-master.zip')
     pglib_dir = os.path.join(download_dir, 'pglib-opf-master')
     license_file = os.path.join(pglib_dir, 'LICENSE')
 
@@ -60,7 +60,7 @@ def get_pglib(download_dir=None):
             os.mkdir(download_dir)
         except OSError:
             logger.error("***\nFailed to create directory: {}\n"
-                         "when trying to download pglib data\n***".format(download_dir)
+                         "when trying to download pglib opf data\n***".format(download_dir)
                          )
             raise
 
@@ -112,5 +112,5 @@ def get_pglib(download_dir=None):
                     .format(_pglib_zip_url, pglib_dir))
 
 if __name__ == '__main__':
-    get_pglib()
+    get_pglib_opf()
 
