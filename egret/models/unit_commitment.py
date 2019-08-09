@@ -644,7 +644,7 @@ def solve_unit_commitment(model_data,
         gdf = (fc and (g in m.DualFuelGenerators))
         if gdf:
             aux_fuel_consumed = {}
-        gdsf = (fc and (g in m.SingleFireDualFuelGenerators))
+        gdsf = (gdf and (g in m.SingleFireDualFuelGenerators))
         if gdsf:
             aux_fuel_indicator = {}
 

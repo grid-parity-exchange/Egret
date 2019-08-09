@@ -101,6 +101,22 @@ def fuel_consumption_model(model):
 
     ## end generator fuel consumption model
 
+    ## dual fuel and fuel supply shared expression for fuel supply models
+
+    model.PrimaryFuelConsumedCommitment = Var(model.DualFuelGenerators, model.TimePeriods, within=NonNegativeReals)
+    model.PrimaryFuelConsumedProduction = Var(model.DualFuelGenerators, model.TimePeriods, within=NonNegativeReals)
+
+    def primary_fuel_consumed(m, g, t):
+        if g in m.DualFuelGenerators:
+            return m.PrimaryFuelConsumedCommitment[g,t] + m.PrimaryFuelConsumedProduction[g,t]
+        else:
+            return m.FuelConsumedProduction[g,t] + m.FuelConsumedCommitment[g,t]
+    model.PrimaryFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=primary_fuel_consumed)
+
+    ## if we don't have any dual fuel generators,
+    ## we don't need to do anything else
+    if not model.DualFuelGenerators:
+        return
 
     ## DUAL FUEL GENERATORS
 
@@ -125,10 +141,8 @@ def fuel_consumption_model(model):
                 assert(False)
     model.VerifyUnitInitialFuelDefined = BuildAction(model.DualFuelGenerators, rule=verify_initial_fuel_defined)
 
-    model.PrimaryFuelConsumedCommitment = Var(model.DualFuelGenerators, model.TimePeriods, within=NonNegativeReals)
     model.AuxiliaryFuelConsumedCommitment = Var(model.DualFuelGenerators, model.TimePeriods, within=NonNegativeReals)
 
-    model.PrimaryFuelConsumedProduction = Var(model.DualFuelGenerators, model.TimePeriods, within=NonNegativeReals)
     model.AuxiliaryFuelConsumedProduction = Var(model.DualFuelGenerators, model.TimePeriods, within=NonNegativeReals)
 
     def pri_aux_fuel_consumed_commitment_rule(m, g, t):
@@ -139,12 +153,6 @@ def fuel_consumption_model(model):
         return m.FuelConsumedProduction[g,t] == m.PrimaryFuelConsumedProduction[g,t] + m.AuxiliaryFuelConsumedProduction[g,t]
     model.PriAuxFuelConsumedProductionConstr = Constraint(model.DualFuelGenerators, model.TimePeriods, rule=pri_aux_fuel_consumed_production_rule)
 
-    def primary_fuel_consumed(m, g, t):
-        if g in m.DualFuelGenerators:
-            return m.PrimaryFuelConsumedCommitment[g,t] + m.PrimaryFuelConsumedProduction[g,t]
-        else:
-            return m.FuelConsumedProduction[g,t] + m.FuelConsumedCommitment[g,t]
-    model.PrimaryFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=primary_fuel_consumed)
 
     def auxiliary_fuel_consumed(m, g, t):
         return m.AuxiliaryFuelConsumedCommitment[g,t] + m.AuxiliaryFuelConsumedProduction[g,t]
