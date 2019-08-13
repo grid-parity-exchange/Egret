@@ -67,7 +67,7 @@ pglib_files_to_extract = [
    'pglib-uc-master/rts_gmlc/2020-01-27.json',
    'pglib-uc-master/rts_gmlc/2020-02-09.json',
    'pglib-uc-master/rts_gmlc/2020-03-05.json',
-   'pglib-uc-master/rts_gmlc/2020-04-04.json',
+   'pglib-uc-master/rts_gmlc/2020-04-03.json',
    'pglib-uc-master/rts_gmlc/2020-05-05.json',
    'pglib-uc-master/rts_gmlc/2020-06-09.json',
    'pglib-uc-master/rts_gmlc/2020-07-06.json',
