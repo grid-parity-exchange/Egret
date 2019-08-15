@@ -63,26 +63,20 @@ def check_and_scale_ptdf_options(ptdf_options_dict, baseMVA):
         print("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol.".format(abs_ptdf_tol*baseMVA))
 
 ## violation checker
-def check_violations(PTDF_dict, bus_nw_exprs):
+def check_violations(m, PTDF):
 
-    PTDFM = PTDF_dict['PTDFM']
-    enforced_branch_limits = PTDF_dict['enforced_branch_limits']
-    lazy_branch_limits = PTDF_dict['lazy_branch_limits']
-    phi_adjust_array = PTDF_dict['phi_adjust_array']
-    phase_shift_array = PTDF_dict['phase_shift_array']
+    NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
+    NWV += PTDF.phi_adjust_array
 
-    NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
-    NWV += phi_adjust_array
-
-    PFV  = np.dot(PTDFM, NWV)
-    PFV += phase_shift_array
+    PFV  = np.dot(PTDF.PTDFM, NWV)
+    PFV += PTDF.phase_shift_array
 
     ## get the indices of the violations, but do it in numpy
-    gt_viol_lazy = np.nonzero(np.greater(PFV, lazy_branch_limits))[0]
-    lt_viol_lazy = np.nonzero(np.less(PFV, -lazy_branch_limits))[0]
+    gt_viol_lazy = np.nonzero(np.greater(PFV, PTDF.lazy_branch_limits))[0]
+    lt_viol_lazy = np.nonzero(np.less(PFV, -PTDF.lazy_branch_limits))[0]
 
-    gt_viol = np.nonzero(np.greater(PFV, enforced_branch_limits))[0]
-    lt_viol = np.nonzero(np.less(PFV, -enforced_branch_limits))[0]
+    gt_viol = np.nonzero(np.greater(PFV, PTDF.enforced_branch_limits))[0]
+    lt_viol = np.nonzero(np.less(PFV, -PTDF.enforced_branch_limits))[0]
 
     viol_num = len(gt_viol)+len(lt_viol)
 
@@ -105,8 +99,7 @@ def _generate_flow_monitor_message(sense, bn, flow, limit, baseMVA, time):
 
 ## violation adder
 def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
-                    PTDF_dict, bus_nw_exprs, bus_p_loads,
-                    time=None):
+                    PTDF, time=None):
 
     model = mb.model()
 
@@ -118,30 +111,19 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
     rel_ptdf_tol = ptdf_options_dict['rel_ptdf_tol']
     abs_ptdf_tol = ptdf_options_dict['abs_ptdf_tol']
 
-    ## get needed data
-    PTDFM = PTDF_dict['PTDFM']
-    buses_idx = PTDF_dict['buses_idx']
-    branches_idx = PTDF_dict['branches_idx']
-    branch_limits = PTDF_dict['branch_limits']
-    phi_adjust_array = PTDF_dict['phi_adjust_array']
-    branches = model._branches
-
     ## helper for generating pf
     def _iter_over_viol_set(viol_set):
         for i in viol_set:
-            bn = branches_idx[i]
-            branch = branches[bn]
+            bn = PTDF.branches_keys[i]
             if mb.pf[bn].expr is None:
-                if 'ptdf' not in branch:
-                    branch['ptdf'] = {bus : PTDFM[i,j] for j, bus in enumerate(buses_idx)}
-                expr = libbranch.get_power_flow_expr_ptdf_approx_from_nwe(mb, branch, buses_idx, bus_nw_exprs, phi_adjust_array, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol, approximation_type=ApproximationType.PTDF)
+                expr = libbranch.get_power_flow_expr_ptdf_approx(mb, bn, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
                 mb.pf[bn] = expr
-            yield i, bn, branch
+            yield i, bn
 
     lt_viol_in_constr = 0
-    for i, bn, branch in _iter_over_viol_set(lt_viol_lazy):
+    for i, bn in _iter_over_viol_set(lt_viol_lazy):
         constr = mb.ineq_pf_branch_thermal_lb
-        thermal_limit = branch['rating_long_term']
+        thermal_limit = PTDF.branch_limits_array[i]
         if bn in constr and i in lt_viol:
             print(_generate_flow_viol_warning('LB', mb, bn, PFV[i], -thermal_limit, baseMVA, time))
             lt_viol_in_constr += 1
@@ -152,9 +134,9 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
                 solver.add_constraint(constr[bn])
 
     gt_viol_in_constr = 0
-    for i, bn, branch in _iter_over_viol_set(gt_viol_lazy):
+    for i, bn in _iter_over_viol_set(gt_viol_lazy):
         constr = mb.ineq_pf_branch_thermal_ub
-        thermal_limit = branch['rating_long_term']
+        thermal_limit = PTDF.branch_limits_array[i]
         if bn in constr and i in gt_viol:
             print(_generate_flow_viol_warning('UB', mb, bn, PFV[i], thermal_limit, baseMVA, time))
             gt_viol_in_constr += 1

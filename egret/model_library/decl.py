@@ -49,5 +49,5 @@ def declare_expr(exprname, model, index_set, **kwargs):
         pyomo_index_set = pe.Set(initialize=index_set, ordered=True)
         model.add_component("_expr_{}_index_set".format(exprname), pyomo_index_set)
 
-        # now create the var
+        # now create the expr
         model.add_component(exprname, pe.Expression(pyomo_index_set, **kwargs))

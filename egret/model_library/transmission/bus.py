@@ -96,7 +96,18 @@ def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
                 m.shunt_p[bus_name] = shunt_attrs['gs'][bus_name]*vmsq
                 m.shunt_q[bus_name] = -shunt_attrs['bs'][bus_name]*vmsq
 
+def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+    """
+    Create a named pyomo expression for bus net withdraw
+    """
+    m = model
+    decl.declare_expr('p_nw', model, index_set)
 
+    for b in index_set:
+        m.p_nw[b] = ( bus_gs_fixed_shunts[b] 
+                    + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
+                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+                    
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """
     Create an equality constraint to enforce tan(\theta) = vj/vr at  the reference bus

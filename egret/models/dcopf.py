@@ -297,7 +297,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False,base_poi
     return model, md
 
 
-def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options=None):
+def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None):
     
     if ptdf_options is None:
         ptdf_options_dict = dict()
@@ -320,7 +320,9 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
     shunts = dict(md.elements(element_type='shunt'))
 
     gen_attrs = md.attributes(element_type='generator')
-    bus_attrs = md.attributes(element_type='bus')
+    ## to keep things in order
+    buses_idx = tuple(buses.keys())
+    branches_idx = tuple(branches.keys())
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
@@ -331,7 +333,7 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
 
-    libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
+    libbus.declare_var_pl(model, buses_idx, initialize=bus_p_loads)
     model.pl.fix()
 
     ### declare the fixed shunts at the buses
@@ -350,22 +352,30 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
-                                   index_set=bus_attrs['names'],
+                                   index_set=buses_idx,
                                    bus_p_loads=bus_p_loads,
                                    gens_by_bus=gens_by_bus,
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                    **p_rhs_kwargs
                                    )
 
+    ### declare net withdraw expression for use in PTDF power flows
+    libbus.declare_expr_p_net_withdraw_at_bus(model=model,
+                                              index_set=buses_idx,
+                                              bus_p_loads=bus_p_loads,
+                                              gens_by_bus=gens_by_bus,
+                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                              )
+
     ### add "blank" power flow expressions
     libbranch.declare_expr_pf(model=model,
-                             index_set=branches.keys(),
-                             )
+                              index_set=branches_idx,
+                              )
     
 
     ### add "blank" real power flow limits
     libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
-                                                 index_set=branches.keys(),
+                                                 index_set=branches_idx,
                                                  branches=branches,
                                                  p_thermal_limits=None,
                                                  approximation_type=None,
@@ -383,74 +393,40 @@ def create_lazy_ptdf_dcopf_model(model_data, include_feasibility_slack=False, pt
 
     model.obj = pe.Objective(expr=obj_expr)
 
-    buses = dict(md.elements(element_type='bus'))
-    branches = dict(md.elements(element_type='branch'))
-
-    ## to keep things in order
-    buses_idx = list(buses.keys())
-    branches_idx = list(branches.keys())
-
+    ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
 
-    ## calculate PTDFs, but don't do anything with them (for now..)
-    #from pyutilib.misc.timing import TicTocTimer
-    #timer = TicTocTimer()
-    #timer.tic('starting PTDF calculation')
-    PTDFM = tx_calc.calculate_ptdf(branches,buses,branches_idx,buses_idx,reference_bus,BasePointType.FLATSTART)
-    #timer.toc('done')
-    phi_from, phi_to = tx_calc.calculate_phi_constant(branches,branches_idx, buses_idx,)
-
-    phi_adjust_array = np.array([phi_from[i].sum()-phi_to[i].sum() for i,_ in enumerate(buses_idx)])
-
-    phase_shift_array = np.array([ -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in (branches[bn] for bn in branches_idx)])
-
-    ## store some information we'll need when iterating on the model object
-    model._PTDF_dict = {'PTDFM' : PTDFM,
-                        'buses_idx': buses_idx,
-                        'branches_idx' : branches_idx,
-                        'branch_limits' : np.array([ branches[branch]['rating_long_term'] for branch in branches_idx ]),
-                        'phi_adjust_array': phi_adjust_array,
-                        'phase_shift_array': phase_shift_array,
-                        }
-    model._PTDF_bus_nw_exprs = [ model.pl[bus] + bus_gs_fixed_shunts[bus] \
-                    - sum(model.pg[g] for g in gens_by_bus[bus])
-                     for i,bus in enumerate(buses_idx)]
-
-    model._PTDF_bus_p_loads = bus_p_loads
-
+    PTDFM = data_utils.PTDFMatrix(branches, buses, reference_bus, base_point, branches_keys=branches_idx, buses_keys=buses_idx)
+    model._PTDF = PTDFM
     model._ptdf_options_dict = ptdf_options_dict
-    model._branches = branches
 
     return model, md
 
 def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
-    PTDF_dict = m._PTDF_dict
-    bus_nw_exprs = m._PTDF_bus_nw_exprs
-    bus_p_loads = m._PTDF_bus_p_loads
+    PTDF = m._PTDF
 
     ptdf_options_dict = m._ptdf_options_dict
-
-
-    persistent_solver = isinstance(solver, PersistentSolver)
 
     lazy_rel_flow_tol = ptdf_options_dict['lazy_rel_flow_tol']
 
     rel_flow_tol = ptdf_options_dict['rel_flow_tol']
     abs_flow_tol = ptdf_options_dict['abs_flow_tol']
 
-    branch_limits = PTDF_dict['branch_limits']
+    branch_limits = PTDF.branch_limits_array
 
     ## if lazy_rel_flow_tol < 0, this narrows the branch limits
-    PTDF_dict['lazy_branch_limits'] = branch_limits*(1+lazy_rel_flow_tol)
+    PTDF.lazy_branch_limits = branch_limits*(1+lazy_rel_flow_tol)
 
     ## only enforce the relative and absolute, within tollerance
-    PTDF_dict['enforced_branch_limits'] = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+    PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+
+    persistent_solver = isinstance(solver, PersistentSolver)
 
     for i in range(iteration_limit):
 
-        PFV, viol_num, viols_tup = lpu.check_violations(PTDF_dict, bus_nw_exprs)
+        PFV, viol_num, viols_tup = lpu.check_violations(m, PTDF)
 
         print("iteration {0}, found {1} violation(s)".format(i,viol_num))
 
@@ -461,7 +437,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.NORMAL
 
-        all_viol_in_model = lpu.add_violations(viols_tup, PFV, m, md, solver, ptdf_options_dict, PTDF_dict, bus_nw_exprs, bus_p_loads,)
+        all_viol_in_model = lpu.add_violations(viols_tup, PFV, m, md, solver, ptdf_options_dict, PTDF)
 
         if all_viol_in_model:
             print('WARNING: Terminating with monitored violations!')
@@ -556,12 +532,11 @@ def solve_dcopf(model_data,
     ## calculate the power flows from our PTDF matrix for maximum precision
     ## calculate the LMPC (LMP congestion) using numpy
     if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
-        PTDF_dict = m._PTDF_dict
-        bus_nw_exprs = m._PTDF_bus_nw_exprs
-        PTDFM = PTDF_dict['PTDFM']
-        branches_idx = PTDF_dict['branches_idx']
+        PTDF = m._PTDF
+        PTDFM = PTDF.PTDFM
+        branches_idx = PTDF.branches_keys
 
-        NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
+        NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
         PFV  = np.dot(PTDFM, NWV)
         PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
@@ -578,7 +553,7 @@ def solve_dcopf(model_data,
             k_dict['pf'] = value(m.pf[k])
 
     if dcopf_model_generator == create_lazy_ptdf_dcopf_model:
-        buses_idx = PTDF_dict['buses_idx']
+        buses_idx = PTDF.buses_keys
         LMPE = value(m.dual[m.eq_p_balance])
         for i,b in enumerate(buses_idx):
             b_dict = buses[b]
