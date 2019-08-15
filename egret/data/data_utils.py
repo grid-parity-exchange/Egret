@@ -130,12 +130,13 @@ class PTDFLossesMatrix(PTDFMatrix):
         self._calculate_phi_adjust()
         self._calculate_phi_loss_constant()
         self._calculate_phase_shift()
+        self._calculate_losses_phase_shift()
 
     def _calculate_ptdf(self):
         ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
 
         ## protect the arrays using numpy
-        ptdf_f.flags.writeable = False
+        ptdf_r.flags.writeable = False
         ldf.flags.writeable = False
         ldf_c.flags.writeable = False
 
@@ -174,7 +175,7 @@ class PTDFLossesMatrix(PTDFMatrix):
 
     def _calculate_losses_phase_shift(self):
 
-        losses_phase_shift_array = np.array([ (tx_calc.calculate_conductance(brance)/branch['transformer_tap_ratio']) * radians(branch['transformer_phase_shift'])**2 
+        losses_phase_shift_array = np.array([ (tx_calc.calculate_conductance(branch)/branch['transformer_tap_ratio']) * radians(branch['transformer_phase_shift'])**2 
             if branch['branch_type'] == 'transformer' 
             else 0.
             for branch in (self._branches[bn] for bn in self.branches_keys)])

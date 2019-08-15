@@ -476,7 +476,6 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None
             raise Exception("Unrecognized type for m.pfl", m.pfl.pprint())
 
     for branch_name in con_set:
-        branch = branches[branch_name]
         expr = \
             get_branch_loss_expr_ptdf_approx(m, branch_name, PTDF, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
 
