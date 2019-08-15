@@ -21,34 +21,36 @@ class LazyPTDFTerminationCondition(Enum):
     ITERATION_LIMIT = 2
     FLOW_VIOLATION = 3
 
-def populate_default_ptdf_options(ptdf_options_dict):
-    if 'rel_ptdf_tol' not in ptdf_options_dict:
-        ptdf_options_dict['rel_ptdf_tol'] = 1.e-6
-    if 'abs_ptdf_tol' not in ptdf_options_dict:
-        ptdf_options_dict['abs_ptdf_tol'] = 1.e-10
-    if 'abs_flow_tol' not in ptdf_options_dict:
-        ptdf_options_dict['abs_flow_tol'] = 1.e-3
-    if 'rel_flow_tol' not in ptdf_options_dict:
-        ptdf_options_dict['rel_flow_tol'] = 1.e-5
-    if 'lazy_rel_flow_tol' not in ptdf_options_dict:
-        ptdf_options_dict['lazy_rel_flow_tol'] = -0.05
-    if 'iteration_limit' not in ptdf_options_dict:
-        ptdf_options_dict['iteration_limit'] = 100000
-    if 'lp_iteration_limit' not in ptdf_options_dict:
-        ptdf_options_dict['lp_iteration_limit'] = 100
+def populate_default_ptdf_options(ptdf_options):
+    if 'rel_ptdf_tol' not in ptdf_options:
+        ptdf_options['rel_ptdf_tol'] = 1.e-6
+    if 'abs_ptdf_tol' not in ptdf_options:
+        ptdf_options['abs_ptdf_tol'] = 1.e-10
+    if 'abs_flow_tol' not in ptdf_options:
+        ptdf_options['abs_flow_tol'] = 1.e-3
+    if 'rel_flow_tol' not in ptdf_options:
+        ptdf_options['rel_flow_tol'] = 1.e-5
+    if 'lazy_rel_flow_tol' not in ptdf_options:
+        ptdf_options['lazy_rel_flow_tol'] = -0.05
+    if 'iteration_limit' not in ptdf_options:
+        ptdf_options['iteration_limit'] = 100000
+    if 'lp_iteration_limit' not in ptdf_options:
+        ptdf_options['lp_iteration_limit'] = 100
+    if 'lazy' not in ptdf_options:
+        ptdf_options['lazy'] = True
 
-def check_and_scale_ptdf_options(ptdf_options_dict, baseMVA):
+def check_and_scale_ptdf_options(ptdf_options, baseMVA):
     ## scale to base MVA
-    ptdf_options_dict['abs_ptdf_tol'] /= baseMVA
-    ptdf_options_dict['abs_flow_tol'] /= baseMVA
+    ptdf_options['abs_ptdf_tol'] /= baseMVA
+    ptdf_options['abs_flow_tol'] /= baseMVA
 
-    rel_flow_tol = ptdf_options_dict['rel_flow_tol']
-    abs_flow_tol = ptdf_options_dict['abs_flow_tol']
+    rel_flow_tol = ptdf_options['rel_flow_tol']
+    abs_flow_tol = ptdf_options['abs_flow_tol']
 
-    rel_ptdf_tol = ptdf_options_dict['rel_ptdf_tol']
-    abs_ptdf_tol = ptdf_options_dict['abs_ptdf_tol']
+    rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
+    abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
 
-    lazy_rel_flow_tol = ptdf_options_dict['lazy_rel_flow_tol']
+    lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
 
     if abs_flow_tol < lazy_rel_flow_tol:
         raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
@@ -98,7 +100,7 @@ def _generate_flow_monitor_message(sense, bn, flow, limit, baseMVA, time):
     return ret_str
 
 ## violation adder
-def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
+def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options,
                     PTDF, time=None):
 
     model = mb.model()
@@ -108,8 +110,8 @@ def add_violations(viols_tup, PFV, mb, md, solver, ptdf_options_dict,
 
     gt_viol, lt_viol, gt_viol_lazy, lt_viol_lazy = viols_tup
     ## static information between runs
-    rel_ptdf_tol = ptdf_options_dict['rel_ptdf_tol']
-    abs_ptdf_tol = ptdf_options_dict['abs_ptdf_tol']
+    rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
+    abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
 
     ## helper for generating pf
     def _iter_over_viol_set(viol_set):
