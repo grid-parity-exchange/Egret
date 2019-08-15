@@ -458,10 +458,6 @@ def solve_dcopf(model_data,
             if dcopf_model_generator == create_btheta_dcopf_model:
                 b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
                 b_dict['va'] = value(m.va[b])
-            elif dcopf_model_generator == create_ptdf_dcopf_model:
-                b_dict['lmp'] = value(m.dual[m.eq_p_balance])
-                for k, k_dict in branches.items():
-                    b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
             else:
                 raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
 

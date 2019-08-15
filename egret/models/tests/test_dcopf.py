@@ -71,25 +71,5 @@ class TestDCOPF(unittest.TestCase):
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
 
-
-    @parameterized.expand(zip(test_cases, soln_cases))
-    def test_lazy_ptdf_dcopf_model(self, test_case, soln_case, include_kwargs=False):
-        dcopf_model = create_lazy_ptdf_dcopf_model
-
-        md_soln = ModelData()
-        md_soln.read_from_json(soln_case)
-
-        md_dict = create_ModelData(test_case)
-
-        kwargs = {}
-        if include_kwargs:
-            kwargs = {'include_feasibility_slack': 'True'}
-        md, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False, return_results=True, **kwargs)
-
-        self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
-        comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
-        self.assertTrue(comparison)
-
-
 if __name__ == '__main__':
      unittest.main()
