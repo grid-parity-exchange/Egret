@@ -106,11 +106,11 @@ class PTDFMatrix(object):
         PTDF_row = self.PTDFM[row_idx]
         yield from zip(self.buses_keys, PTDF_row)
 
-    def get_branch_ptdf_max(self, branch_name):
+    def get_branch_ptdf_abs_max(self, branch_name):
         row_idx = self._branchname_to_index_map[branch_name]
         ## get the row slice
         PTDF_row = self.PTDFM[row_idx]
-        return PTDF_row.max()
+        return np.abs(PTDF_row).max()
 
     def get_branch_phase_shift(self, branch_name):
         return self.phase_shift_array[self._branchname_to_index_map[branch_name]]
@@ -190,11 +190,11 @@ class PTDFLossesMatrix(PTDFMatrix):
         losses_row = self.LDF[row_idx]
         yield from zip(self.buses_keys, losses_row)
 
-    def get_branch_ldf_max(self, branch_name):
+    def get_branch_ldf_abs_max(self, branch_name):
         row_idx = self._branchname_to_index_map[branch_name]
         ## get the row slice
         losses_row = self.LDF[row_idx]
-        return losses_row.max()
+        return np.abs(losses_row).max()
 
     def get_branch_ldf_c(self, branch_name):
         return self.LDF_C[self._branchname_to_index_map[branch_name]]

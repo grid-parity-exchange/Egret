@@ -378,7 +378,7 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
 
     expr = PTDF.get_branch_phase_shift(branch_name)
 
-    max_coef = PTDF.get_branch_ptdf_max(branch_name)
+    max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
     ## This case is weird, but could happen, causing divison by 0 below
     if max_coef == 0:
         return expr
@@ -439,7 +439,7 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
     expr = PTDF.get_branch_losses_phase_shift(branch_name)
     expr += PTDF.get_branch_ldf_c(branch_name)
 
-    max_coef = PTDF.get_branch_ldf_max(branch_name)
+    max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
 
     if max_coef == 0:
         return expr
@@ -455,7 +455,7 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
             continue
         phi_losses_adjust = PTDF.get_bus_phi_losses_adj(bus_name)
 
-        expr += coef*model.p_nw[bus_name]+coef*phi_losses_adjust
+        expr += coef*model.p_nw[bus_name]+ceof*phi_losses_adjust
 
     return expr
 
