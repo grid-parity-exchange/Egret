@@ -551,7 +551,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
     persistent_solver = isinstance(solver, PersistentSolver)
     duals = hasattr(m, 'dual')
 
-    ptdf_options_dict = m._ptdf_options_dict
+    ptdf_options = m._ptdf_options
 
     PVF = dict()
     viol_num = dict()
@@ -562,23 +562,21 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         for t in m.TimePeriods:
             b = m.TransmissionBlock[t]
 
-            PTDF_dict = b._PTDF_dict
-            bus_nw_exprs = b._PTDF_bus_nw_exprs
-            bus_p_loads = b._PTDF_bus_p_loads
+            PTDF = b._PTDF
 
             ## these should only need to be gathered once
-            if 'lazy_branch_limits' not in PTDF_dict:
-                branch_limits = PTDF_dict['branch_limits']
-                rel_flow_tol = ptdf_options_dict['rel_flow_tol']
-                abs_flow_tol = ptdf_options_dict['abs_flow_tol']
-                lazy_rel_flow_tol = ptdf_options_dict['lazy_rel_flow_tol']
+            if PTDF.lazy_branch_limits is None: 
+                branch_limits = PTDF.branch_limits_array
+                rel_flow_tol = ptdf_options['rel_flow_tol']
+                abs_flow_tol = ptdf_options['abs_flow_tol']
+                lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
 
                 ## if lazy_rel_flow_tol < 0, this narrows the branch limits
-                PTDF_dict['lazy_branch_limits'] = branch_limits*(1+lazy_rel_flow_tol)
+                PTDF.lazy_branch_limits = branch_limits*(1+lazy_rel_flow_tol)
                 ## only enforce the relative and absolute, within tollerance
-                PTDF_dict['enforced_branch_limits'] = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+                PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
 
-            PVF[t], viol_num[t], viols_tup[t] = lpu.check_violations(PTDF_dict, bus_nw_exprs)
+            PVF[t], viol_num[t], viols_tup[t] = lpu.check_violations(b, PTDF)
 
         total_viol_num = sum(val for val in viol_num.values())
         print("iteration {0}, found {1} violation(s)".format(i,total_viol_num))
@@ -591,11 +589,9 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         for t in m.TimePeriods:
             b = m.TransmissionBlock[t]
 
-            PTDF_dict = b._PTDF_dict
-            bus_nw_exprs = b._PTDF_bus_nw_exprs
-            bus_p_loads = b._PTDF_bus_p_loads
+            PTDF = b._PTDF
 
-            all_viol_in_model[t] = lpu.add_violations(viols_tup[t], PVF[t],b, md, solver, ptdf_options_dict, PTDF_dict, bus_nw_exprs, bus_p_loads, time=t)
+            all_viol_in_model[t] = lpu.add_violations(viols_tup[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t)
             if all_times_all_viol_in_model and (not all_viol_in_model[t]):
                 all_times_all_viol_in_model = False
 
@@ -680,22 +676,22 @@ def solve_unit_commitment(model_data,
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
         m.rc = pe.Suffix(direction=pe.Suffix.IMPORT)
-    elif m.power_balance == 'lazy_ptdf_power_flow' and network:
+    elif m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and  network:
         ## BK -- be a bit more aggressive bring in PTDF constraints
         ##       from the relaxation
         relax_add_flow_tol = 0.05
-        m._ptdf_options_dict['lazy_rel_flow_tol'] -= relax_add_flow_tol
+        m._ptdf_options['lazy_rel_flow_tol'] -= relax_add_flow_tol
 
-        iter_limit = m._ptdf_options_dict['lp_iteration_limit']
+        iter_limit = m._ptdf_options['lp_iteration_limit']
 
         lpu.uc_instance_binary_relaxer(m, None)
         m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
         lp_termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=iter_limit, warn_on_max_iter=False, add_all_lazy_violations=True)
 
         lpu.uc_instance_binary_enforcer(m, solver)
-        m._ptdf_options_dict['lazy_rel_flow_tol'] += relax_add_flow_tol
+        m._ptdf_options['lazy_rel_flow_tol'] += relax_add_flow_tol
 
-        iter_limit = m._ptdf_options_dict['iteration_limit']
+        iter_limit = m._ptdf_options['iteration_limit']
         solver.solve(m, tee=solver_tee)
         termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True)
 
@@ -901,18 +897,17 @@ def solve_unit_commitment(model_data,
                     lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
-    elif m.power_balance == 'lazy_ptdf_power_flow' or m.power_balance == 'ptdf_power_flow':
+    elif m.power_balance == 'ptdf_power_flow':
         flows_dict = dict()
         if relaxed:
             lmps_dict = dict()
         for mt in m.TimePeriods:
             b = m.TransmissionBlock[mt]
             flows_dict[mt] = dict()
-            PTDF_dict = b._PTDF_dict
-            bus_nw_exprs = b._PTDF_bus_nw_exprs
-            PTDFM = PTDF_dict['PTDFM']
-            branches_idx = PTDF_dict['branches_idx']
-            NWV = np.array([pe.value(bus_nw_expr) for bus_nw_expr in bus_nw_exprs])
+            PTDF = b._PTDF
+            PTDFM = PTDF.PTDFM
+            branches_idx = PTDF.branches_keys
+            NWV = np.array([pe.value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
             PFV = np.dot(PTDFM, NWV)
             for i,bn in enumerate(branches_idx):
                 flows_dict[mt][bn] = PFV[i]
@@ -927,7 +922,7 @@ def solve_unit_commitment(model_data,
                 ##       rows of the PTDF matrix (or columns in its transpose).
                 LMPC = np.dot(-PTDFM.T, PFD)
                 LMPE = value(m.dual[b.eq_p_balance])
-                buses_idx = PTDF_dict['buses_idx']
+                buses_idx = PTDF.buses_keys
                 lmps_dict[mt] = dict()
                 for i,bn in enumerate(buses_idx):
                     lmps_dict[mt][bn] = LMPE + LMPC[i]

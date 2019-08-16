@@ -238,6 +238,10 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                               bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                               )
     
+    ### add "blank" power flow expressions
+    libbranch.declare_expr_pf(model=model,
+                              index_set=branches_idx,
+                              )
 
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
@@ -246,10 +250,6 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
 
-    ### add "blank" power flow expressions
-    libbranch.declare_expr_pf(model=model,
-                              index_set=branches_idx,
-                              )
 
     if ptdf_options['lazy']:
 

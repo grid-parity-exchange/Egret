@@ -97,7 +97,7 @@ def _generate_model( model_data,
         baseMVA = model_data.data['system']['baseMVA']
         lpu.check_and_scale_ptdf_options(_ptdf_options, baseMVA)
 
-        model._ptdf_options_dict = _ptdf_options
+        model._ptdf_options = _ptdf_options
 
     ## enforece time 1 ramp rates
     model.enforce_t1_ramp_rates = True

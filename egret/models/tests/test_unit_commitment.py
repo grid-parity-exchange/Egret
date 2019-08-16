@@ -127,23 +127,27 @@ def test_uc_runner():
 
 def test_uc_transmission_models():
     def make_get_dcopf_uc_model(network):
-        def get_dcopf_uc_model(model_data, relaxed=False):
+        def get_dcopf_uc_model(model_data, relaxed=False, **kwargs):
             return create_tight_unit_commitment_model(model_data,
                                     network_constraints=network,
-                                    relaxed=relaxed)
+                                    relaxed=relaxed,
+                                    **kwargs)
         return get_dcopf_uc_model
-    tc_networks = ['btheta_power_flow', 'ptdf_power_flow', 'lazy_ptdf_power_flow', 'power_balance_constraints',]
+
+    ## the network tests can optionally specify some kwargs so we can pass them into solve_unit_commitment
+    tc_networks = {'btheta_power_flow': [dict()], 'ptdf_power_flow':[{'ptdf_options': {'lazy':False}}, dict()], 'power_balance_constraints':[dict()],}
     no_network = 'copperplate_power_flow'
     test_name = 'tiny_uc_tc' ## based on tiny_uc_1
     input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
 
     md_in = ModelData(json.load(open(input_json_file_name, 'r')))
     for tc in tc_networks:
+        for kwargs in tc_networks[tc]:
 
-        md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = make_get_dcopf_uc_model(tc))
-        reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
-        md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-        assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+            md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = make_get_dcopf_uc_model(tc), **kwargs)
+            reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
+            md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+            assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
 
     ## test copperplate
     test_name = 'tiny_uc_1'
