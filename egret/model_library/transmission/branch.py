@@ -455,7 +455,7 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
             continue
         phi_losses_adjust = PTDF.get_bus_phi_losses_adj(bus_name)
 
-        expr += coef*model.p_nw[bus_name]+ceof*phi_losses_adjust
+        expr += coef*model.p_nw[bus_name]+coef*phi_losses_adjust
 
     return expr
 
