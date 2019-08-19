@@ -969,7 +969,7 @@ def solve_unit_commitment(model_data,
                 for dt, mt in zip(data_time_periods,m.TimePeriods):
                     lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
-    elif m.power_balance == 'copperplate_power_flow':
+    elif m.power_balance in ['copperplate_power_flow', 'copperplate_relaxed_power_flow']:
         sys_dict = md.data['system']
         p_viol_dict = {}
         for dt, mt in zip(data_time_periods,m.TimePeriods):

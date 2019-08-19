@@ -161,6 +161,8 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
     p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
+    relaxed_balance = False
+
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
             if idx == 'include_feasibility_slack_pos':
@@ -169,8 +171,13 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
                 p_expr += eval("m." + val)
             if idx == 'include_losses':
                 p_expr -= sum(m.pfl[branch_name] for branch_name in val)
+            if idx == 'relax_balance':
+                relaxed_balance = True
 
-    m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
+    if relaxed_balance:
+        m.eq_p_balance = pe.Constraint(expr = p_expr >= 0.0)
+    else:
+        m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
 
 def declare_eq_p_balance_dc_approx(model, index_set,

@@ -28,6 +28,31 @@ from math import pi
 
 component_name = 'power_balance'
 
+def _copperplate_relax_network_model(md,block,tm,td):
+    m = block.model()
+
+    ## this is not the "real" gens by bus, but the
+    gens_by_bus = block.gens_by_bus
+
+    ### declare (and fix) the loads at the buses
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
+
+    ## index of net injections from the UC model
+    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
+    block.pl.fix()
+
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
+
+    ### declare the p balance
+    libbus.declare_eq_p_balance_ed(model=block,
+                                   index_set=m.Buses,
+                                   bus_p_loads=bus_p_loads,
+                                   gens_by_bus=gens_by_bus,
+                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                   relax_balance = True,
+                                   )
+
+
 def _copperplate_approx_network_model(md,block,tm,td):
     m = block.model()
 
@@ -488,6 +513,14 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
                                             })
 def copperplate_power_flow(model, slacks=True):
     _add_egret_power_flow(model, _copperplate_approx_network_model, reactive_power=False, slacks=slacks)
+
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'power_vars': None,
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
+                                            })
+def copperplate_relaxed_power_flow(model, slacks=True):
+    _add_egret_power_flow(model, _copperplate_relax_network_model, reactive_power=False, slacks=slacks)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
