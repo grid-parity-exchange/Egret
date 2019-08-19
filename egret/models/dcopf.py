@@ -247,23 +247,32 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
 
-    calculate_ptdf = True
+    PTDF = None
+    PTDF_pickle = None
     if ptdf_options['load_from'] is not None:
         try:
             PTDF_pickle = pickle.load(open(ptdf_options['load_from'], 'rb'))
         except:
             print("Error loading PTDF matrix from pickle file, calculating from start")
-            PTDF_pickle = None
 
     if PTDF_pickle is not None:
         ## This may be a dict of data_utils.PTDFMatrix objects or just an object
-        if PTDF_pickle isinstance(dict):
+        if isinstance(PTDF_pickle, dict):
             for key, PTDFo in PTDF_pickle.items():
+                if data_utils.is_consistent_ptdfm(PTDFo, branches_idx, buses_idx):
+                    PTDF = PTDFo
+        ## could be a single ptdf dict
+        else:
+            if data_utils.is_consistent_ptdfm(PTDF_pickle, branches_idx, buses_idx):
+                PTDF = PTDF_pickle
 
-    if calculate_ptdf:
+    if PTDF is None:
         PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, base_point, branches_keys=branches_idx, buses_keys=buses_idx)
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
+
+    if ptdf_options['save_to'] is not None:
+        pickle.dump(PTDF, open(ptdf_options['save_to'], 'wb'))
 
 
     if ptdf_options['lazy']:

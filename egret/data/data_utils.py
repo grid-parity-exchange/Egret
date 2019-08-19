@@ -18,7 +18,7 @@ import egret.model_library.transmission.tx_calc as tx_calc
 from egret.model_library.defn import BasePointType, ApproximationType
 from math import radians
 
-def is_valid_ptdfm(ptdf_mat, branches_keys, buses_keys):
+def is_consistent_ptdfm(ptdf_mat, branches_keys, buses_keys):
     '''
     Checks the branches and buses keys for agreement when loading
     PTDF matrix from disk.
@@ -32,9 +32,12 @@ def is_valid_ptdfm(ptdf_mat, branches_keys, buses_keys):
 
     Returns
     ------
-    branches_keys : The indicies for the branches, if they 
+    bool : True if the branches_keys and buses_keys are consistent
+           with those in the object ptdf_mat
 
     '''
+    return ( set(branches_keys) == set(ptdf_mat.branches_keys) and \
+             set(buses_keys) == set(ptdf_mat.buses_keys) )
 
 class PTDFMatrix(object):
     '''
