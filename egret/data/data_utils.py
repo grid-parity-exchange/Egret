@@ -12,13 +12,45 @@ This module contains several helper functions and classes that are useful when
 modifying the data dictionary
 """
 import abc
+import pickle
 import numpy as np
 import egret.model_library.transmission.tx_calc as tx_calc
 
 from egret.model_library.defn import BasePointType, ApproximationType
 from math import radians
 
-def is_consistent_ptdfm(ptdf_mat, branches_keys, buses_keys):
+def get_ptdf_potentially_from_file(ptdf_options, branches_keys, buses_keys):
+    '''
+    small loop to get a PTDF matrix previously pickled, 
+    returns None if not found
+    '''
+
+    PTDF = None
+    PTDF_pickle = None
+    if ptdf_options['load_from'] is not None:
+        try:
+            PTDF_pickle = pickle.load(open(ptdf_options['load_from'], 'rb'))
+        except:
+            print("Error loading PTDF matrix from pickle file, calculating from start")
+
+    if PTDF_pickle is not None:
+        ## This may be a dict of data_utils.PTDFMatrix objects or just an object
+        if isinstance(PTDF_pickle, dict):
+            for key, PTDFo in PTDF_pickle.items():
+                if _is_consistent_ptdfm(PTDFo, branches_keys, buses_keys):
+                    PTDF = PTDFo
+        ## could be a single ptdf dict
+        else:
+            if _is_consistent_ptdfm(PTDF_pickle, branches_keys, buses_keys):
+                PTDF = PTDF_pickle
+
+    return PTDF
+
+def write_ptdf_potentially_to_file(ptdf_options, PTDF):
+    if ptdf_options['save_to'] is not None:
+        pickle.dump(PTDF, open(ptdf_options['save_to'], 'wb'))
+
+def _is_consistent_ptdfm(ptdf_mat, branches_keys, buses_keys):
     '''
     Checks the branches and buses keys for agreement when loading
     PTDF matrix from disk.
