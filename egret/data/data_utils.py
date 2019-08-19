@@ -18,6 +18,24 @@ import egret.model_library.transmission.tx_calc as tx_calc
 from egret.model_library.defn import BasePointType, ApproximationType
 from math import radians
 
+def is_valid_ptdfm(ptdf_mat, branches_keys, buses_keys):
+    '''
+    Checks the branches and buses keys for agreement when loading
+    PTDF matrix from disk.
+
+    Parameters
+    ----------
+    ptdf_mat : PTDFMatrix or PTDFLossesMatrix
+    branches_keys : iterable of branches
+    buses_keys : iterable of buses
+
+
+    Returns
+    ------
+    branches_keys : The indicies for the branches, if they 
+
+    '''
+
 class PTDFMatrix(object):
     '''
     This is a helper 

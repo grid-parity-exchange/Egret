@@ -38,6 +38,10 @@ def populate_default_ptdf_options(ptdf_options):
         ptdf_options['lp_iteration_limit'] = 100
     if 'lazy' not in ptdf_options:
         ptdf_options['lazy'] = True
+    if 'load_from' not in ptdf_options:
+        ptdf_options['load_from'] = None
+    if 'save_to' not in ptdf_options:
+        ptdf_options['save_to'] = None
 
 def check_and_scale_ptdf_options(ptdf_options, baseMVA):
     ## scale to base MVA
