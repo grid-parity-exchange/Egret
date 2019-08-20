@@ -78,7 +78,7 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     model.ShutdownMatch = Constraint(model.GeneratorShutdownPeriods, rule=shutdown_match_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
     
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStart[g,t] + \
@@ -87,7 +87,7 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
                                            if (list(m.ScaledStartupLags[g])[s-1] <= t - tp < (list(m.ScaledStartupLags[g])[s])) ) \
                                          for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
     
-    model.ComputeStartupCosts=Constraint(model.ThermalGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
+    model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
     return
 
@@ -156,12 +156,12 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     model.delta_ineq=Constraint(model.StartupCostsIndexSet, rule=delta_ineq_rule)
 
     if add_startup_cost_var:
-        model.StartupCost = Var(model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
     
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] == sum(m.delta[g,s,t]*list(m.StartupCosts[g])[s-1] for s in m.StartupCostIndices[g])
     
-    model.ComputeStartupCosts=Constraint(model.ThermalGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
+    model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
     return
 
@@ -638,12 +638,12 @@ def MLR_startup_costs2(model, add_startup_cost_var=True):
     model.delta_ineq=Constraint(model.StartupCostsIndexSet, rule=delta_ineq_rule)
     
     if add_startup_cost_var:
-        model.StartupCost = Var( model.ThermalGenerators, model.TimePeriods, within=Reals)
+        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
 
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] ==  m.StartupCosts[g].last()*m.UnitStart[g,t] + \
                 sum(m.delta[g,s,t]*(list(m.StartupCosts[g])[s-1] - m.StartupCosts[g].last()) for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
-    model.ComputeStartupCosts=Constraint(model.ThermalGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
+    model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
     return
 
