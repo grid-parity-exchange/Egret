@@ -639,6 +639,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             gen_dict["power_factor"] = APF
             gen_dict["p_cost"] = {"data_type": "cost_curve", "cost_curve_type":"piecewise", "values": P_COEFF }
             gen_dict["p_fuel"] = {"data_type": "fuel_curve", "values": F_COEFF }
+            gen_dict["fuel_cost"] = FUEL_PRICE
 
             gen_dict["startup_cost"] = STARTUP_COSTS
             gen_dict["startup_fuel"] = STARTUP_FUEL
