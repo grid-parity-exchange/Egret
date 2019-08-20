@@ -123,14 +123,17 @@ def _ptdf_dcopf_network_model(md,block,tm,td):
                              index_set=branches_in_service,
                              )
 
-    ### Get the PTDF matrix from cache or create a new one
+    ### Get the PTDF matrix from cache, from file, or create a new one
     if branches_out_service not in m._PTDFs:
         buses_idx = tuple(buses.keys())
 
         reference_bus = md.data['system']['reference_bus']
+
+        PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx)
         
         ## NOTE: For now, just use a flat-start for unit commitment
-        PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, branches_keys=branches_in_service, buses_keys=buses_idx) 
+        if PTDF is None:
+            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, branches_keys=branches_in_service, buses_keys=buses_idx)
 
         m._PTDFs[branches_out_service] = PTDF
 

@@ -19,6 +19,7 @@ from egret.model_library.unit_commitment.uc_model_generator \
 from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 import egret.common.lazy_ptdf_utils as lpu
+import egret.data.data_utils as data_utils
 import numpy as np
 
 def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
@@ -676,7 +677,9 @@ def solve_unit_commitment(model_data,
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
         m.rc = pe.Suffix(direction=pe.Suffix.IMPORT)
-    elif m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and  network:
+    elif m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
+        ## if we were asked to, serialize the PTDF matrices we calculated
+        data_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
         ## BK -- be a bit more aggressive bring in PTDF constraints
         ##       from the relaxation
         relax_add_flow_tol = 0.05
