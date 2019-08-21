@@ -100,6 +100,7 @@ def load_params(model, model_data):
     thermal_gens = dict(md.elements(element_type='generator', generator_type='thermal'))
     renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
     buses = dict(md.elements(element_type='bus'))
+    shunts = dict(md.elements(element_type='shunt'))
     branches = dict(md.elements(element_type='branch'))
     storage = dict(md.elements(element_type='storage'))
 
@@ -117,6 +118,18 @@ def load_params(model, model_data):
     thermal_gens_by_bus = tx_utils.gens_by_bus(buses, thermal_gens)
     renewable_gens_by_bus = tx_utils.gens_by_bus(buses, renewable_gens)
     storage_by_bus = tx_utils.gens_by_bus(buses, storage)
+
+    ### get the fixed shunts at the buses
+    bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+
+    ## attach some of these to the model object for ease/speed later
+    #model._loads = loads
+    model._buses = buses
+    model._branches = branches
+    model._shunts = shunts
+    model._bus_gs_fixed_shunts = bus_gs_fixed_shunts
+    #model._bus_bs_fixed_shunts = bus_bs_fixed_shunts
+    #model._TimeMapper = TimeMapper
 
     #
     # Parameters

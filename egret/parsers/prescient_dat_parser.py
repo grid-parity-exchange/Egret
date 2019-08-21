@@ -94,7 +94,10 @@ def create_model_data_dict(dat_file):
                 'rating_long_term' : params.ThermalLimit[l],
                 'rating_short_term' : params.ThermalLimit[l],
                 'rating_emergency' : params.ThermalLimit[l],
-                'in_service' : True
+                'in_service' : True,
+                'branch_type' : 'line',
+                'angle_diff_min': -90,
+                'angle_diff_max': 90,
                 }
         branch_dict[l] = b_d
     elements['branch'] = branch_dict

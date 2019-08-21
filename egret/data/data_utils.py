@@ -8,80 +8,252 @@
 #  ___________________________________________________________________________
 
 """
-This module contains several helper functions that are useful when
+This module contains several helper functions and classes that are useful when
 modifying the data dictionary
 """
-import egret.model_library.transmission.tx_calc as tx_calc
-from egret.model_library.defn import BasePointType, ApproximationType
+import abc
+import pickle
 import numpy as np
+import egret.model_library.transmission.tx_calc as tx_calc
 
-def create_dicts_of_ptdf(md,base_point=BasePointType.FLATSTART):
-    branches = dict(md.elements(element_type='branch'))
-    buses = dict(md.elements(element_type='bus'))
-    branch_attrs = md.attributes(element_type='branch')
-    bus_attrs = md.attributes(element_type='bus')
+from egret.model_library.defn import BasePointType, ApproximationType
+from math import radians
 
-    reference_bus = md.data['system']['reference_bus']
-    ptdf = tx_calc.calculate_ptdf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
-    phi_from, phi_to = tx_calc.calculate_phi_constant(branches,branch_attrs['names'],bus_attrs['names'],ApproximationType.PTDF)
+def get_ptdf_potentially_from_file(ptdf_options, branches_keys, buses_keys):
+    '''
+    small loop to get a PTDF matrix previously pickled, 
+    returns None if not found
+    '''
 
-    _len_branch = len(branch_attrs['names'])
-    _mapping_branch = {i: branch_attrs['names'][i] for i in list(range(0,_len_branch))}
+    PTDF = None
+    PTDF_pickle = None
+    if ptdf_options['load_from'] is not None:
+        try:
+            PTDF_pickle = pickle.load(open(ptdf_options['load_from'], 'rb'))
+        except:
+            print("Error loading PTDF matrix from pickle file, calculating from start")
 
-    _len_bus = len(bus_attrs['names'])
-    _mapping_bus = {i: bus_attrs['names'][i] for i in list(range(0,_len_bus))}
+    if PTDF_pickle is not None:
+        ## This may be a dict of data_utils.PTDFMatrix objects or just an object
+        if isinstance(PTDF_pickle, dict):
+            for key, PTDFo in PTDF_pickle.items():
+                if _is_consistent_ptdfm(PTDFo, branches_keys, buses_keys):
+                    PTDF = PTDFo
+        ## could be a single ptdf dict
+        else:
+            if _is_consistent_ptdfm(PTDF_pickle, branches_keys, buses_keys):
+                PTDF = PTDF_pickle
 
-    for idx,branch_name in _mapping_branch.items():
-        branch = md.data['elements']['branch'][branch_name]
-        _row_ptdf = {bus_attrs['names'][i]: ptdf[idx,i] for i in list(range(0,_len_bus))}
-        branch['ptdf'] = _row_ptdf
+    return PTDF
 
-    for idx, bus_name in _mapping_bus.items():
-        bus = md.data['elements']['bus'][bus_name]
-        _row_phi_from = {branch_attrs['names'][i]: phi_from[idx, i] for i in list(range(0, _len_branch)) if phi_from[idx, i] != 0.}
-        bus['phi_from'] = _row_phi_from
+def write_ptdf_potentially_to_file(ptdf_options, PTDF):
+    if ptdf_options['save_to'] is not None:
+        pickle.dump(PTDF, open(ptdf_options['save_to'], 'wb'))
 
-        _row_phi_to = {branch_attrs['names'][i]: phi_to[idx, i] for i in list(range(0, _len_branch)) if phi_to[idx, i] != 0.}
-        bus['phi_to'] = _row_phi_to
+def _is_consistent_ptdfm(ptdf_mat, branches_keys, buses_keys):
+    '''
+    Checks the branches and buses keys for agreement when loading
+    PTDF matrix from disk.
+
+    Parameters
+    ----------
+    ptdf_mat : PTDFMatrix or PTDFLossesMatrix
+    branches_keys : iterable of branches
+    buses_keys : iterable of buses
 
 
-def create_dicts_of_ptdf_losses(md,base_point=BasePointType.SOLUTION):
-    branches = dict(md.elements(element_type='branch'))
-    buses = dict(md.elements(element_type='bus'))
-    branch_attrs = md.attributes(element_type='branch')
-    bus_attrs = md.attributes(element_type='bus')
+    Returns
+    ------
+    bool : True if the branches_keys and buses_keys are consistent
+           with those in the object ptdf_mat
 
-    reference_bus = md.data['system']['reference_bus']
-    ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
-    phi_from, phi_to = tx_calc.calculate_phi_constant(branches,branch_attrs['names'],bus_attrs['names'],ApproximationType.PTDF_LOSSES)
-    phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(branches,branch_attrs['names'],bus_attrs['names'],ApproximationType.PTDF_LOSSES)
+    '''
+    return ( set(branches_keys) == set(ptdf_mat.branches_keys) and \
+             set(buses_keys) == set(ptdf_mat.buses_keys) )
 
-    _len_branch = len(branch_attrs['names'])
-    _mapping_branch = {i: branch_attrs['names'][i] for i in list(range(0,_len_branch))}
+class PTDFMatrix(object):
+    '''
+    This is a helper 
+    '''
+    def __init__(self, branches, buses, reference_bus, base_point,
+                        branches_keys = None, buses_keys = None):
+        '''
+        Creates a new _PTDFMaxtrixManager object to provide
+        some useful methods for interfacing with Egret pyomo models
 
-    _len_bus = len(bus_attrs['names'])
-    _mapping_bus = {i: bus_attrs['names'][i] for i in list(range(0,_len_bus))}
+        Parameters
+        ----------
+        '''
+        self._branches = branches
+        self._buses = buses
+        self._reference_bus = reference_bus
+        self._base_point = base_point
+        if branches_keys is None:
+            self.branches_keys = tuple(branches.keys())
+        else:
+            self.branches_keys = tuple(branches_keys)
+        if buses_keys is None:
+            self.buses_keys = tuple(buses.keys())
+        else:
+            self.buses_keys = tuple(buses_keys)
+        self._branchname_to_index_map = {branch_n : i for i, branch_n in enumerate(self.branches_keys)}
+        self._busname_to_index_map = {bus_n : j for j, bus_n in enumerate(self.buses_keys)}
 
-    for idx,branch_name in _mapping_branch.items():
-        branch = md.data['elements']['branch'][branch_name]
-        _row_ptdf_r = {bus_attrs['names'][i]: ptdf_r[idx,i] for i in list(range(0,_len_bus))}
-        branch['ptdf_r'] = _row_ptdf_r
+        self.branch_limits_array = np.array([branches[branch]['rating_long_term'] for branch in self.branches_keys])
+        ## protect the array using numpy
+        self.branch_limits_array.flags.writeable = False
 
-        _row_ldf = {bus_attrs['names'][i]: ldf[idx,i] for i in list(range(0,_len_bus))}
-        branch['ldf'] = _row_ldf
+        self._base_point = base_point
+        self._calculate()
 
-        branch['ldf_c'] = ldf_c[idx]
+        ## for lazy PTDF
+        self.lazy_branch_limits = None
+        self.enforced_branch_limits = None
 
-    for idx, bus_name in _mapping_bus.items():
-        bus = md.data['elements']['bus'][bus_name]
-        _row_phi_from = {branch_attrs['names'][i]: phi_from[idx,i] for i in list(range(0,_len_branch)) if phi_from[idx, i] != 0.}
-        bus['phi_from'] = _row_phi_from
+    def _calculate(self):
+        self._calculate_ptdf()
+        self._calculate_phi_adjust()
+        self._calculate_phase_shift()
 
-        _row_phi_to = {branch_attrs['names'][i]: phi_to[idx,i] for i in list(range(0,_len_branch)) if phi_to[idx, i] != 0.}
-        bus['phi_to'] = _row_phi_to
+    def _calculate_ptdf(self):
+        '''
+        do the PTDF calculation
+        '''
+        ## calculate and store the PTDF matrix
+        PTDFM = tx_calc.calculate_ptdf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
 
-        _row_phi_loss_from = {branch_attrs['names'][i]: phi_loss_from[idx,i] for i in list(range(0,_len_branch)) if phi_loss_from[idx, i] != 0.}
-        bus['phi_loss_from'] = _row_phi_loss_from
+        ## protect the array using numpy
+        PTDFM.flags.writeable = False
 
-        _row_phi_loss_to = {branch_attrs['names'][i]: phi_loss_to[idx,i] for i in list(range(0,_len_branch)) if phi_loss_to[idx, i] != 0.}
-        bus['phi_loss_to'] = _row_phi_loss_to
+        self.PTDFM = PTDFM
+
+    def _calculate_phi_from_phi_to(self):
+        return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF)
+
+    def _calculate_phi_adjust(self):
+        phi_from, phi_to = self._calculate_phi_from_phi_to()
+        
+        ## hold onto these for line outages
+        self._phi_from = phi_from
+        self._phi_to = phi_to
+
+        ## sum the across the columns, which are indexed by branch
+        phi_adjust_array = phi_from.sum(axis=1)-phi_to.sum(axis=1)
+
+        ## protect the array using numpy
+        phi_adjust_array.flags.writeable = False
+
+        self.phi_adjust_array = phi_adjust_array
+
+    def _calculate_phase_shift(self):
+        
+        phase_shift_array = np.array([ -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in (self._branches[bn] for bn in self.branches_keys)])
+
+        ## protect the array using numpy
+        phase_shift_array.flags.writeable = False
+        self.phase_shift_array = phase_shift_array
+
+    def get_branch_ptdf_iterator(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        PTDF_row = self.PTDFM[row_idx]
+        yield from zip(self.buses_keys, PTDF_row)
+
+    def get_branch_ptdf_abs_max(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        PTDF_row = self.PTDFM[row_idx]
+        return np.abs(PTDF_row).max()
+
+    def get_branch_phase_shift(self, branch_name):
+        return self.phase_shift_array[self._branchname_to_index_map[branch_name]]
+
+    def get_bus_phi_adj(self, bus_name):
+        return self.phi_adjust_array[self._busname_to_index_map[bus_name]]
+
+    def bus_iterator(self):
+        yield from self.buses_keys
+
+
+
+class PTDFLossesMatrix(PTDFMatrix):
+
+    def _calculate(self):
+        self._calculate_ptdf()
+        self._calculate_phi_adjust()
+        self._calculate_phi_loss_constant()
+        self._calculate_phase_shift()
+        self._calculate_losses_phase_shift()
+
+    def _calculate_ptdf(self):
+        ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
+
+        ## protect the arrays using numpy
+        ptdf_r.flags.writeable = False
+        ldf.flags.writeable = False
+        ldf_c.flags.writeable = False
+
+        self.PTDFM = ptdf_r
+        self.LDF = ldf
+        self.LDF_C = ldf_c
+
+    def _calculate_phi_from_phi_to(self):
+        return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES)
+
+    def _calculate_phi_loss_constant(self):
+        phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES)
+
+        ## hold onto these for line outages
+        self._phi_loss_from = phi_loss_from
+        self._phi_loss_to = phi_loss_to
+
+        ## sum the across the columns, which are indexed by branch
+        phi_losses_adjust_array = phi_loss_from.sum(axis=1)-phi_loss_to.sum(axis=1)
+
+        ## protect the array using numpy
+        phi_losses_adjust_array.flags.writeable = False
+
+        self.phi_losses_adjust_array = phi_losses_adjust_array
+
+    def _calculate_phase_shift(self):
+        
+        phase_shift_array = np.array([ tx_calc.calculate_susceptance(branch) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) 
+            if (branch['branch_type'] == 'transformer') 
+            else 0. 
+            for branch in (self._branches[bn] for bn in self.branches_keys)])
+
+        ## protect the array using numpy
+        phase_shift_array.flags.writeable = False
+        self.phase_shift_array = phase_shift_array
+
+    def _calculate_losses_phase_shift(self):
+
+        losses_phase_shift_array = np.array([ (tx_calc.calculate_conductance(branch)/branch['transformer_tap_ratio']) * radians(branch['transformer_phase_shift'])**2 
+            if branch['branch_type'] == 'transformer' 
+            else 0.
+            for branch in (self._branches[bn] for bn in self.branches_keys)])
+
+        ## protect the array using numpy
+        losses_phase_shift_array.flags.writeable = False
+        self.losses_phase_shift_array = losses_phase_shift_array
+
+    def get_branch_ldf_iterator(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        losses_row = self.LDF[row_idx]
+        yield from zip(self.buses_keys, losses_row)
+
+    def get_branch_ldf_abs_max(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        losses_row = self.LDF[row_idx]
+        return np.abs(losses_row).max()
+
+    def get_branch_ldf_c(self, branch_name):
+        return self.LDF_C[self._branchname_to_index_map[branch_name]]
+
+    def get_branch_losses_phase_shift(self, branch_name):
+        return self.losses_phase_shift_array[self._branchname_to_index_map[branch_name]]
+
+    def get_bus_phi_losses_adj(self, bus_name):
+        return self.phi_losses_adjust_array[self._busname_to_index_map[bus_name]]
