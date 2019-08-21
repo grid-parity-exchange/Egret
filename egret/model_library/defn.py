@@ -30,3 +30,8 @@ class BasePointType(Enum):
 class RelaxationType(Enum):
     NONE = 1
     SOC = 2
+
+
+class SensitivityCalculationMethod(Enum):
+    INVERT = 1
+    FACTORIZE = 2

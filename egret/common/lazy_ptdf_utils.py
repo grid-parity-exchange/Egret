@@ -74,7 +74,7 @@ def check_violations(m, PTDF):
     NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
     NWV += PTDF.phi_adjust_array
 
-    PFV  = np.dot(PTDF.PTDFM, NWV)
+    PFV  = np.dot(PTDF.PTDFM, NWV) # AC -- need to update
     PFV += PTDF.phase_shift_array
 
     ## get the indices of the violations, but do it in numpy
@@ -87,7 +87,8 @@ def check_violations(m, PTDF):
     viol_num = len(gt_viol)+len(lt_viol)
 
     return PFV, viol_num, (gt_viol, lt_viol, gt_viol_lazy, lt_viol_lazy)
-    
+
+
 def _generate_flow_viol_warning(sense, mb, bn, flow, limit, baseMVA, time):
     ret_str = "WARNING: line {0} ({1}) is in the  monitored set".format(bn, sense)
     if time is not None:

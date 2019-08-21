@@ -14,7 +14,7 @@ different computations for transmission models
 import math
 import numpy as np
 from math import cos, sin
-from egret.model_library.defn import BasePointType, ApproximationType
+from egret.model_library.defn import BasePointType, ApproximationType, SensitivityCalculationMethod
 
 def calculate_conductance(branch):
     rs = branch['resistance']
@@ -524,7 +524,8 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
     return pfl_constant
 
-def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART):
+
+def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,calculation_method=SensitivityCalculationMethod.FACTORIZE):
     """
     Calculates the sensitivity of the voltage angle to real power injections
     """
@@ -541,20 +542,31 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
     M = np.matmul(A.transpose(),J)
 
-    J0 = np.zeros((_len_bus+1,_len_bus+1))
-    J0[:-1,:-1] = M
-    J0[-1][_ref_bus_idx] = 1
-    J0[_ref_bus_idx][-1] = 1
+    if calculation_method == SensitivityCalculationMethod.INVERT:
+        J0 = np.zeros((_len_bus+1,_len_bus+1))
+        J0[:-1,:-1] = M
+        J0[-1][_ref_bus_idx] = 1
+        J0[_ref_bus_idx][-1] = 1
 
-    try:
-        SENSI = np.linalg.inv(J0)
-    except np.linalg.LinAlgError:
-        print("Matrix not invertible. Calculating pseudo-inverse instead.")
-        SENSI = np.linalg.pinv(J0,rcond=1e-7)
-        pass
-    SENSI = SENSI[:-1,:-1]
+        try:
+            SENSI = np.linalg.inv(J0)
+        except np.linalg.LinAlgError:
+            print("Matrix not invertible. Calculating pseudo-inverse instead.")
+            SENSI = np.linalg.pinv(J0,rcond=1e-7)
+            pass
+        SENSI = SENSI[:-1,:-1]
 
-    PTDF = np.matmul(J,SENSI)
+        PTDF = np.matmul(J,SENSI)
+    elif calculation_method == SensitivityCalculationMethod.FACTORIZE:
+        n, m = M.shape
+        y = np.array([], dtype=np.int64).reshape(0,len(_mapping_branch))
+        for idx, branch_name in _mapping_branch.items():
+            b = np.zeros((m,1))
+            b[idx] = 1
+            y = np.concatenate((y,np.matmul(J,b).T), axis=0)
+        import scipy as sp
+        #sp.sparse.linalg.spsolve(M.transpose(), np.concatenate((y.T, y2.T, np.zeros((1, 3))), axis=0).T).T
+        sp.sparse.linalg.spsolve(M.transpose(), y.T).T
 
     return PTDF
 

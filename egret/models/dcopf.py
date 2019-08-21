@@ -529,21 +529,15 @@ def constraint_resid_to_string(name, con, resid):
         return '{0:10.4g} | {2:10.4} <= {3:10.4g} <= {4:10.4g} : {1}'.format(resid, name, value(con.lower), value(con.body), value(con.upper))
 
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     print(path)
-#     filename = 'pglib_opf_case300_ieee.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
-#
-#     kwargs = {'include_feasibility_slack':False}
-#     md_btheta, m_btheta, results_btheta = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model, return_model=True, return_results=True, **kwargs)
-#
-#     from acopf import solve_acopf
-#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-#     kwargs = {'include_feasibility_slack':False,'base_point':BasePointType.SOLUTION}
-#     md_ptdf, m_ptdf, results_ptdf = solve_dcopf(model_data, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, return_model=True, return_results=True, **kwargs)
-#
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    print(path)
+    filename = 'pglib_opf_case14_ieee.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
+    md = create_ModelData(matpower_file)
+
+    md_ptdf, m_ptdf, results_ptdf = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, return_model=True, return_results=True)
+
