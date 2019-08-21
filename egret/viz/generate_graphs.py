@@ -49,11 +49,14 @@ FUEL_TO_CODE = {
     'Oil': 'O',
     'Coal': 'C',
     'NG': 'G',
+    'Gas': 'G',
+    'PV': 'S',
     'Nuclear': 'N',
     'Hydro': 'H',
     'Solar': 'S',
     'Wind': 'W',
     'Sync_Cond': 'SC',
+    'Biomass': 'B',
                }
 
 

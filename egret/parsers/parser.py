@@ -18,6 +18,7 @@ import os.path
 import egret.data.model_data as md
 import pandas as pd
 import math
+import numpy as np
 from datetime import datetime, timedelta
 from collections import namedtuple
 
@@ -295,24 +296,24 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
     else:
         system["time_period_length_minutes"] = 5
 
-    # compute aggregate load per area, and then compute 
-    # load participation factors from each bus from that data.
-    region_total_load = {}
-    areas = ["Area"+str(i) for i in range(1,4)]
-    for this_region in areas:
-        this_region_total_load = 0.0
-        ## loads have exactly one bus
-        for name, load in md_obj.elements("load"):
-            bus = elements["bus"][load["bus"]]
-            if bus["area"] == this_region:
-                this_region_total_load += load["p_load"]
-        region_total_load[this_region] = this_region_total_load
+    # # compute aggregate load per area, and then compute 
+    # # load participation factors from each bus from that data.
+    # region_total_load = {}
+    # areas = ["Area"+str(i) for i in range(1,4)]
+    # for this_region in areas:
+    #     this_region_total_load = 0.0
+    #     ## loads have exactly one bus
+    #     for name, load in md_obj.elements("load"):
+    #         bus = elements["bus"][load["bus"]]
+    #         if bus["area"] == this_region:
+    #             this_region_total_load += load["p_load"]
+    #     region_total_load[this_region] = this_region_total_load
     
-    bus_load_participation_factor_dict = {}
+    # bus_load_participation_factor_dict = {}
     bus_Ql_over_Pl_dict = {}
     for name, load in md_obj.elements("load"):
         bus = elements["bus"][load["bus"]]
-        bus_load_participation_factor_dict[name] = load["p_load"] / region_total_load[bus["area"]]
+        # bus_load_participation_factor_dict[name] = load["p_load"] / region_total_load[bus["area"]]
         bus_Ql_over_Pl_dict[name] = load["q_load"] / load["p_load"]
 
     timeseries_pointer_dict = {} 
@@ -324,69 +325,98 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
                                                    os.path.join(base_dir, this_timeseries_pointer_dict["Data File"]))
     
         timeseries_pointer_dict[(new_timeseries_pointer.Object, new_timeseries_pointer.Simulation)] = new_timeseries_pointer
+    
+    timeseries_lookup = {}
+
+    # Load in DataFrame for each renewable time series data file.
+    for pointer, timeseries_pointer in timeseries_pointer_dict.items():
+        if timeseries_pointer.Simulation != simulation:
+            continue
+        else:
+            try:
+                time_series_csv_name = timeseries_pointer.DataFile
+                filtered_times_series = timeseries_lookup[time_series_csv_name]
+            except KeyError:
+                time_series_csv_name = timeseries_pointer.DataFile
+                print(time_series_csv_name)
+
+                this_timeseries_df = _read_table(time_series_csv_name, simulation)
+                timeseries_lookup[time_series_csv_name] = this_timeseries_df
+
+                start_mask = pd.to_datetime(this_timeseries_df["DateTime"]) >= begin_time
+                end_mask = pd.to_datetime(this_timeseries_df["DateTime"]) < end_time
+                timeseries_lookup[timeseries_pointer] = this_timeseries_df[start_mask & end_mask]
+            else:
+                continue
 
     filtered_timeseries = {}
     for name, gen in md_obj.elements("generator", generator_type="renewable"):
-        if gen["fuel"] in ["Solar", "Wind", "Hydro"]:
-            if (name, simulation) not in timeseries_pointer_dict:
-                print("***WARNING - No timeseries pointer entry found for generator=%s" % name)
-                
-            else:
-                #print("Time series for generator=%s will be loaded from file=%s" % (name, timeseries_pointer_dict[(name,"DAY_AHEAD")].DataFile))
-                renewables_timeseries_df = _read_rts_gmlc_table(timeseries_pointer_dict[(name,simulation)].DataFile, simulation)
-                this_source_timeseries_df = renewables_timeseries_df.loc[:,["Year_Month_Day_Period", name]]
-                this_source_timeseries_df = this_source_timeseries_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
+        # if gen["Fuel"] in ["Solar", "Wind", "Hydro"]:
+        if (name, simulation) not in timeseries_pointer_dict:
+            print("***WARNING - No timeseries pointer entry found for generator=%s, skipping..." % name)
+            continue
+        else:
+            #print("Time series for generator=%s will be loaded from file=%s" % (name, timeseries_pointer_dict[(name,"DAY_AHEAD")].DataFile))
+            data_file_name = timeseries_pointer_dict[(name,simulation)].DataFile
+            renewables_timeseries_df = timeseries_lookup[data_file_name]
+            this_source_timeseries_df = renewables_timeseries_df.loc[:,['DateTime', name]]
 
-                start_mask = this_source_timeseries_df["DateTime"] >= begin_time
-                end_mask = this_source_timeseries_df["DateTime"] < end_time
-                this_source_masked_timeseries_df = this_source_timeseries_df[start_mask & end_mask]
+            # renewables_timeseries_df = _read_table(timeseries_pointer_dict[(name,simulation)].DataFile, simulation)
+            # this_source_timeseries_df = renewables_timeseries_df.loc[:,['DateTime', name]]
+            # this_source_timeseries_df = this_source_timeseries_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
+            # start_mask = pd.to_datetime(this_source_timeseries_df["DateTime"]) >= begin_time
+            # end_mask = pd.to_datetime(this_source_timeseries_df["DateTime"]) < end_time
+            # this_source_masked_timeseries_df = this_source_timeseries_df[start_mask & end_mask]
 
-                renewables_timeseries_dict = this_source_masked_timeseries_df.to_dict(orient='split')
-                renewables_timeseries = []
-                for this_row in renewables_timeseries_dict["data"]:
-                    renewables_timeseries.append(DateTimeValue(this_row[0],
-                                                               float(this_row[1])))
-                filtered_timeseries[name] = renewables_timeseries
+            renewables_timeseries_dict = this_source_timeseries_df.to_dict(orient='split')
+            renewables_timeseries = []
+            for this_row in renewables_timeseries_dict["data"]:
+                renewables_timeseries.append(DateTimeValue(this_row[0],
+                                                            float(this_row[1])))
+            filtered_timeseries[name] = renewables_timeseries
 
     for name, load in md_obj.elements("load"):
         load_timeseries_spec = timeseries_pointer_dict[(name, simulation)]
-        load_timeseries_df = _read_rts_gmlc_table(load_timeseries_spec.DataFile, simulation)
-        load_timeseries_df = load_timeseries_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
-        start_mask = load_timeseries_df["DateTime"] >= begin_time
-        end_mask = load_timeseries_df["DateTime"] < end_time
-        masked_load_timeseries_df = load_timeseries_df[start_mask & end_mask]
+        data_file_name = load_timeseries_spec.DataFile
+
+        load_timeseries_df = timeseries_lookup[data_file_name]
+        this_source_timeseries_df = load_timeseries_df.loc[:,['DateTime', name]]
+
+        start_mask = pd.to_datetime(this_source_timeseries_df['DateTime']) >= begin_time
+        end_mask = pd.to_datetime(this_source_timeseries_df['DateTime']) < end_time
+        masked_load_timeseries_df = this_source_timeseries_df[start_mask & end_mask]
         load_dict = masked_load_timeseries_df.to_dict(orient='records')
 
-    reserves_dfs = {}
-    spin_reserve_categories = ["Spin_Up_R1", "Spin_Up_R2", "Spin_Up_R3"]
+    # reserves_dfs = {}
+    # spin_reserve_categories = ["Spin_Up_R1", "Spin_Up_R2", "Spin_Up_R3"]
 
-    other_reserve_categories = ["Reg_Down", "Reg_Up",]
-    ## flexiramp products only in day-ahead simulation
-    if simulation == "DAY_AHEAD":
-        other_reserve_categories += ["Flex_Down", "Flex_Up",]
+    # other_reserve_categories = ["Reg_Down", "Reg_Up",]
+    # ## flexiramp products only in day-ahead simulation
+    # if simulation == "DAY_AHEAD":
+    #     other_reserve_categories += ["Flex_Down", "Flex_Up",]
         
-    for reserve in spin_reserve_categories:
-        reserves_dfs[reserve] = _read_rts_gmlc_table(timeseries_pointer_dict[(reserve, simulation)].DataFile, simulation)
+    # for reserve in spin_reserve_categories:
+    #     reserves_dfs[reserve] = _read_rts_gmlc_table(timeseries_pointer_dict[(reserve, simulation)].DataFile, simulation)
      
 
-    reserves_dict = {}
-    for name, reserve_df in reserves_dfs.items():
-        reserve_df = reserve_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
-        start_mask = reserve_df["DateTime"] >= begin_time
-        end_mask = reserve_df["DateTime"] < end_time
-        reserve_df = reserve_df[start_mask & end_mask]
-        reserve_timeseries = []
-        for this_row in reserve_df.to_dict(orient='split')["data"]:
-            reserve_timeseries.append(DateTimeValue(this_row[0], float(this_row[1])))
-        reserves_dict[name] = reserve_timeseries
+    # reserves_dict = {}
+    # for name, reserve_df in reserves_dfs.items():
+    #     reserve_df = reserve_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
+    #     start_mask = reserve_df["DateTime"] >= begin_time
+    #     end_mask = reserve_df["DateTime"] < end_time
+    #     reserve_df = reserve_df[start_mask & end_mask]
+    #     reserve_timeseries = []
+    #     for this_row in reserve_df.to_dict(orient='split')["data"]:
+    #         reserve_timeseries.append(DateTimeValue(this_row[0], float(this_row[1])))
+    #     reserves_dict[name] = reserve_timeseries
 
-    for reserve in other_reserve_categories:
-        reserves_dict[reserve] = _read_rts_gmlc_reserve_table(
-                                        timeseries_pointer_dict[(reserve, simulation)].DataFile,
-                                        begin_time,
-                                        end_time,
-                                        simulation,
-                                        )
+    # for reserve in other_reserve_categories:
+    #     reserves_dict[reserve] = _read_rts_gmlc_reserve_table(
+    #                                     timeseries_pointer_dict[(reserve, simulation)].DataFile,
+    #                                     begin_time,
+    #                                     end_time,
+    #                                     simulation,
+    #                                     )
 
 
     times = []
@@ -406,69 +436,345 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
         load["p_load"] = _make_time_series_dict(pl_dict)
         load["q_load"] = _make_time_series_dict(ql_dict)
 
-    ## load in area reserve factors
-    area_spin_map = {'Area1':'Spin_Up_R1', 'Area2':'Spin_Up_R2', 'Area3':'Spin_Up_R3'}
-    for name, area in md_obj.elements("area"):
-        spin_reserve_dict = dict()
-        for datetimevalue in reserves_dict[area_spin_map[name]]: 
-            spin_reserve_dict[str(datetimevalue.DateTime)] = round(datetimevalue.Value,2)
-        area["spinning_reserve_requirement"] = _make_time_series_dict(spin_reserve_dict)
+    # ## load in area reserve factors
+    # area_spin_map = {'Area1':'Spin_Up_R1', 'Area2':'Spin_Up_R2', 'Area3':'Spin_Up_R3'}
+    # for name, area in md_obj.elements("area"):
+    #     spin_reserve_dict = dict()
+    #     for datetimevalue in reserves_dict[area_spin_map[name]]: 
+    #         spin_reserve_dict[str(datetimevalue.DateTime)] = round(datetimevalue.Value,2)
+    #     area["spinning_reserve_requirement"] = _make_time_series_dict(spin_reserve_dict)
 
-    ## load in global reserve factors
-    rts_to_egret_reserve_map = {
-                                "Flex_Down": "flexible_ramp_down_requirement",
-                                "Flex_Up" : "flexible_ramp_up_requirement",
-                                "Reg_Down": "regulation_down_requirement",
-                                "Reg_Up" : "regulation_up_requirement",
-                               }
-    for reserve in other_reserve_categories:
-        system[rts_to_egret_reserve_map[reserve]] = _make_time_series_dict(reserves_dict[reserve])
+    # ## load in global reserve factors
+    # rts_to_egret_reserve_map = {
+    #                             "Flex_Down": "flexible_ramp_down_requirement",
+    #                             "Flex_Up" : "flexible_ramp_up_requirement",
+    #                             "Reg_Down": "regulation_down_requirement",
+    #                             "Reg_Up" : "regulation_up_requirement",
+    #                            }
+    # for reserve in other_reserve_categories:
+    #     system[rts_to_egret_reserve_map[reserve]] = _make_time_series_dict(reserves_dict[reserve])
 
     ## now load renewable generator stuff
     for name, gen in md_obj.elements("generator", generator_type="renewable"):
-        if gen["fuel"] not in ["Solar", "Wind", "Hydro"]:
+        # if gen["fuel"] not in ["Solar", "Wind", "Hydro"]:
+        #     continue
+        try:
+            renewables_timeseries = filtered_timeseries[name]
+        except KeyError:
             continue
-        renewables_timeseries = filtered_timeseries[name]
-        ## for safety, curtailable renewables can go down to 0
-        gen["p_min"] = 0.
-        output_dict = dict()
-        for datetimevalue in renewables_timeseries:
-            output_dict[str(datetimevalue.DateTime)] = round(datetimevalue.Value,2)
+        else:
+            ## for safety, curtailable renewables can go down to 0
+            gen["p_min"] = 0.
+            output_dict = dict()
+            for datetimevalue in renewables_timeseries:
+                output_dict[str(datetimevalue.DateTime)] = round(datetimevalue.Value,2)
 
-        gen["p_max"] = _make_time_series_dict(output_dict)
-        # set must-take for Hydro and RTPV
-        if gen["unit_type"] in ["HYDRO", "RTPV"]:
-            ## copy is for safety when overwriting
-            gen["p_min"] = _make_time_series_dict(output_dict.copy())
+            gen["p_max"] = _make_time_series_dict(output_dict)
+            # set must-take for Hydro and RTPV
+            if gen.get('unit_type', '') in ["HYDRO", "RTPV"]:
+                ## copy is for safety when overwriting
+                gen["p_min"] = _make_time_series_dict(output_dict.copy())
+    
+    
+    # t0 states
+    for name, gen in md_obj.elements("generator", generator_type="thermal"):
+        if gen['min_up_time'] > 0:
+            gen['initial_status'] = gen['min_up_time']
+        elif gen['min_down_time'] > 0:
+            gen['initial_status'] = -gen['min_down_time']
+        else:
+            gen['initial_status'] = 1
+        
+        gen['initial_p_output'] = gen['p_min']
+        gen['initial_q_output'] = 0.
+        
+        # gen["initial_status"] = t0_state[name]["initial_status"]
+        # gen["initial_p_output"] = t0_state[name]["initial_p_output"]
+        # gen["initial_q_output"] = t0_state[name]["initial_q_output"]
+
+        
 
 
-    ## get this from the same place the prescient reader does
-    if t0_state is None:
-        unit_on_time_df = pd.read_csv(os.path.join(base_dir ,"../FormattedData/PLEXOS/PLEXOS_Solution/DAY_AHEAD Solution Files/noTX/on_time_7.12.csv"),
-                                        header=0,
-                                        sep=",")
-        unit_on_time_df_as_dict = unit_on_time_df.to_dict(orient="split")
-        unit_on_t0_state_dict = {} 
-        for i in range(0,len(unit_on_time_df_as_dict["columns"])):
-            gen_id = unit_on_time_df_as_dict["columns"][i]
-            unit_on_t0_state_dict[gen_id] = int(unit_on_time_df_as_dict["data"][0][i])
+    # ## get this from the same place the prescient reader does
+    # if t0_state is None:
+    #     unit_on_time_df = pd.read_csv(os.path.join(base_dir ,"../FormattedData/PLEXOS/PLEXOS_Solution/DAY_AHEAD Solution Files/noTX/on_time_7.12.csv"),
+    #                                     header=0,
+    #                                     sep=",")
+    #     unit_on_time_df_as_dict = unit_on_time_df.to_dict(orient="split")
+    #     unit_on_t0_state_dict = {} 
+    #     for i in range(0,len(unit_on_time_df_as_dict["columns"])):
+    #         gen_id = unit_on_time_df_as_dict["columns"][i]
+    #         unit_on_t0_state_dict[gen_id] = int(unit_on_time_df_as_dict["data"][0][i])
 
-        for name, gen in md_obj.elements("generator", generator_type="thermal"):
-            gen["initial_status"] = unit_on_t0_state_dict[name]
-            if gen["initial_status"] < 0:
-                gen["initial_p_output"] = 0.
-                gen["initial_q_output"] = 0.
-            else:
-                gen["initial_p_output"] = gen["p_min"]
-                gen["initial_q_output"] = max(0., gen["q_min"])
+    #     for name, gen in md_obj.elements("generator", generator_type="thermal"):
+    #         gen["initial_status"] = unit_on_t0_state_dict[name]
+    #         if gen["initial_status"] < 0:
+    #             gen["initial_p_output"] = 0.
+    #             gen["initial_q_output"] = 0.
+    #         else:
+    #             gen["initial_p_output"] = gen["p_min"]
+    #             gen["initial_q_output"] = max(0., gen["q_min"])
 
-    else:
-        for name, gen in md_obj.elements("generator", generator_type="thermal"):
-            gen["initial_status"] = t0_state[name]["initial_status"]
-            gen["initial_p_output"] = t0_state[name]["initial_p_output"]
-            gen["initial_q_output"] = t0_state[name]["initial_q_output"]
+    # else:
+    #     for name, gen in md_obj.elements("generator", generator_type="thermal"):
+    #         gen["initial_status"] = t0_state[name]["initial_status"]
+    #         gen["initial_p_output"] = t0_state[name]["initial_p_output"]
+    #         gen["initial_q_output"] = t0_state[name]["initial_q_output"]
 
     return md_obj.data
+
+# def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_AHEAD", t0_state = None):
+
+#     """
+#     Create a model_data dictionary from the RTS-GMLC data.
+
+#     Parameters
+#     ----------
+#     rts_gmlc_dir : str
+#         Path to RTS-GMLC directory
+#     begin_time : datetime.datetime or str
+#         Beginning of time horizon. If str, date/time in "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD" format,
+#         the later of which assumes a midnight start.
+#     end_time : datetime.datetime or str
+#         End of time horizon. If str, date/time in "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD" format,
+#         the later of which assumes a midnight start.
+#     simulation : str
+#         Either "DAY_AHEAD" or "REAL_TIME", which specifies which time series the data is taken from, 
+#         default is "DAY_AHEAD".
+#     t0_state : dict or Nonetype
+#         Keys of this dict are thermal generator names, each element of which is another dictionary with
+#         keys "initial_status", "initial_p_output", and "initial_q_output", which specify whether the
+#         generator is on at t0, the real power output at t0, and the reactive power output at t0. 
+#         If this is None, default values are loaded.
+    
+#     Returns
+#     -------
+#         dict : A dictionary in the format required for the ModelData object.
+#     """
+
+#     simulation = simulation.upper()
+#     if simulation not in ["DAY_AHEAD", "REAL_TIME"]:
+#         raise ValueError('simulation must be "DAY_AHEAD" or "REAL_TIME"')
+
+#     base_dir = os.path.join(rts_gmlc_dir, 'SourceData')
+
+#     begin_time, end_time = _get_datetimes(begin_time, end_time)
+
+
+#     TimeSeriesPointer = namedtuple('TimeSeriesPointer',
+#                                    ['Object',
+#                                     'Simulation',
+#                                     'Parameter',
+#                                     'DataFile'])
+
+#     DateTimeValue = namedtuple('DateTimeValue',
+#                                ['DateTime', 'Value'])
+
+#     Load = namedtuple('Load',
+#                       ['DateTime',
+#                        'Area1',
+#                        'Area2',
+#                        'Area3'])
+
+#     timeseries_pointer_df = pd.read_csv(os.path.join(base_dir, "timeseries_pointers.csv"), header=0, sep=',')
+
+#     time_delta = end_time - begin_time
+
+#     hours = 24*time_delta.days + math.ceil(time_delta.seconds/3600.)
+
+#     model_data = _create_rtsgmlc_skeleton(rts_gmlc_dir)
+
+#     ## create an object for easy iterating
+#     md_obj = md.ModelData(model_data)
+
+#     system = md_obj.data["system"]
+#     elements = md_obj.data["elements"]
+
+#     if simulation == "DAY_AHEAD":
+#         system["time_period_length_minutes"] = 60
+#     else:
+#         system["time_period_length_minutes"] = 5
+
+#     # compute aggregate load per area, and then compute 
+#     # load participation factors from each bus from that data.
+#     region_total_load = {}
+#     areas = ["Area"+str(i) for i in range(1,4)]
+#     for this_region in areas:
+#         this_region_total_load = 0.0
+#         ## loads have exactly one bus
+#         for name, load in md_obj.elements("load"):
+#             bus = elements["bus"][load["bus"]]
+#             if bus["area"] == this_region:
+#                 this_region_total_load += load["p_load"]
+#         region_total_load[this_region] = this_region_total_load
+    
+#     # bus_load_participation_factor_dict = {}
+#     bus_Ql_over_Pl_dict = {}
+#     for name, load in md_obj.elements("load"):
+#         bus = elements["bus"][load["bus"]]
+#         # bus_load_participation_factor_dict[name] = load["p_load"] / region_total_load[bus["area"]]
+#         bus_Ql_over_Pl_dict[name] = load["q_load"] / load["p_load"]
+
+#     timeseries_pointer_dict = {}
+#     for timeseries_pointer_index in timeseries_pointer_df.index.tolist():
+#         this_timeseries_pointer_dict = timeseries_pointer_df.loc[timeseries_pointer_index].to_dict()
+#         new_timeseries_pointer = TimeSeriesPointer(this_timeseries_pointer_dict["Object"],
+#                                                    this_timeseries_pointer_dict["Simulation"],
+#                                                    this_timeseries_pointer_dict["Parameter"],
+#                                                    os.path.join(base_dir, this_timeseries_pointer_dict["Data File"]))
+    
+#         timeseries_pointer_dict[(new_timeseries_pointer.Object, new_timeseries_pointer.Simulation)] = new_timeseries_pointer
+
+#     filtered_timeseries = {}
+#     for name, gen in md_obj.elements("generator", generator_type="renewable"):
+#         if gen["fuel"] in ["Solar", "Wind", "Hydro"]:
+#             if (name, simulation) not in timeseries_pointer_dict:
+#                 print("***WARNING - No timeseries pointer entry found for generator=%s" % name)
+                
+#             else:
+#                 #print("Time series for generator=%s will be loaded from file=%s" % (name, timeseries_pointer_dict[(name,"DAY_AHEAD")].DataFile))
+#                 renewables_timeseries_df = _read_rts_gmlc_table(timeseries_pointer_dict[(name,simulation)].DataFile, simulation)
+#                 this_source_timeseries_df = renewables_timeseries_df.loc[:,["Year_Month_Day_Period", name]]
+#                 this_source_timeseries_df = this_source_timeseries_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
+
+#                 start_mask = this_source_timeseries_df["DateTime"] >= begin_time
+#                 end_mask = this_source_timeseries_df["DateTime"] < end_time
+#                 this_source_masked_timeseries_df = this_source_timeseries_df[start_mask & end_mask]
+
+#                 renewables_timeseries_dict = this_source_masked_timeseries_df.to_dict(orient='split')
+#                 renewables_timeseries = []
+#                 for this_row in renewables_timeseries_dict["data"]:
+#                     renewables_timeseries.append(DateTimeValue(this_row[0],
+#                                                                float(this_row[1])))
+#                 filtered_timeseries[name] = renewables_timeseries
+
+#     load_timeseries_spec = timeseries_pointer_dict[('load_CopperSheet', simulation)]
+#     load_timeseries_df = _read_rts_gmlc_table(load_timeseries_spec.DataFile, simulation)
+#     load_timeseries_df = load_timeseries_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
+#     start_mask = load_timeseries_df["DateTime"] >= begin_time
+#     end_mask = load_timeseries_df["DateTime"] < end_time
+#     masked_load_timeseries_df = load_timeseries_df[start_mask & end_mask]
+#     load_dict = masked_load_timeseries_df.to_dict(orient='split')
+#     load_timeseries = []
+#     for load_row in load_dict["data"]:
+#         load_timeseries.append(Load(load_row[0],
+#                                     float(load_row[1]),
+#                                     float(load_row[2]),
+#                                     float(load_row[3])))
+
+#     reserves_dfs = {}
+#     spin_reserve_categories = ["Spin_Up_R1", "Spin_Up_R2", "Spin_Up_R3"]
+
+#     other_reserve_categories = ["Reg_Down", "Reg_Up",]
+#     ## flexiramp products only in day-ahead simulation
+#     if simulation == "DAY_AHEAD":
+#         other_reserve_categories += ["Flex_Down", "Flex_Up",]
+        
+#     for reserve in spin_reserve_categories:
+#         reserves_dfs[reserve] = _read_rts_gmlc_table(timeseries_pointer_dict[(reserve, simulation)].DataFile, simulation)
+     
+
+#     reserves_dict = {}
+#     for name, reserve_df in reserves_dfs.items():
+#         reserve_df = reserve_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
+#         start_mask = reserve_df["DateTime"] >= begin_time
+#         end_mask = reserve_df["DateTime"] < end_time
+#         reserve_df = reserve_df[start_mask & end_mask]
+#         reserve_timeseries = []
+#         for this_row in reserve_df.to_dict(orient='split')["data"]:
+#             reserve_timeseries.append(DateTimeValue(this_row[0], float(this_row[1])))
+#         reserves_dict[name] = reserve_timeseries
+
+#     for reserve in other_reserve_categories:
+#         reserves_dict[reserve] = _read_rts_gmlc_reserve_table(
+#                                         timeseries_pointer_dict[(reserve, simulation)].DataFile,
+#                                         begin_time,
+#                                         end_time,
+#                                         simulation,
+#                                         )
+
+
+#     times = []
+#     for load in load_timeseries:
+#         times.append(str(load.DateTime))
+
+#     system["time_indices"] = times
+
+#     ## load into grid_network object
+#     ## First, load Pl, Ql
+#     for name, load in md_obj.elements("load"):
+#         pl_dict, ql_dict = dict(), dict()
+#         bus = elements["bus"][load["bus"]]
+#         for load_time in load_timeseries:
+#             area_load = getattr(load_time,bus["area"])
+#             pl_dict[str(load_time.DateTime)] = round(bus_load_participation_factor_dict[name]*area_load,2)
+#             ql_dict[str(load_time.DateTime)] = pl_dict[str(load_time.DateTime)]*bus_Ql_over_Pl_dict[name]
+#         load["p_load"] = _make_time_series_dict(pl_dict)
+#         load["q_load"] = _make_time_series_dict(ql_dict)
+
+#     ## load in area reserve factors
+#     area_spin_map = {'Area1':'Spin_Up_R1', 'Area2':'Spin_Up_R2', 'Area3':'Spin_Up_R3'}
+#     for name, area in md_obj.elements("area"):
+#         spin_reserve_dict = dict()
+#         for datetimevalue in reserves_dict[area_spin_map[name]]: 
+#             spin_reserve_dict[str(datetimevalue.DateTime)] = round(datetimevalue.Value,2)
+#         area["spinning_reserve_requirement"] = _make_time_series_dict(spin_reserve_dict)
+
+#     ## load in global reserve factors
+#     rts_to_egret_reserve_map = {
+#                                 "Flex_Down": "flexible_ramp_down_requirement",
+#                                 "Flex_Up" : "flexible_ramp_up_requirement",
+#                                 "Reg_Down": "regulation_down_requirement",
+#                                 "Reg_Up" : "regulation_up_requirement",
+#                                }
+#     for reserve in other_reserve_categories:
+#         system[rts_to_egret_reserve_map[reserve]] = _make_time_series_dict(reserves_dict[reserve])
+
+#     ## now load renewable generator stuff
+#     for name, gen in md_obj.elements("generator", generator_type="renewable"):
+#         if gen["fuel"] not in ["Solar", "Wind", "Hydro"]:
+#             continue
+#         renewables_timeseries = filtered_timeseries[name]
+#         ## for safety, curtailable renewables can go down to 0
+#         gen["p_min"] = 0.
+#         output_dict = dict()
+#         for datetimevalue in renewables_timeseries:
+#             output_dict[str(datetimevalue.DateTime)] = round(datetimevalue.Value,2)
+
+#         gen["p_max"] = _make_time_series_dict(output_dict)
+#         # set must-take for Hydro and RTPV
+#         if gen["unit_type"] in ["HYDRO", "RTPV"]:
+#             ## copy is for safety when overwriting
+#             gen["p_min"] = _make_time_series_dict(output_dict.copy())
+
+
+#     ## get this from the same place the prescient reader does
+#     if t0_state is None:
+#         unit_on_time_df = pd.read_csv(os.path.join(base_dir ,"../FormattedData/PLEXOS/PLEXOS_Solution/DAY_AHEAD Solution Files/noTX/on_time_7.12.csv"),
+#                                         header=0,
+#                                         sep=",")
+#         unit_on_time_df_as_dict = unit_on_time_df.to_dict(orient="split")
+#         unit_on_t0_state_dict = {} 
+#         for i in range(0,len(unit_on_time_df_as_dict["columns"])):
+#             gen_id = unit_on_time_df_as_dict["columns"][i]
+#             unit_on_t0_state_dict[gen_id] = int(unit_on_time_df_as_dict["data"][0][i])
+
+#         for name, gen in md_obj.elements("generator", generator_type="thermal"):
+#             gen["initial_status"] = unit_on_t0_state_dict[name]
+#             if gen["initial_status"] < 0:
+#                 gen["initial_p_output"] = 0.
+#                 gen["initial_q_output"] = 0.
+#             else:
+#                 gen["initial_p_output"] = gen["p_min"]
+#                 gen["initial_q_output"] = max(0., gen["q_min"])
+
+#     else:
+#         for name, gen in md_obj.elements("generator", generator_type="thermal"):
+#             gen["initial_status"] = t0_state[name]["initial_status"]
+#             gen["initial_p_output"] = t0_state[name]["initial_p_output"]
+#             gen["initial_q_output"] = t0_state[name]["initial_q_output"]
+
+#     return md_obj.data
 
 def _create_rtsgmlc_skeleton(rts_gmlc_dir):
     """
@@ -488,7 +794,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
 
     base_dir = os.path.join(rts_gmlc_dir, 'SourceData')
 
-    case_name = "RTS-GMLC"
+    case_name = ''
 
     model_data = md.ModelData.empty_model_data_dict()
 
@@ -577,12 +883,12 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
 
         elements["bus"][BUS_I] = bus_dict
 
-    # add the areas
-    area_names = ['Area1', 'Area2', 'Area3']
-    elements["area"] = {}
-    for name in area_names:
-        ## TODO: what else should be in here?
-        elements["area"][name] = dict()
+    # # add the areas
+    # area_names = ['Area1', 'Area2', 'Area3']
+    # elements["area"] = {}
+    # for name in area_names:
+    #     ## TODO: what else should be in here?
+    #     elements["area"][name] = dict()
 
 
     elements["branch"] = {}
@@ -645,156 +951,173 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
 
     # add the generators
     elements["generator"] = {}
-    RENEWABLE_TYPES = ['WIND', 'HYDRO', 'RTPV', 'PV']
+    RENEWABLE_TYPES = ['Wind', 'Hydro', 'RTPV', 'PV']
     gen_df = pd.read_csv(os.path.join(base_dir,'gen.csv'))
-    for idx,row in gen_df.iterrows():
+
+    for idx, row in gen_df.iterrows():
         name = str(row['GEN UID'])
         GEN_BUS = str(row['Bus ID'])
-        gen_dict = {"bus":GEN_BUS}
+        gen_dict = {"bus": GEN_BUS}
 
-        # if this is a renewable, hydro, or storage need to handle differently
-        # (hydro schedules in RTS-GMLC are fixed)
-        if row['Fuel'] in ['Storage']: 
-            pass
+        fuel = row['Fuel']
+
+        if fuel in RENEWABLE_TYPES:
+            gen_dict['generator_type'] = 'renewable'
+        elif fuel == 'Sync_Cond':
+            gen_dict['generator_type'] = 'thermal'
         else:
-            # NOTE: for now, prescient doesn't handle CSP -- not clear how to model
-            if row['Unit Type'] == 'CSP':
-                continue
-            ## (mostly) MATPOWER data
-            PG = float(row['MW Inj'])
-            QG = float(row['MVAR Inj'])
-            QMAX = float(row['QMax MVAR'])
-            QMIN = float(row['QMin MVAR'])
-            RAMP_Q = 1.*float(row['Ramp Rate MW/Min'])
-            VG = float(row['V Setpoint p.u.'])
-            MBASE = 100. #set in RTS-GMLC MATPOWER writer
-            GEN_STATUS = 1
-            PMAX = float(row['PMax MW'])
-            PMIN = float(row['PMin MW'])
-            FUEL = str(row['Fuel'])
-            UNIT_TYPE = str(row['Unit Type'])
+            gen_dict['generator_type'] = 'thermal'
+        
+        RAMP_UP_60 = 60.*float(row['ramp_up_mwmin'])
+        RAMP_DN_60 = 60.*float(row['ramp_down_mwmin'])
+        gen_dict["ramp_up_60min"] = RAMP_UP_60
+        gen_dict["ramp_down_60min"] = RAMP_DN_60
 
-            if UNIT_TYPE in RENEWABLE_TYPES:
-                gen_dict["generator_type"] = "renewable"
-            elif UNIT_TYPE == 'SYNC_COND':
-                ## TODO: should we have a flag for these?
-                gen_dict["generator_type"] = "thermal" 
-            else:
-                gen_dict["generator_type"] = "thermal"
-            gen_dict["bus"] = GEN_BUS
-            gen_dict["mbase"] = MBASE
-            gen_dict["in_service"] = True
-            gen_dict["pg"] = PG
-            gen_dict["qg"] = QG
-            gen_dict["vg"] = VG
-            gen_dict["p_min"] = PMIN
-            gen_dict["p_max"] = PMAX
-            gen_dict["q_min"] = QMIN
-            gen_dict["q_max"] = QMAX
-            gen_dict["ramp_q"] = RAMP_Q
-            gen_dict["fuel"] = FUEL
-            gen_dict["unit_type"] = UNIT_TYPE
-            gen_dict["area"] = elements["bus"][gen_dict["bus"]]["area"]
-            gen_dict["zone"] = elements["bus"][gen_dict["bus"]]["zone"]
+        MIN_UP_TIME = float(row['Min Up Time Hr'])
+        MIN_DN_TIME = float(row['Min Down Time Hr'])
+        gen_dict['min_up_time'] = MIN_UP_TIME
+        gen_dict['min_down_time'] = MIN_DN_TIME
 
-            # after this is only really needed for thermal units
-            if UNIT_TYPE in RENEWABLE_TYPES:
-                elements["generator"][name] = gen_dict
-                continue
+        PMAX = float(row['PMax MW'])
+        PMIN = float(row['PMin MW'])
+        gen_dict["p_min"] = round(PMIN, 2)
+        gen_dict["p_max"] = round(PMAX, 2)
 
+        # # if this is a renewable, hydro, or storage need to handle differently
+        # # (hydro schedules in RTS-GMLC are fixed)
+        # if row['Fuel'] in ['Storage']: 
+        #     pass
+        # else:
+        #     # # NOTE: for now, prescient doesn't handle CSP -- not clear how to model
+        #     # if row['Unit Type'] == 'CSP':
+        #     #     continue
+        #     ## (mostly) MATPOWER data
+        #     PG = float(row['MW Inj'])
+        #     QG = float(row['MVAR Inj'])
+        #     QMAX = float(row['QMax MVAR'])
+        #     QMIN = float(row['QMin MVAR'])
+        #     RAMP_Q = 1.*float(row['Ramp Rate MW/Min'])
+        #     VG = float(row['V Setpoint p.u.'])
+        #     MBASE = 100. #set in RTS-GMLC MATPOWER writer
+        #     GEN_STATUS = 1
+        FUEL = str(row['Fuel'])
+        UNIT_TYPE = str(row['Unit Type'])
 
-            PC1 = 0.0
-            PC2 = 0.0
-            QC1MIN = 0.0
-            QC1MAX = 0.0
-            QC2MIN = 0.0
-            QC2MAX = 0.0
-            RAMP_AGC = 1.*float(row['Ramp Rate MW/Min'])
-            RAMP_10 = 10.*float(row['Ramp Rate MW/Min'])
-            RAMP_30 = 30.*float(row['Ramp Rate MW/Min'])
-            RAMP_UP_60 = 60.*float(row['Ramp Rate MW/Min'])
-            RAMP_DN_60 = 60.*float(row['Ramp Rate MW/Min'])
-            APF = 0.0 # 0.0 from RTS-GMLC MATPOWER writer
+        gen_dict["bus"] = GEN_BUS
+        #     gen_dict["mbase"] = MBASE
+        gen_dict["in_service"] = True
+        #     gen_dict["pg"] = PG
+        #     gen_dict["qg"] = QG
+        #     gen_dict["vg"] = VG
+        #     gen_dict["q_min"] = QMIN
+        #     gen_dict["q_max"] = QMAX
+        #     gen_dict["ramp_q"] = RAMP_Q
+        gen_dict["fuel"] = FUEL
+        gen_dict["unit_type"] = UNIT_TYPE
+        #     gen_dict["area"] = elements["bus"][gen_dict["bus"]]["area"]
+        #     gen_dict["zone"] = elements["bus"][gen_dict["bus"]]["zone"]
 
-
-            # Gen cost
-            x = {}
-            ## round as in RTS-GMLC Prescient/topysp.py
-            x[0] = round(float(row['Output_pct_0'])*float(row['PMax MW']),1)
-            x[1] = round(float(row['Output_pct_1'])*float(row['PMax MW']),1)
-            x[2] = round(float(row['Output_pct_2'])*float(row['PMax MW']),1)
-            x[3] = round(float(row['Output_pct_3'])*float(row['PMax MW']),1)
-
-
-            y = {}
-            y[0] = float(row['Fuel Price $/MMBTU'])*((float(row['HR_avg_0'])*1000./ 1000000.)*x[0]) ## /1000. from the RTS-GMLC MATPOWER writer, 
-            y[1] = float(row['Fuel Price $/MMBTU'])*(((x[1]-x[0])*(float(row['HR_incr_1'])*1000. / 1000000.))) + y[0]
-            y[2] = float(row['Fuel Price $/MMBTU'])*(((x[2]-x[1])*(float(row['HR_incr_2'])*1000. / 1000000.))) + y[1]
-            y[3] = float(row['Fuel Price $/MMBTU'])*(((x[3]-x[2])*(float(row['HR_incr_3'])*1000. / 1000000.))) + y[2]
-
-            # only include the cost coeffecients that matter
-            P_COEFF = [ (x[i], round(y[i],2)) for i in range(4) if (((i == 0) or (x[i-1],y[i-1]) != (x[i], y[i])) and (x[i], y[i]) != (0.,0.)) ]
-            if P_COEFF == []:
-                P_COEFF = [(PMAX, 0.0)] 
-                
-            # UC Data
-            MIN_UP_TIME = float(row['Min Up Time Hr'])
-            MIN_DN_TIME = float(row['Min Down Time Hr'])
-
-            # Startup types and costs 
-            COLD_HEAT = float(row['Start Heat Cold MBTU'])
-            WARM_HEAT = float(row['Start Heat Warm MBTU'])
-            HOT_HEAT = float(row['Start Heat Hot MBTU'])
-
-            COLD_TIME = float(row['Start Time Cold Hr'])
-            WARM_TIME = float(row['Start Time Warm Hr'])
-            HOT_TIME = float(row['Start Time Hot Hr'])
-
-            FUEL_PRICE = float(row['Fuel Price $/MMBTU'])
-            FIXED_START_COST = float(row['Non Fuel Start Cost $'])
-
-
-            if (COLD_TIME <= MIN_DN_TIME) or (COLD_TIME == WARM_TIME == HOT_TIME):
-                STARTUP_COSTS = [(MIN_DN_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
-            elif WARM_TIME <= MIN_DN_TIME:
-                STARTUP_COSTS = [(MIN_DN_TIME, round(WARM_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
-                                 (COLD_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
-            else:
-                STARTUP_COSTS = [(MIN_DN_TIME, round(HOT_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
-                                 (WARM_TIME, round(WARM_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
-                                 (COLD_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
-
-            SHUTDOWN_COST = 0.0
-
-            gen_dict["pc1"] = PC1
-            gen_dict["pc2"] = PC2
-            gen_dict["qc1_min"] = QC1MIN
-            gen_dict["qc1_max"] = QC1MAX
-            gen_dict["qc2_min"] = QC2MIN
-            gen_dict["qc2_max"] = QC2MAX
-            gen_dict["agc_capable"] = True
-            gen_dict["p_min_agc"] = gen_dict["p_min"]
-            gen_dict["p_max_agc"] = gen_dict["p_max"]
-            gen_dict["ramp_agc"] = RAMP_AGC
-            gen_dict["ramp_10"] = RAMP_10
-            gen_dict["ramp_30"] = RAMP_30
-            gen_dict["ramp_up_60min"] = RAMP_UP_60
-            gen_dict["ramp_down_60min"] = RAMP_DN_60
-            gen_dict["power_factor"] = APF
-            gen_dict["p_cost"] = {"data_type": "cost_curve", "cost_curve_type":"piecewise", "values": P_COEFF }
-
-            gen_dict["startup_cost"] = STARTUP_COSTS
-            gen_dict["shutdown_cost"] = SHUTDOWN_COST
-            # these assumptions are the same as prescient-rtsgmlc
-            gen_dict["startup_capacity"] = PMIN
-            gen_dict["shutdown_capacity"]  = PMIN
-            gen_dict["min_up_time"] = MIN_UP_TIME
-            gen_dict["min_down_time"] = MIN_DN_TIME
-            gen_dict["must_run"] = False
-
+        #     # after this is only really needed for thermal units
+        if UNIT_TYPE in RENEWABLE_TYPES:
             elements["generator"][name] = gen_dict
+            continue
+
+        #     PC1 = 0.0
+        #     PC2 = 0.0
+        #     QC1MIN = 0.0
+        #     QC1MAX = 0.0
+        #     QC2MIN = 0.0
+        #     QC2MAX = 0.0
+        RAMP_AGC = 1.*float(row['Ramp Rate MW/Min'])
+        RAMP_10 = 10.*float(row['Ramp Rate MW/Min'])
+        RAMP_30 = 30.*float(row['Ramp Rate MW/Min'])
+        APF = 0.0 # 0.0 from RTS-GMLC MATPOWER writer
+
+        # Gen cost
+        x = {}
+        ## round as in RTS-GMLC Prescient/topysp.py
+        x[0] = round(float(row['Output_pct_0'])*float(row['PMax MW']),2)
+        x[1] = round(float(row['Output_pct_1'])*float(row['PMax MW']),2)
+        x[2] = round(float(row['Output_pct_2'])*float(row['PMax MW']),2)
+        x[3] = round(float(row['Output_pct_3'])*float(row['PMax MW']),2)
+
+        y = {}
+        y[0] = float(row['Fuel Price $/MMBTU'])*((float(row['HR_Avg_0'])*1000./ 1000000.)*x[0]) ## /1000. from the RTS-GMLC MATPOWER writer, 
+        y[1] = float(row['Fuel Price $/MMBTU'])*(((x[1]-x[0])*(float(row['HR_Incr_1'])*1000. / 1000000.))) + y[0]
+        y[2] = float(row['Fuel Price $/MMBTU'])*(((x[2]-x[1])*(float(row['HR_Incr_2'])*1000. / 1000000.))) + y[1]
+        y[3] = float(row['Fuel Price $/MMBTU'])*(((x[3]-x[2])*(float(row['HR_Incr_3'])*1000. / 1000000.))) + y[2]
+
+        # only include the cost coeffecients that matter
+        # P_COEFF = [ (x[i], round(y[i],2)) for i in range(4) if (((i == 0) or (x[i-1],y[i-1]) != (x[i], y[i])) and (x[i], y[i]) != (0.,0.)) ]
+        P_COEFF = [ (round(x[i], 2), round(y[i],2)) for i in range(4) if ((i == 0) or (x[i-1],y[i-1]) != (x[i], y[i])) ]
+
+        if P_COEFF == []:
+            P_COEFF = [(PMAX, 0.0)] 
+        
+        P_COEFF = [ x for x in P_COEFF if not any(np.isnan(x)) ]
+
+        # points = [output_pct for output_pct, hr in P_COEFF]
+
+        # if PMAX not in points:
+        #     P_COEFF.append((PMAX, P_COEFF[-1][-1]))
+
+        # UC Data
+        STARTUP_COSTS = [(MIN_DN_TIME, row['Start Cost']),]
+
+        #     # Startup types and costs 
+        #     COLD_HEAT = float(row['Start Heat Cold MBTU'])
+        #     WARM_HEAT = float(row['Start Heat Warm MBTU'])
+        #     HOT_HEAT = float(row['Start Heat Hot MBTU'])
+
+        #     COLD_TIME = float(row['Start Time Cold Hr'])
+        #     WARM_TIME = float(row['Start Time Warm Hr'])
+        #     HOT_TIME = float(row['Start Time Hot Hr'])
+
+        #     FUEL_PRICE = float(row['Fuel Price $/MMBTU'])
+        #     FIXED_START_COST = float(row['Non Fuel Start Cost $'])
+
+        #     if (COLD_TIME <= MIN_DN_TIME) or (COLD_TIME == WARM_TIME == HOT_TIME):
+        #         STARTUP_COSTS = [(MIN_DN_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
+        #     elif WARM_TIME <= MIN_DN_TIME:
+        #         STARTUP_COSTS = [(MIN_DN_TIME, round(WARM_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
+        #                          (COLD_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
+        #     else:
+        #         STARTUP_COSTS = [(MIN_DN_TIME, round(HOT_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
+        #                          (WARM_TIME, round(WARM_HEAT*FUEL_PRICE+FIXED_START_COST,2)),\
+        #                          (COLD_TIME, round(COLD_HEAT*FUEL_PRICE+FIXED_START_COST,2))]
+
+        #     SHUTDOWN_COST = 0.0
+
+        #     gen_dict["pc1"] = PC1
+        #     gen_dict["pc2"] = PC2
+        #     gen_dict["qc1_min"] = QC1MIN
+        #     gen_dict["qc1_max"] = QC1MAX
+        #     gen_dict["qc2_min"] = QC2MIN
+        #     gen_dict["qc2_max"] = QC2MAX
+        gen_dict["agc_capable"] = True
+        gen_dict["p_min_agc"] = gen_dict["p_min"]
+        gen_dict["p_max_agc"] = gen_dict["p_max"]
+        gen_dict["ramp_agc"] = RAMP_AGC
+        gen_dict["ramp_10"] = RAMP_10
+        gen_dict["ramp_30"] = RAMP_30
+        gen_dict["ramp_up_60min"] = RAMP_UP_60
+        gen_dict["ramp_down_60min"] = RAMP_DN_60
+        gen_dict["power_factor"] = APF
+        gen_dict["p_cost"] = {"data_type": "cost_curve", "cost_curve_type":"piecewise", "values": P_COEFF }
+
+        gen_dict["startup_cost"] = STARTUP_COSTS
+        #     gen_dict["shutdown_cost"] = SHUTDOWN_COST
+        # these assumptions are the same as prescient-rtsgmlc
+        gen_dict["startup_capacity"] = PMIN
+        gen_dict["shutdown_capacity"]  = PMIN
+        gen_dict["must_run"] = False
+
+        elements['generator'][name] = gen_dict
 
     return model_data
+
+def _read_table(file_name, simulation):
+    return pd.read_csv(file_name)
 
 def _read_rts_gmlc_table(file_name, simulation):
     if simulation == "DAY_AHEAD":
@@ -865,8 +1188,8 @@ def _get_datetimes(begin_time, end_time):
         raise ValueError("Unable to parse end_time")
 
     # stay in the times provided
-    assert begin_time >= datetime(year=2020, month=1, day=1)
-    assert end_time < datetime(year=2021, month=1, day=1)
+    # assert begin_time >= datetime(year=2020, month=1, day=1)
+    # assert end_time < datetime(year=2021, month=1, day=1)
 
     # We only take times in whole hours (for now)
     assert (begin_time.minute == 0. and begin_time.second == 0. and begin_time.microsecond == 0.)
