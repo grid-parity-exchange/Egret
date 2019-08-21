@@ -100,6 +100,7 @@ def load_params(model, model_data):
     thermal_gens = dict(md.elements(element_type='generator', generator_type='thermal'))
     renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
     buses = dict(md.elements(element_type='bus'))
+    shunts = dict(md.elements(element_type='shunt'))
     branches = dict(md.elements(element_type='branch'))
     storage = dict(md.elements(element_type='storage'))
 
@@ -117,6 +118,18 @@ def load_params(model, model_data):
     thermal_gens_by_bus = tx_utils.gens_by_bus(buses, thermal_gens)
     renewable_gens_by_bus = tx_utils.gens_by_bus(buses, renewable_gens)
     storage_by_bus = tx_utils.gens_by_bus(buses, storage)
+
+    ### get the fixed shunts at the buses
+    bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+
+    ## attach some of these to the model object for ease/speed later
+    #model._loads = loads
+    model._buses = buses
+    model._branches = branches
+    model._shunts = shunts
+    model._bus_gs_fixed_shunts = bus_gs_fixed_shunts
+    #model._bus_bs_fixed_shunts = bus_bs_fixed_shunts
+    #model._TimeMapper = TimeMapper
 
     #
     # Parameters
@@ -478,18 +491,32 @@ def load_params(model, model_data):
     
     def startup_lags_init_rule(m, g):
         startup_cost = thermal_gens[g].get('startup_cost')
-        if startup_cost is None:
+        startup_fuel = thermal_gens[g].get('startup_fuel')
+        if startup_cost is not None and startup_fuel is not None:
+            print("WARNING: found startup_fuel for generator {}, ignoring startup_cost".format(g))
+        if startup_fuel is None and startup_cost is None:
             return [value(m.MinimumDownTime[g])] 
+        elif startup_cost is None:
+            return [i[0] for i in startup_fuel]
         else:
             return [i[0] for i in startup_cost]
     model.StartupLags = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_lags_init_rule) # units are hours / time periods.
     
     def startup_costs_init_rule(m, g):
         startup_cost = thermal_gens[g].get('startup_cost')
-        if startup_cost is None:
-            return [0.0] 
+        startup_fuel = thermal_gens[g].get('startup_fuel')
+        fixed_startup_cost = thermal_gens[g].get('non_fuel_startup_cost')
+        if fixed_startup_cost is None:
+            fixed_startup_cost = 0.
+        if startup_fuel is None and startup_cost is None:
+            return [fixed_startup_cost]
+        elif startup_cost is None:
+            fuel_cost = thermal_gens[g].get('fuel_cost')
+            if fuel_cost is None:
+                raise Exception("No fuel cost for generator {}, but data is provided for fuel tracking".format(g))
+            return [fixed_startup_cost+fuel_cost*i[1] for i in startup_fuel]
         else:
-            return [i[1] for i in startup_cost]
+            return [fixed_startup_cost+i[1] for i in startup_cost]
     model.StartupCosts = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_costs_init_rule) # units are $.
     
     # startup lags must be monotonically increasing...
@@ -588,9 +615,8 @@ def load_params(model, model_data):
     # these *must* include the minimum and maximum power output points - a validation check
     # if performed below.
     # 
-    # CostPiecewiseValues are the absolute heat rates / costs associated with the corresponding 
-    # power output levels. the precise interpretation of whether a value is a heat rate or a cost
-    # depends on the value of the FuelCost parameter, specified below.
+    # CostPiecewiseValues are the absolute costs associated with the corresponding
+    # power output levels.
     
     # there are many ways to interpret the cost piecewise point/value data, when translating into
     # an actual piecewise construct for the model. this interpretation is controlled by the following
@@ -616,16 +642,34 @@ def load_params(model, model_data):
 
     def get_piecewise_tuple_index(g, tuple_index):
         cost = thermal_gens[g].get('p_cost')
-        if cost is None:
+        fuel = thermal_gens[g].get('p_fuel')
+        fuel_cost = thermal_gens[g].get('fuel_cost')
+        fixed_no_load = thermal_gens[g].get('non_fuel_no_load_cost')
+        if cost is None and fuel is None and fixed_no_load is None:
             return list()
-        elif cost['data_type'] != 'cost_curve':
-            raise Exception("p_cost must be of data_type cost_curve.")
-        elif cost['cost_curve_type'] == 'polynomial':
-            return list()
-        elif cost['cost_curve_type'] == 'piecewise':
-            return (i[tuple_index] for i in cost['values'])
+        if fixed_no_load is None or (tuple_index == 0): ## don't add for cost piecewise points
+            fixed_no_load = 0.
+        if cost is not None and fuel is not None:
+            print("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
+        if fuel is None:
+            if cost['data_type'] != 'cost_curve':
+                raise Exception("p_cost must be of data_type cost_curve.")
+            elif cost['cost_curve_type'] == 'polynomial':
+                return list()
+            elif cost['cost_curve_type'] == 'piecewise':
+                return (fixed_no_load + i[tuple_index] for i in cost['values'])
+            else:
+                raise Exception("Unexpected cost_curve type")
         else:
-            raise Exception("Unexpected cost_curve type")
+            if fuel['data_type'] != 'fuel_curve':
+                raise Exception("p_cost must be of data_type fuel_curve for generator {}".format(g))
+            if fuel_cost is None:
+                raise Exception("must supply fuel costs for generator {} with p_fuel".format(g))
+            if tuple_index == 0: ## don't multiply for cost piecewise points
+                return (i[tuple_index] for i in fuel['values'])
+            return (fixed_no_load + fuel_cost*i[tuple_index] for i in fuel['values'])
+
+
     
     def piecewise_points_init(m, g):
         return get_piecewise_tuple_index(g, 0)
@@ -681,18 +725,14 @@ def load_params(model, model_data):
 
     model.ValidateCostPiecewisePoints = BuildCheck(model.ThermalGenerators, rule=validate_cost_piecewise_points_and_values_rule)
     
-    # Sets the cost of fuel to the generator.  Defaults to 1 so that we could just input cost as heat rates.
-    model.FuelCost = Param(model.ThermalGenerators, default=1.0) 
-    
     # Minimum production cost (needed because Piecewise constraint on ProductionCost 
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
     # back in to the objective if a unit is on
     def minimum_production_cost(m, g):
         if len(m.CostPiecewisePoints[g]) > 1:
-            return m.CostPiecewiseValues[g].first() * m.FuelCost[g]
+            return m.CostPiecewiseValues[g].first()
         else:
-            return  m.FuelCost[g] * \
-                   (m.ProductionCostA0[g] + \
+            return (m.ProductionCostA0[g] + \
                     m.ProductionCostA1[g] * m.MinimumPowerOutput[g] + \
                     m.ProductionCostA2[g] * (m.MinimumPowerOutput[g]**2))
     model.MinimumProductionCost = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=minimum_production_cost, mutable=True)
@@ -722,17 +762,13 @@ def load_params(model, model_data):
     # NOTE: the values are relative to the minimum production cost, i.e., the values represent
     # incremental costs relative to the minimum production cost.
     
-    # IMPORTANT: These values are *not* scaled by the FuelCost of the generator. This scaling is
-    #            performed subsequently, in the "_production_cost_function" code, which is used
-    #            by Piecewise to compute the production cost of the generator. all values must
-    #            be non-negative.
     model.PowerGenerationPiecewiseValues = {}
     
     def power_generation_piecewise_points_rule(m, g, t):
     
         # factor out the fuel cost here, as the piecewise approximation is scaled by fuel cost
         # elsewhere in the model (i.e., in the Piecewise construct below).
-        minimum_production_cost = value(m.MinimumProductionCost[g]) / value(m.FuelCost[g])
+        minimum_production_cost = value(m.MinimumProductionCost[g])
     
         # minimum output
         minimum_power_output = value(m.MinimumPowerOutput[g])
@@ -818,6 +854,46 @@ def load_params(model, model_data):
     model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, default=BigPenalty/2., mutable=True, initialize=system.get('q_load_mismatch_cost'))
 
     ## END PRODUCTION COST CALCULATIONS
+
+    ## FUEL-SUPPLY Sets
+
+    def fuel_supply_gens_init(m):
+        if 'fuel_supply' not in elements and ('fuel_supply' in thermal_gen_attrs or 'aux_fuel_supply' in thermal_gen_attrs):
+            print('WARNING: Some generators have \'fuel_supply\' marked, but no fuel supply was found on ModelData.data[\'system\']')
+            return iter(())
+        if 'fuel_supply' in elements and ('fuel_supply' not in thermal_gen_attrs and 'aux_fuel_supply' not in thermal_gen_attrs):
+            print('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
+            return iter(())
+        if 'fuel_supply' not in thermal_gen_attrs:
+            thermal_gen_attrs['fuel_supply'] = dict()
+        if 'aux_fuel_supply' not in thermal_gen_attrs:
+            thermal_gen_attrs['aux_fuel_supply'] = dict()
+        gen_set = set(thermal_gen_attrs['fuel_supply'].keys())
+        gen_set.update(thermal_gen_attrs['aux_fuel_supply'].keys())
+        return gen_set
+
+    def gen_cost_fuel_validator(m,g):
+        if 'p_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['p_fuel']:
+            pass
+        else:
+            print('ERROR: All fuel-constrained generators must have "p_fuel" attribute which tracks their fuel consumption')
+            print('ERROR: Could not find such an attribute for generator {}'.format(g))
+            return False
+        return True
+
+    model.FuelSupplyGenerators = Set(within=model.ThermalGenerators, initialize=fuel_supply_gens_init, validate=gen_cost_fuel_validator)
+
+    ## DUAL-FUEL Sets
+
+    def dual_fuel_init(m):
+        for g, g_dict in thermal_gens.items():
+            if 'aux_fuel_capable' in g_dict and g_dict['aux_fuel_capable']:
+                yield g
+    model.DualFuelGenerators = Set(within=model.ThermalGenerators, initialize=dual_fuel_init)
+
+    ## This set is for modeling elements that are exhanged
+    ## in whole for the dual-fuel model
+    model.SingleFuelGenerators = model.ThermalGenerators - model.DualFuelGenerators
 
     #
     # STORAGE parameters
