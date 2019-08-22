@@ -41,6 +41,12 @@ def declare_var_pf(model, index_set, **kwargs):
     """
     decl.declare_var('pf', model=model, index_set=index_set, **kwargs)
 
+def declare_expr_pf(model, index_set, **kwargs):
+    """
+    Create expression for the real part of the power flow in the "from"
+    end of the transmission line
+    """
+    decl.declare_expr('pf', model=model, index_set=index_set, **kwargs)
 
 def declare_var_qf(model, index_set, **kwargs):
     """
@@ -360,113 +366,124 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
                 g * (m.dva[branch_name])**2
 
 
-def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p_loads, gens_by_bus,
-                                        bus_gs_fixed_shunts, ptdf_tol = 1e-10,
-                                        approximation_type = ApproximationType.PTDF):
+def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
     """
-    Create the equality constraints for power (from PTDF approximation)
-    in the branch
+    Create a pyomo power flow expression from PTDF matrix
     """
+
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
+    expr = PTDF.get_branch_phase_shift(branch_name)
+
+    max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
+    ## This case is weird, but could happen, causing divison by 0 below
+    if max_coef == 0:
+        return expr
+    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
+    ##       if we wanted to
+    for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+        if abs(coef) < abs_ptdf_tol:
+            ## no point in excuting the rest of the for loop
+            continue
+        if abs(coef)/max_coef < rel_ptdf_tol:
+            ## no point in excuting the rest of the for loop
+            continue
+        phi_adjust = PTDF.get_bus_phi_adj(bus_name)
+
+        expr += coef*model.p_nw[bus_name]+coef*phi_adjust
+
+    return expr
+
+
+def declare_eq_branch_power_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create the equality constraints or expressions for power (from PTDF 
+    approximation) in the branch
+    """
+
     m = model
 
     con_set = decl.declare_set("_con_eq_branch_power_ptdf_approx_set", model, index_set)
 
-    m.eq_pf_branch = pe.Constraint(con_set)
+    pf_is_var = isinstance(m.pf, pe.Var)
+
+    if pf_is_var:
+        m.eq_pf_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.pf, pe.Expression):
+            raise Exception("Unrecognized type for m.pf", m.pf.pprint())
+
     for branch_name in con_set:
-        branch = branches[branch_name]
-        expr = 0
+        expr = \
+            get_power_flow_expr_ptdf_approx(m, branch_name, PTDF, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
 
-        tau = 1.0
-        shift = 0.0
-        if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
-
-        if approximation_type == ApproximationType.PTDF:
-            ptdf = branch['ptdf']
-            if shift != 0.:
-                b = -(1 / branch['reactance'])
-                expr += b * (shift / tau)
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            ptdf = branch['ptdf_r']
-            if shift != 0.:
-                b = tx_calc.calculate_susceptance(branch)
-                expr += b * (shift / tau)
-
-        for bus_name, coef in ptdf.items():
-            if ptdf_tol and abs(coef) < ptdf_tol:
-                continue
-            bus = buses[bus_name]
-            phi_from = bus['phi_from']
-            phi_to = bus['phi_to']
-
-            if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_gs_fixed_shunts[bus_name]
-
-            if bus_p_loads[bus_name] != 0.0:
-                expr += coef * m.pl[bus_name]
-
-            for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.pg[gen_name]
-
-            for _, phi in phi_from.items():
-                expr += coef * phi
-
-            for _, phi in phi_to.items():
-                expr -= coef * phi
-
-        m.eq_pf_branch[branch_name] = \
-            m.pf[branch_name] == expr
+        if pf_is_var:
+            m.eq_pf_branch[branch_name] = \
+                m.pf[branch_name] == expr
+        else:
+            m.pf[branch_name] = expr
 
 
-def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ldf_tol = 1e-10):
+def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None): 
     """
-    Create the equality constraints for losses (from PTDF approximation)
-    in the branch
+    Create a pyomo power flow loss expression from PTDF matrix
+    """
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
+    expr = PTDF.get_branch_losses_phase_shift(branch_name)
+    expr += PTDF.get_branch_ldf_c(branch_name)
+
+    max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
+
+    if max_coef == 0:
+        return expr
+
+    ## NOTE: It would be easy to hold on to the 'ldf' dictionary here,
+    ##       if we wanted to
+    for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
+        if abs(coef) < abs_ptdf_tol:
+            ## no point in excuting the rest of the for loop
+            continue
+        if abs(coef)/max_coef < rel_ptdf_tol:
+            ## no point in excuting the rest of the for loop
+            continue
+        phi_losses_adjust = PTDF.get_bus_phi_losses_adj(bus_name)
+
+        expr += coef*model.p_nw[bus_name]+coef*phi_losses_adjust
+
+    return expr
+
+
+def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create the equality constraints or expressions for losses (from PTDF 
+    approximation) in the branch
     """
     m = model
 
     con_set = decl.declare_set("_con_eq_branch_loss_ptdf_approx_set", model, index_set)
+    pfl_is_var = isinstance(m.pfl, pe.Var)
+    if pfl_is_var:
+        m.eq_pfl_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.pfl, pe.Expression):
+            raise Exception("Unrecognized type for m.pfl", m.pfl.pprint())
 
-    m.eq_pfl_branch = pe.Constraint(con_set)
     for branch_name in con_set:
-        branch = branches[branch_name]
-        expr = 0
+        expr = \
+            get_branch_loss_expr_ptdf_approx(m, branch_name, PTDF, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
 
-        if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
-            g = tx_calc.calculate_conductance(branch)
-            expr += (g/tau) * shift**2
-
-        ldf = branch['ldf']
-        for bus_name, coef in ldf.items():
-            if ldf_tol and abs(coef) < ldf_tol:
-                continue
-            bus = buses[bus_name]
-            phi_loss_from = bus['phi_loss_from']
-            phi_loss_to = bus['phi_loss_to']
-
-            if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_gs_fixed_shunts[bus_name]
-
-            if bus_p_loads[bus_name] != 0.0:
-                expr += coef * m.pl[bus_name]
-
-            for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.pg[gen_name]
-
-            for _, phi_loss in phi_loss_from.items():
-                expr += coef * phi_loss
-
-            for _, phi_loss in phi_loss_to.items():
-                expr -= coef * phi_loss
-
-        expr += branch['ldf_c']
-
-        m.eq_pfl_branch[branch_name] = \
-            m.pfl[branch_name] == expr
-
+        if pfl_is_var:
+            m.eq_pfl_branch[branch_name] = \
+                m.pfl[branch_name] == expr
+        else:
+            m.pfl[branch_name] = expr
 
 def declare_ineq_s_branch_thermal_limit(model, index_set,
                                         branches, s_thermal_limits,
@@ -513,7 +530,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
                                         approximation_type=ApproximationType.BTHETA):
     """
     Create the inequality constraints for the branch thermal limits
-    based on the power variables.
+    based on the power variables or expressions.
     """
     m = model
     con_set = decl.declare_set('_con_ineq_p_branch_thermal_lbub',
@@ -522,7 +539,9 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
     m.ineq_pf_branch_thermal_lb = pe.Constraint(con_set)
     m.ineq_pf_branch_thermal_ub = pe.Constraint(con_set)
 
-    if approximation_type == ApproximationType.BTHETA:
+    if approximation_type == ApproximationType.BTHETA or \
+            (approximation_type == ApproximationType.PTDF and \
+            isinstance(m.pf, pe.Expression)):
         for branch_name in con_set:
             if p_thermal_limits[branch_name] is None:
                 continue

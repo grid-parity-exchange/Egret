@@ -24,7 +24,9 @@ import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 
 import egret.data.data_utils as data_utils
-from egret.model_library.defn import CoordinateType, ApproximationType, RelaxationType
+import egret.common.lazy_ptdf_utils as lpu
+
+from egret.model_library.defn import CoordinateType, ApproximationType, RelaxationType, BasePointType
 from egret.data.model_data import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack
 from egret.models.dcopf import _include_feasibility_slack
@@ -183,11 +185,17 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     return model, md
 
 
-def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False):
+def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options=None):
+    if ptdf_options is None:
+        ptdf_options = dict()
+
+    lpu.populate_default_ptdf_options(ptdf_options)
+
+    baseMVA = model_data.data['system']['baseMVA']
+    lpu.check_and_scale_ptdf_options(ptdf_options, baseMVA)
+
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
-
-    data_utils.create_dicts_of_ptdf_losses(md)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -227,28 +235,30 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False):
     if include_feasibility_slack:
         p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
 
+    ### declare net withdraw expression for use in PTDF power flows
+    libbus.declare_expr_p_net_withdraw_at_bus(model=model,
+                                              index_set=bus_attrs['names'],
+                                              bus_p_loads=bus_p_loads,
+                                              gens_by_bus=gens_by_bus,
+                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                              )
+
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    pf_bounds = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
-    pf_init = dict()
-    for branch_name, branch in branches.items():
-        from_bus = branch['from_bus']
-        to_bus = branch['to_bus']
-        y_matrix = tx_calc.calculate_y_matrix_from_branch(branch)
-        ifr_init = tx_calc.calculate_ifr(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
-                                         vj_init[to_bus], y_matrix)
-        ifj_init = tx_calc.calculate_ifj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
-                                         vj_init[to_bus], y_matrix)
-        pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
     pfl_bounds = {k: (-p_max[k]**2,p_max[k]**2) for k in branches.keys()}
     pfl_init = {k: 0 for k in branches.keys()}
 
-    libbranch.declare_var_pf(model=model,
+    ## Do and store PTDF calculation
+    reference_bus = md.data['system']['reference_bus']
+    ## We'll assume we have a solution to initialize from
+    base_point = BasePointType.SOLUTION
+
+    PTDF = data_utils.PTDFLossesMatrix(branches, buses, reference_bus, base_point)
+    model._PTDF = PTDF
+    model._ptdf_options = ptdf_options
+
+    libbranch.declare_expr_pf(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=pf_init,
-                             bounds=pf_bounds
                              )
 
     libbranch.declare_var_pfl(model=model,
@@ -260,23 +270,18 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False):
     ### declare the branch power flow approximation constraints
     libbranch.declare_eq_branch_power_ptdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  buses=buses,
-                                                  bus_p_loads=bus_p_loads,
-                                                  gens_by_bus=gens_by_bus,
-                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  approximation_type=ApproximationType.PTDF_LOSSES
+                                                  PTDF=PTDF,
+                                                  abs_ptdf_tol=ptdf_options['abs_ptdf_tol'],
+                                                  rel_ptdf_tol=ptdf_options['rel_ptdf_tol'],
                                                   )
 
     ### declare the branch power loss approximation constraints
     libbranch.declare_eq_branch_loss_ptdf_approx(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  buses=buses,
-                                                  bus_p_loads=bus_p_loads,
-                                                  gens_by_bus=gens_by_bus,
-                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts
-                                                  )
+                                                 index_set=branch_attrs['names'],
+                                                 PTDF=PTDF,
+                                                 abs_ptdf_tol=ptdf_options['abs_ptdf_tol'],
+                                                 rel_ptdf_tol=ptdf_options['rel_ptdf_tol'],
+                                                 )
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
@@ -372,17 +377,32 @@ def solve_dcopf_losses(model_data,
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
 
-    for b,b_dict in buses.items():
-        b_dict['pl'] = value(m.pl[b])
-        b_dict.pop('qlmp',None)
-        if dcopf_losses_model_generator == create_btheta_losses_dcopf_model:
+    if dcopf_losses_model_generator == create_btheta_losses_dcopf_model:
+        for b,b_dict in buses.items():
+            b_dict['pl'] = value(m.pl[b])
+            b_dict.pop('qlmp',None)
             b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
             b_dict['va'] = value(m.va[b])
-        if dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:
+    elif dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:
+        PTDF = m._PTDF
+        ptdf_r = PTDF.PTDFM
+        ldf = PTDF.LDF
+        buses_idx = PTDF.buses_keys
+        branches_idx = PTDF.branches_keys
+
+        for j, b in enumerate(buses_idx):
+            b_dict = buses[b]
+            b_dict['pl'] = value(m.pl[b])
+            b_dict.pop('qlmp',None)
+
             b_dict['lmp'] = value(m.dual[m.eq_p_balance])
-            for k, k_dict in branches.items():
-                b_dict['lmp'] += k_dict['ptdf_r'][b]*value(m.dual[m.eq_pf_branch[k]])
-                b_dict['lmp'] += k_dict['ldf'][b]*value(m.dual[m.eq_pfl_branch[k]])
+            for i, k in enumerate(branches_idx):
+                b_dict['lmp'] += ptdf_r[i,j]*value(m.dual[m.ineq_pf_branch_thermal_lb[k]])
+                b_dict['lmp'] += ptdf_r[i,j]*value(m.dual[m.ineq_pf_branch_thermal_ub[k]])
+                b_dict['lmp'] += ldf[i,j]*value(m.dual[m.eq_pfl_branch[k]])
+
+    else:
+        raise Exception("Unrecognized dcopf_losses_model_generator {}".format(dcopf_losses_model_generator))
 
     for k, k_dict in branches.items():
         k_dict['pf'] = value(m.pf[k])
@@ -398,19 +418,19 @@ def solve_dcopf_losses(model_data,
     return md
 
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
+#if __name__ == '__main__':
+#    import os
+#    from egret.parsers.matpower_parser import create_ModelData
 #
-#     path = os.path.dirname(__file__)
-#     filename = 'pglib_opf_case300_ieee.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
+#    path = os.path.dirname(__file__)
+#    filename = 'pglib_opf_case300_ieee.m'
+#    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+#    md = create_ModelData(matpower_file)
 #
-#     kwargs = {'include_feasibility_slack':False}
-#     md_btheta, m_btheta, results_btheta = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
+#    kwargs = {'include_feasibility_slack':False}
+#    md_btheta, m_btheta, results_btheta = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
 #
-#     from acopf import solve_acopf
-#     md = create_ModelData(matpower_file)
-#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-#     md_ptdf, m_ptdf, results_ptdf = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
+#    from acopf import solve_acopf
+#    md = create_ModelData(matpower_file)
+#    model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
+#    md_ptdf, m_ptdf, results_ptdf = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model, return_model=True, return_results=True, **kwargs)

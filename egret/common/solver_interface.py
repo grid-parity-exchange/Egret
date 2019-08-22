@@ -10,7 +10,7 @@
 """
 This file includes the solver interfaces for EGRET.
 """
-from pyomo.opt import SolverFactory, TerminationCondition
+import pyomo.opt as po
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
 
@@ -73,7 +73,8 @@ def _solve_model(model,
                  timelimit = None,
                  solver_tee = True,
                  symbolic_solver_labels = False,
-                 options = None):
+                 options = None,
+                 return_solver = False):
     '''
     Create and solve an Egret power system optimization model
 
@@ -94,6 +95,8 @@ def _solve_model(model,
         Use symbolic solver labels. Useful for debugging; default is False.
     options : dict (optional)
         Other options to pass into the solver. Default is dict().
+    return_solver : bool (optional)
+        Returns the solver object
 
     Returns
     -------
@@ -104,21 +107,21 @@ def _solve_model(model,
 
     ## termination conditions which are acceptable
     safe_termination_conditions = [
-                                   TerminationCondition.maxTimeLimit,
-                                   TerminationCondition.maxIterations,
-                                   TerminationCondition.minFunctionValue,
-                                   TerminationCondition.minStepLength,
-                                   TerminationCondition.globallyOptimal,
-                                   TerminationCondition.locallyOptimal,
-                                   TerminationCondition.feasible,
-                                   TerminationCondition.optimal,
-                                   TerminationCondition.maxEvaluations,
-                                   TerminationCondition.other,
+                                   po.TerminationCondition.maxTimeLimit,
+                                   po.TerminationCondition.maxIterations,
+                                   po.TerminationCondition.minFunctionValue,
+                                   po.TerminationCondition.minStepLength,
+                                   po.TerminationCondition.globallyOptimal,
+                                   po.TerminationCondition.locallyOptimal,
+                                   po.TerminationCondition.feasible,
+                                   po.TerminationCondition.optimal,
+                                   po.TerminationCondition.maxEvaluations,
+                                   po.TerminationCondition.other,
                                   ]
 
     if isinstance(solver, str):
-        solver = SolverFactory(solver)
-    elif isinstance(solver, pyomo.opt.base.OptSolver):
+        solver = po.SolverFactory(solver)
+    elif isinstance(solver, po.base.OptSolver):
         pass
     else:
         raise Exception('solver must be string or an instanciated pyomo solver')
@@ -133,6 +136,8 @@ def _solve_model(model,
                               symbolic_solver_labels=symbolic_solver_labels)
 
     if results.solver.termination_condition not in safe_termination_conditions:
-        raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.terminataion_condition))
+        raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))
 
+    if return_solver:
+        return model, results, solver
     return model, results

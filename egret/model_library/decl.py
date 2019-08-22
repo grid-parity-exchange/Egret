@@ -39,3 +39,15 @@ def declare_set(setname, model, index_set, **kwargs):
     pyomo_index_set = pe.Set(initialize=index_set, **kwargs)
     model.add_component(setname, pyomo_index_set)
     return pyomo_index_set
+
+def declare_expr(exprname, model, index_set, **kwargs):
+    # create var if index set is None
+    if index_set is None:
+        model.add_component(exprname, pe.Expression(**kwargs))
+    # transform the index set into a Pyomo Set
+    else:
+        pyomo_index_set = pe.Set(initialize=index_set, ordered=True)
+        model.add_component("_expr_{}_index_set".format(exprname), pyomo_index_set)
+
+        # now create the expr
+        model.add_component(exprname, pe.Expression(pyomo_index_set, **kwargs))
