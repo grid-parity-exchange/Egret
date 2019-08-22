@@ -28,7 +28,7 @@ from math import pi
 
 component_name = 'power_balance'
 
-def _copperplate_relax_network_model(md,block,tm,td):
+def _copperplate_relax_network_model(block,tm):
     m = block.model()
 
     ## this is not the "real" gens by bus, but the
@@ -53,7 +53,7 @@ def _copperplate_relax_network_model(md,block,tm,td):
                                    )
 
 
-def _copperplate_approx_network_model(md,block,tm,td):
+def _copperplate_approx_network_model(block,tm):
     m = block.model()
 
     ## this is not the "real" gens by bus, but the
@@ -76,7 +76,7 @@ def _copperplate_approx_network_model(md,block,tm,td):
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                    )
 
-def _ptdf_dcopf_network_model(md,block,tm,td):
+def _ptdf_dcopf_network_model(block,tm):
     m = block.model()
 
     buses = m._buses
@@ -127,7 +127,7 @@ def _ptdf_dcopf_network_model(md,block,tm,td):
     if branches_out_service not in m._PTDFs:
         buses_idx = tuple(buses.keys())
 
-        reference_bus = md.data['system']['reference_bus']
+        reference_bus = value(m.ReferenceBus)
 
         PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx)
         
@@ -174,7 +174,7 @@ def _ptdf_dcopf_network_model(md,block,tm,td):
                                                      )
 
 
-def _btheta_dcopf_network_model(md,block,tm,td):
+def _btheta_dcopf_network_model(block,tm):
     m = block.model()
 
     buses = m._buses
@@ -219,14 +219,9 @@ def _btheta_dcopf_network_model(md,block,tm,td):
                           )
 
     ### fix the reference bus
-    ref_bus = md.data['system']['reference_bus']
-    block.va[ref_bus].fix(0.0)
-
-    ref_angle = md.data['system']['reference_bus_angle']
-    if ref_angle != 0.0:
-        raise ValueError('The BTHETA DCOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
+    ref_bus = value(m.ReferenceBus)
+    ref_angle = value(m.ReferenceBusAngle)
+    block.va[ref_bus].fix(math.radians(ref_angle))
 
     p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
     p_lbub = {k: (-p_max[k],p_max[k]) for k in branches_in_service}
@@ -280,16 +275,9 @@ def _add_system_load_mismatch(model):
     model.posLoadGenerateMismatch = Var(model.TimePeriods, within=NonNegativeReals) # load shedding
     model.negLoadGenerateMismatch = Var(model.TimePeriods, within=NonNegativeReals) # over generation
 
-    md = model.model_data
-
-    if 'reference_bus' in md.data['system'] and md.data['system']['reference_bus'] in model.Buses:
-        reference_bus = md.data['system']['reference_bus']
-    else:
-        reference_bus = list(sorted(m.Buses))[0]
-    
     ## for interfacing with the rest of the model code
     def define_pos_neg_load_generate_mismatch_rule(m, b, t):
-        if b == reference_bus:
+        if b == value(m.ReferenceBus):
             return m.posLoadGenerateMismatch[t] - m.negLoadGenerateMismatch[t]
         else:
             return 0
@@ -492,12 +480,10 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
         else:
             _add_blank_q_load_mistmatch(model)
 
-    md = model.model_data
-
     # for transmission network
     model.TransmissionBlock = Block(model.TimePeriods, concrete=True)
 
-    for tm, td in zip(model.TimePeriods, md.data['system']['time_indices']):
+    for tm in model.TimePeriods:
         b = model.TransmissionBlock[tm]
         ## this creates a fake bus generator for all the
         ## appropriate injection/withdraws from the unit commitment
@@ -506,8 +492,7 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
         if reactive_power:
             b.qg = Expression(model.Buses, rule=_get_qg_expr_rule(tm))
         b.gens_by_bus = {bus : [bus] for bus in model.Buses}
-        md_t = md.clone_at_timestamp(td)
-        network_model_builder(md_t,b,tm,td)
+        network_model_builder(b,tm)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
