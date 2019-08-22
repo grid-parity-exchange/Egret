@@ -44,17 +44,35 @@ GENERATION_TYPES = {
     'SC': GenerationType('SynchCond', '#fff68f')
 }
 
-
 FUEL_TO_CODE = {
     'Oil': 'O',
     'Coal': 'C',
     'NG': 'G',
+    'Gas': 'G',
+    'PV': 'S',
     'Nuclear': 'N',
     'Hydro': 'H',
     'Solar': 'S',
     'Wind': 'W',
     'Sync_Cond': 'SC',
+    'Biomass': 'B',
                }
+
+GENERATION_TYPE_SORT_KEY = {
+    'Nuclear': 0,
+    'Coal': 1,
+    'Hydro': 2,
+    'Gas': 3,
+    'NG': 3,
+    'Oil': 4,
+    'Sync_Cond': 5,
+    'Wind': 6,
+    'Solar': 7,
+    'PV': 7,
+    'Biomass': 8,
+    'Geothermal': 9,
+    'Battery': 10,
+}
 
 
 def _fuel_type_to_code(x):
@@ -116,9 +134,12 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 raise ValueError('There are too many generators in the system to support plotting output individually. (maximum: {0})'.format(INDIVIDUAL_GEN_PLOT_UPPER_LIMIT))
 
             for generator, generator_data in egret_model_data.data['elements']['generator'].items():
-                is_quickstart = generator_data.get('quickstart_capable', False)
-
                 pg_array = attribute_to_array(generator_data['pg'])
+
+                if not sum(pg_array) > 0.0:
+                    continue
+
+                is_quickstart = generator_data.get('quickstart_capable', False)
 
                 if is_quickstart:
                     quickstart_label = 'quickstart'
@@ -139,10 +160,13 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
             generator_generation_by_fuel_type = {}
 
             for generator, generator_data in egret_model_data.data['elements']['generator'].items():
+                pg_array = attribute_to_array(generator_data['pg'])
+
+                if not sum(pg_array) > 0.0:
+                    continue
+
                 fuel_type = generator_data['fuel']
                 is_quickstart = generator_data.get('quickstart_capable', False)
-
-                pg_array = attribute_to_array(generator_data['pg'])
 
                 if is_quickstart:
                     quickstart_label = 'quickstart'
@@ -155,16 +179,18 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     generator_generation_by_fuel_type[fuel_type] = []
                     generator_generation_by_fuel_type[fuel_type].append((pg_array, quickstart_label))
             
-            for fuel_type, generator_output_levels in generator_generation_by_fuel_type.items():
+            sorted_total_generation_by_fuel_type = sorted(generator_generation_by_fuel_type.items(), key=lambda x: GENERATION_TYPE_SORT_KEY.get(x[0], 1e3))
+
+            for generation_type, generator_output_levels in sorted_total_generation_by_fuel_type:
                 try:
-                    component_label = GENERATION_TYPES[fuel_type].label
+                    component_label = GENERATION_TYPES[generation_type].label
                 except KeyError:
-                    component_label = GENERATION_TYPES[FUEL_TO_CODE[fuel_type]].label
+                    component_label = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].label
                 
                 try:
-                    component_color = GENERATION_TYPES[fuel_type].color
+                    component_color = GENERATION_TYPES[generation_type].color
                 except KeyError:
-                    component_color = GENERATION_TYPES[FUEL_TO_CODE[fuel_type]].color
+                    component_color = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].color
 
                 if len(generator_output_levels) < 1:
                     continue
@@ -197,11 +223,16 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
             total_generation_by_fuel_type = {}
 
             for generator, generator_data in egret_model_data.data['elements']['generator'].items():
+                pg_array = attribute_to_array(generator_data['pg'])
+
+                if not sum(pg_array) > 0.0:
+                    continue
+    
                 fuel_type = generator_data['fuel']
                 is_quickstart = generator_data.get('quickstart_capable', False)
 
-                pg = generator_data['pg']['values']
-                pg_array = attribute_to_array(generator_data['pg'])
+                # pg = generator_data['pg']['values']
+                # pg_array = attribute_to_array(generator_data['pg'])
 
                 if is_quickstart:
                     quickstart_label = 'quickstart'
@@ -215,7 +246,9 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     total_generation_by_fuel_type[fuel_type][quickstart_label] = pg_array
 
             # Plot each bar stack component.
-            for generation_type, total_generation_array in total_generation_by_fuel_type.items():
+            sorted_total_generation_by_fuel_type = sorted(total_generation_by_fuel_type.items(), key=lambda x: GENERATION_TYPE_SORT_KEY.get(x[0], 1e3))
+
+            for generation_type, total_generation_array in sorted_total_generation_by_fuel_type:
                 try:
                     component_label = GENERATION_TYPES[generation_type].label
                 except KeyError:
