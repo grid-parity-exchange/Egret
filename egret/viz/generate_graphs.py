@@ -1,5 +1,5 @@
 import os
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 import datetime
 import textwrap
 
@@ -23,6 +23,7 @@ font = {'family' : 'sans-serif',
         }
 mpl.rc('font', **font)
 
+
 GenerationType = namedtuple('GenerationType',
                             [
                            'label',
@@ -30,48 +31,58 @@ GenerationType = namedtuple('GenerationType',
                             ]
                            )
 
+
 GENERATION_TYPES = {
-    'Z': GenerationType('Battery', '#42F1F4'),  # no color assigned
+    'Z': GenerationType('Battery', '#42F1F4'),
     'N': GenerationType('Nuclear', '#b22222'),
-    'E': GenerationType('Geothermal', '#CDE7B0'),  # no color assigned
-    'B': GenerationType('Biomass', '#A3BFA8'),  # no color assigned
+    'E': GenerationType('Geothermal', '#CDE7B0'),
+    'B': GenerationType('Biomass', '#A3BFA8'),
     'C': GenerationType('Coal', '#333333'),
     'G': GenerationType('Gas', '#6e8b3d'),
     'O': GenerationType('Oil', '#eea2ad'),
     'H': GenerationType('Hydro', '#add8e6'),
     'W': GenerationType('Wind', '#4f94cd'),
     'S': GenerationType('Solar', '#ffb90f'),
-    'SC': GenerationType('SynchCond', '#fff68f')
+    'SC': GenerationType('SynchCond', '#fff68f'),
+    'Other': GenerationType('Other', '#886688'),
 }
 
-FUEL_TO_CODE = {
-    'Oil': 'O',
-    'Coal': 'C',
-    'NG': 'G',
-    'Gas': 'G',
-    'PV': 'S',
-    'Nuclear': 'N',
-    'Hydro': 'H',
-    'Solar': 'S',
-    'Wind': 'W',
-    'Sync_Cond': 'SC',
-    'Biomass': 'B',
-               }
+
+FUEL_TO_CODE = defaultdict(lambda: 'Other')
+
+
+BUILT_IN_FUEL_CODES = [
+    ('Oil', 'O'),
+    ('Coal', 'C'),
+    ('Gas', 'G'),
+    ('NG', 'G'),
+    ('Solar', 'S'),
+    ('PV', 'S'),
+    ('Wind', 'W'),
+    ('Nuclear', 'N'),
+    ('Hydro', 'H'),
+    ('Sync_Cond', 'SC'),
+    ('Biomass', 'B'),
+]
+
+
+for fuel_name, fuel_code in BUILT_IN_FUEL_CODES:
+    FUEL_TO_CODE[fuel_name] = fuel_code
+
 
 GENERATION_TYPE_SORT_KEY = {
     'Nuclear': 0,
     'Coal': 1,
     'Hydro': 2,
     'Gas': 3,
-    'NG': 3,
     'Oil': 4,
     'Sync_Cond': 5,
     'Wind': 6,
     'Solar': 7,
-    'PV': 7,
     'Biomass': 8,
     'Geothermal': 9,
     'Battery': 10,
+    'Other': 999,
 }
 
 
@@ -165,7 +176,11 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 if not sum(pg_array) > 0.0:
                     continue
 
-                fuel_type = generator_data['fuel']
+                reported_fuel_type = generator_data['fuel']
+
+                # Match fuel type to one of pre-determined types or 'other'
+                fuel_type = GENERATION_TYPES[FUEL_TO_CODE[reported_fuel_type]].label
+
                 is_quickstart = generator_data.get('quickstart_capable', False)
 
                 if is_quickstart:
@@ -228,11 +243,12 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 if not sum(pg_array) > 0.0:
                     continue
     
-                fuel_type = generator_data['fuel']
-                is_quickstart = generator_data.get('quickstart_capable', False)
+                reported_fuel_type = generator_data['fuel']
 
-                # pg = generator_data['pg']['values']
-                # pg_array = attribute_to_array(generator_data['pg'])
+                # Match fuel type to one of pre-determined types or 'other'
+                fuel_type = GENERATION_TYPES[FUEL_TO_CODE[reported_fuel_type]].label
+
+                is_quickstart = generator_data.get('quickstart_capable', False)
 
                 if is_quickstart:
                     quickstart_label = 'quickstart'
@@ -431,63 +447,63 @@ def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     ## Test using unit commitment unit test case(s)
-    from egret.data.model_data import ModelData
+    # from egret.data.model_data import ModelData
 
-    test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1, 6)]
+    # test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1, 6)]
 
-    for test_case in test_cases:   
-        with open(test_case, 'r') as f:
-            md_dict = json.load(f)
-        md = ModelData(md_dict)
+    # for test_case in test_cases:   
+    #     with open(test_case, 'r') as f:
+    #         md_dict = json.load(f)
+    #     md = ModelData(md_dict)
 
-        solved_md = solve_unit_commitment(md,
-                        'cbc',
-                        mipgap = 0.001,
-                        timelimit = None,
-                        solver_tee = True,
-                        symbolic_solver_labels = False,
-                        options = None,
-                        uc_model_generator=create_tight_unit_commitment_model,
-                        relaxed=False,
-                        return_model=False)
+    #     solved_md = solve_unit_commitment(md,
+    #                     'cbc',
+    #                     mipgap = 0.001,
+    #                     timelimit = None,
+    #                     solver_tee = True,
+    #                     symbolic_solver_labels = False,
+    #                     options = None,
+    #                     uc_model_generator=create_tight_unit_commitment_model,
+    #                     relaxed=False,
+    #                     return_model=False)
 
-        fig, ax = generate_stack_graph(
-            solved_md, 
-            title=repr(test_case),
-            show_individual_components=True,
-            plot_individual_generators=False,
-        )
-    
-    ## Test using RTS-GMLC case
-    # from egret.parsers.rts_gmlc_parser import create_ModelData
-
-    # rts_gmlc_dir = os.path.join(current_dir, '..', '..', '..', 'RTS-GMLC')
-    # begin_time = "2020-07-01"
-    # end_time = "2020-07-02"
-
-    # md = create_ModelData(
-    #     rts_gmlc_dir, begin_time, end_time, 
-    #     # simulation="DAY_AHEAD", t0_state = None,
+    #     fig, ax = generate_stack_graph(
+    #         solved_md, 
+    #         title=repr(test_case),
+    #         show_individual_components=True,
+    #         plot_individual_generators=False,
     #     )
     
-    # solved_md = solve_unit_commitment(md,
-    #                 'cbc',
-    #                 mipgap = 0.001,
-    #                 timelimit = None,
-    #                 solver_tee = True,
-    #                 symbolic_solver_labels = False,
-    #                 options = None,
-    #                 uc_model_generator=create_tight_unit_commitment_model,
-    #                 relaxed=False,
-    #                 return_model=False)
+    ## Test using RTS-GMLC case
+    from egret.parsers.rts_gmlc_parser import create_ModelData
 
-    # fig, ax = generate_stack_graph(
-    #     solved_md, 
-    #     title=begin_time,
-    #     show_individual_components=False,
-    #     plot_individual_generators=False,
-    #     x_tick_frequency=4,
-    # )
+    rts_gmlc_dir = os.path.join(current_dir, '..', '..', '..', 'RTS-GMLC')
+    begin_time = "2020-07-01"
+    end_time = "2020-07-02"
+
+    md = create_ModelData(
+        rts_gmlc_dir, begin_time, end_time, 
+        # simulation="DAY_AHEAD", t0_state = None,
+        )
+    
+    solved_md = solve_unit_commitment(md,
+                    'gurobi',
+                    mipgap = 0.001,
+                    timelimit = None,
+                    solver_tee = True,
+                    symbolic_solver_labels = False,
+                    options = None,
+                    uc_model_generator=create_tight_unit_commitment_model,
+                    relaxed=False,
+                    return_model=False)
+
+    fig, ax = generate_stack_graph(
+        solved_md, 
+        title=begin_time,
+        show_individual_components=False,
+        plot_individual_generators=False,
+        x_tick_frequency=4,
+    )
 
     plt.show()
 
