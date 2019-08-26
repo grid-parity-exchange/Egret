@@ -375,14 +375,12 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     generators_dict = egret_model_data.data['elements']['generator']
     reserves_by_hour = np.zeros(len(indices))
 
-    for gen, gen_data in generators_dict.items():
+    for _, gen_data in generators_dict.items():
         is_quickstart = gen_data.get('quickstart_capable', False)
 
-        if not is_quickstart:
-            p_max = attribute_to_array(gen_data['p_max'])
-            pg = attribute_to_array(gen_data['pg'])
-
-            reserves_available = np.maximum(p_max - pg, 0)
+        if gen_data['generator_type'] == 'thermal' and not is_quickstart:
+            headroom = attribute_to_array(gen_data['headroom'])
+            reserves_available = np.maximum(headroom, 0)
 
             reserves_by_hour += reserves_available
     
@@ -401,14 +399,12 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     # Add quick-start capacity, if applicable.
     total_quickstart_capacity_by_hour = np.zeros(len(indices))
 
-    for gen, gen_data in generators_dict.items():
+    for _, gen_data in generators_dict.items():
         is_quickstart = gen_data.get('quickstart_capable', False)
 
         if is_quickstart:
-            p_max = attribute_to_array(gen_data['p_max'])
-            pg = attribute_to_array(gen_data['pg'])
-
-            quickstart_capacity_available = np.maximum(p_max - pg, 0)
+            headroom = attribute_to_array(gen_data['headroom'])
+            quickstart_capacity_available = np.maximum(headroom, 0)
 
             total_quickstart_capacity_by_hour += quickstart_capacity_available
     
@@ -423,7 +419,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     # Add renewable curtailment.
     total_renewable_curtailment_by_hour = np.zeros(len(indices))
 
-    for gen, gen_data in generators_dict.items():
+    for _, gen_data in generators_dict.items():
         generator_type = gen_data['generator_type']
 
         if generator_type == 'renewable':
