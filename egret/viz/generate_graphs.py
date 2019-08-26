@@ -298,7 +298,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
         
         return bottom
 
-    fig, ax = plt.subplots(figsize=(16, 10))
+    fig, ax = plt.subplots(figsize=(16, 8))
 
     time_labels = [textwrap.fill(time_index, 10) for time_index in egret_model_data.data['system']['time_indices']]
     indices = np.arange(len(time_labels))
@@ -362,20 +362,34 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                    label='Reserve Shortfall')
             bottom += reserve_shortfall_array
     
-#     # Add implicit reserves, if applicable.
-#     # TODO:
-#     reserve_available_by_hour = gen_summary['Available reserves'].values
-#     implicit_reserves_by_hour = [max(0.0, reserve_available_by_hour[ix] - reserve_requirements_by_hour[ix]) for ix in range(len(reserve_available_by_hour))]
+    # Add implicit reserves, if applicable.
+    generators_dict = egret_model_data.data['elements']['generator']
+    reserves_by_hour = np.zeros(len(indices))
 
-#     if sum(reserve_requirements_by_hour) > 0.0:
-#         component_color = '#00ffc7'
-#         ax.bar(indices, implicit_reserves_by_hour, bar_width, bottom=bottom, color=component_color, 
-#                edgecolor=None, linewidth=0, 
-#                label='Implicit Reserve')
-#         bottom += implicit_reserves_by_hour
+    for gen, gen_data in generators_dict.items():
+        is_quickstart = gen_data.get('quickstart_capable', False)
+
+        if not is_quickstart:
+            p_max = attribute_to_array(gen_data['p_max'])
+            pg = attribute_to_array(gen_data['pg'])
+
+            reserves_available = np.maximum(p_max - pg, 0)
+
+            reserves_by_hour += reserves_available
+    
+    if reserve_requirements_by_hour is not None:
+        implicit_reserves_by_hour = [max(0.0, reserves_by_hour[ix] - reserves_by_hour[ix]) for ix in range(len(reserve_requirements_by_hour))]
+    else:
+        implicit_reserves_by_hour = [max(0.0, reserves_by_hour[ix]) for ix in range(len(reserves_by_hour))]
+    
+    if sum(implicit_reserves_by_hour) > 0.0:
+        component_color = '#00ffc7'
+        ax.bar(indices, implicit_reserves_by_hour, bar_width, bottom=bottom, color=component_color, 
+               edgecolor=None, linewidth=0, 
+               label='Implicit Reserve')
+        bottom += implicit_reserves_by_hour
     
     # Add quick-start capacity, if applicable.
-    generators_dict = egret_model_data.data['elements']['generator']
     total_quickstart_capacity_by_hour = np.zeros(len(indices))
 
     for gen, gen_data in generators_dict.items():
@@ -433,9 +447,6 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     ax.set_ylabel('Power [MW]')
     ax.set_xlabel('Time')
     ax.yaxis.grid(True)
-
-    # fig.tight_layout()
-    # plt.savefig(title+'.png', format='png')
 
     return fig, ax
 
