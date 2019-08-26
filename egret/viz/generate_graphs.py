@@ -63,6 +63,15 @@ BUILT_IN_FUEL_CODES = [
     ('Hydro', 'H'),
     ('Sync_Cond', 'SC'),
     ('Biomass', 'B'),
+    # To accomodate data that uses the codes directly
+    ('O', 'O'),
+    ('C', 'C'),
+    ('G', 'G'),
+    ('S', 'S'),
+    ('W', 'W'),
+    ('N', 'N'),
+    ('SC', 'SC'),
+    ('B', 'B'),
 ]
 
 
@@ -457,65 +466,68 @@ def main():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
-    ## Test using unit commitment unit test case(s)
-    # from egret.data.model_data import ModelData
+    TEST_WITH_RTS_GMLC = True
 
-    # test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1, 6)]
+    if TEST_WITH_RTS_GMLC:
+        # Test using RTS-GMLC case, if available
+        from egret.parsers.rts_gmlc_parser import create_ModelData
 
-    # for test_case in test_cases:   
-    #     with open(test_case, 'r') as f:
-    #         md_dict = json.load(f)
-    #     md = ModelData(md_dict)
+        rts_gmlc_dir = os.path.join(current_dir, '..', '..', '..', 'RTS-GMLC')
+        begin_time = "2020-07-01"
+        end_time = "2020-07-02"
 
-    #     solved_md = solve_unit_commitment(md,
-    #                     'cbc',
-    #                     mipgap = 0.001,
-    #                     timelimit = None,
-    #                     solver_tee = True,
-    #                     symbolic_solver_labels = False,
-    #                     options = None,
-    #                     uc_model_generator=create_tight_unit_commitment_model,
-    #                     relaxed=False,
-    #                     return_model=False)
+        md = create_ModelData(
+            rts_gmlc_dir, begin_time, end_time, 
+            # simulation="DAY_AHEAD", t0_state = None,
+            )
+        
+        solved_md = solve_unit_commitment(md,
+                        'gurobi',
+                        mipgap = 0.001,
+                        timelimit = None,
+                        solver_tee = True,
+                        symbolic_solver_labels = False,
+                        options = None,
+                        uc_model_generator=create_tight_unit_commitment_model,
+                        relaxed=False,
+                        return_model=False)
 
-    #     fig, ax = generate_stack_graph(
-    #         solved_md, 
-    #         title=repr(test_case),
-    #         show_individual_components=True,
-    #         plot_individual_generators=False,
-    #     )
-    
-    ## Test using RTS-GMLC case
-    from egret.parsers.rts_gmlc_parser import create_ModelData
-
-    rts_gmlc_dir = os.path.join(current_dir, '..', '..', '..', 'RTS-GMLC')
-    begin_time = "2020-07-01"
-    end_time = "2020-07-02"
-
-    md = create_ModelData(
-        rts_gmlc_dir, begin_time, end_time, 
-        # simulation="DAY_AHEAD", t0_state = None,
+        fig, ax = generate_stack_graph(
+            solved_md, 
+            title=begin_time,
+            show_individual_components=False,
+            plot_individual_generators=False,
+            x_tick_frequency=4,
         )
+    else:
+        ## Test using built-in unit commitment unit test case(s)
+        from egret.data.model_data import ModelData
+
+        test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1, 6)]
+
+        for test_case in test_cases:   
+            with open(test_case, 'r') as f:
+                md_dict = json.load(f)
+            md = ModelData(md_dict)
+
+            solved_md = solve_unit_commitment(md,
+                            'cbc',
+                            mipgap = 0.001,
+                            timelimit = None,
+                            solver_tee = True,
+                            symbolic_solver_labels = False,
+                            options = None,
+                            uc_model_generator=create_tight_unit_commitment_model,
+                            relaxed=False,
+                            return_model=False)
+
+            fig, ax = generate_stack_graph(
+                solved_md, 
+                title=repr(test_case),
+                show_individual_components=False,
+                plot_individual_generators=False,
+            )
     
-    solved_md = solve_unit_commitment(md,
-                    'gurobi',
-                    mipgap = 0.001,
-                    timelimit = None,
-                    solver_tee = True,
-                    symbolic_solver_labels = False,
-                    options = None,
-                    uc_model_generator=create_tight_unit_commitment_model,
-                    relaxed=False,
-                    return_model=False)
-
-    fig, ax = generate_stack_graph(
-        solved_md, 
-        title=begin_time,
-        show_individual_components=False,
-        plot_individual_generators=False,
-        x_tick_frequency=4,
-    )
-
     plt.show()
 
 
