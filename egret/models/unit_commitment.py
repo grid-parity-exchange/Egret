@@ -698,12 +698,14 @@ def solve_unit_commitment(model_data,
             lpu.uc_instance_binary_enforcer(m, solver)
             m._ptdf_options['lazy_rel_flow_tol'] += relax_add_flow_tol
 
-        ## if not, do an initial solve
+            ## solve the MIP after enforcing binaries
+            solver.solve(m, tee=solver_tee)
+
+        ## if relaxed, do an initial solve
         else:
             m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
 
         iter_limit = m._ptdf_options['iteration_limit']
-        solver.solve(m, tee=solver_tee)
         termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True)
 
     else:
