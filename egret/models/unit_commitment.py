@@ -610,7 +610,6 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
             results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
             solver.load_vars()
         else:
-            m.preprocess()
             results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
             m.solutions.load_from(results)
 
