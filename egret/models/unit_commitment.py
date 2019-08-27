@@ -552,6 +552,8 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
     persistent_solver = isinstance(solver, PersistentSolver)
     duals = hasattr(m, 'dual')
 
+    results = None 
+
     ptdf_options = m._ptdf_options
 
     PVF = dict()
@@ -582,9 +584,9 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         total_viol_num = sum(val for val in viol_num.values())
         print("iteration {0}, found {1} violation(s)".format(i,total_viol_num))
         if total_viol_num <= 0 and not add_all_lazy_violations:
-            if persistent_solver and duals:
+            if persistent_solver and duals and results is not None:
                 solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.NORMAL
+            return lpu.LazyPTDFTerminationCondition.NORMAL, results
 
         all_times_all_viol_in_model = True
         for t in m.TimePeriods:
@@ -602,14 +604,15 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
                 print('         Result is not transmission feasible.')
             if persistent_solver and duals:
                 solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
+            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results
 
         if persistent_solver:
-            solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+            results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
             solver.load_vars()
         else:
             m.preprocess()
-            solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
+            results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
+            m.solutions.load_from(results)
 
     else:
         if warn_on_max_iter:
@@ -617,7 +620,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
             print('         Result is not transmission feasible.')
         if persistent_solver and duals:
             solver.load_duals()
-        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT
+        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results
 
 
 def _time_series_dict(values):
@@ -669,6 +672,8 @@ def solve_unit_commitment(model_data,
     import pyomo.environ as pe
     from pyomo.environ import value
     from egret.common.solver_interface import _solve_model
+    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+
 
     m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
 
@@ -676,7 +681,6 @@ def solve_unit_commitment(model_data,
 
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
-        m.rc = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
         ## if we were asked to, serialize the PTDF matrices we calculated
@@ -692,21 +696,33 @@ def solve_unit_commitment(model_data,
             iter_limit = m._ptdf_options['lp_iteration_limit']
 
             lpu.uc_instance_binary_relaxer(m, None)
-            m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
-            lp_termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=iter_limit, warn_on_max_iter=False, add_all_lazy_violations=True)
+            m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
+            lp_termination_cond, results = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=iter_limit, warn_on_max_iter=False, add_all_lazy_violations=True)
+            ## if the initial solve was transmission feasible, then
+            ## we never re-solved the problem
+            if results is None:
+                results = results_init
 
             lpu.uc_instance_binary_enforcer(m, solver)
             m._ptdf_options['lazy_rel_flow_tol'] += relax_add_flow_tol
 
             ## solve the MIP after enforcing binaries
-            solver.solve(m, tee=solver_tee)
+            results_init = solver.solve(m, tee=solver_tee, load_solutions=False)
+            if isinstance(solver, PersistentSolver):
+                solver.load_vars()
+            else:
+                m.solutions.load_from(results_init)
 
         ## if relaxed, do an initial solve
         else:
-            m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
+            m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
 
         iter_limit = m._ptdf_options['iteration_limit']
-        termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True)
+        termination_cond, results = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True)
+        ## if the initial solve was transmission feasible, then
+        ## we never re-solved the problem
+        if results is None:
+            results = results_init
 
     else:
         m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
