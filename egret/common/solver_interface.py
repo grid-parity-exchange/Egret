@@ -130,13 +130,22 @@ def _solve_model(model,
 
     if isinstance(solver, PersistentSolver):
         solver.set_instance(model, symbolic_solver_labels=symbolic_solver_labels)
-        results = solver.solve(model, tee=solver_tee)
+        results = solver.solve(model, tee=solver_tee, load_solutions=False, save_results=False)
     else:
         results = solver.solve(model, tee=solver_tee, \
-                              symbolic_solver_labels=symbolic_solver_labels)
+                              symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
 
     if results.solver.termination_condition not in safe_termination_conditions:
         raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))
+
+    if isinstance(solver, PersistentSolver):
+        solver.load_vars()
+        if hasattr(model, "dual"):
+            solver.load_duals()
+        if hasattr(model, "slack"):
+            solver.load_slacks()
+    else:
+        model.solutions.load_from(results)
 
     if return_solver:
         return model, results, solver
