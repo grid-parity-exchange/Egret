@@ -677,25 +677,35 @@ def solve_unit_commitment(model_data,
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
         m.rc = pe.Suffix(direction=pe.Suffix.IMPORT)
-    elif m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
+
+    if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
         ## if we were asked to, serialize the PTDF matrices we calculated
         data_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
-        ## BK -- be a bit more aggressive bring in PTDF constraints
-        ##       from the relaxation
-        relax_add_flow_tol = 0.05
-        m._ptdf_options['lazy_rel_flow_tol'] -= relax_add_flow_tol
 
-        iter_limit = m._ptdf_options['lp_iteration_limit']
+        ## if this is a MIP, iterate though a few times with just the LP relaxation
+        if not relaxed:
+            ## BK -- be a bit more aggressive bring in PTDF constraints
+            ##       from the relaxation
+            relax_add_flow_tol = 0.05
+            m._ptdf_options['lazy_rel_flow_tol'] -= relax_add_flow_tol
 
-        lpu.uc_instance_binary_relaxer(m, None)
-        m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
-        lp_termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=iter_limit, warn_on_max_iter=False, add_all_lazy_violations=True)
+            iter_limit = m._ptdf_options['lp_iteration_limit']
 
-        lpu.uc_instance_binary_enforcer(m, solver)
-        m._ptdf_options['lazy_rel_flow_tol'] += relax_add_flow_tol
+            lpu.uc_instance_binary_relaxer(m, None)
+            m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
+            lp_termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=iter_limit, warn_on_max_iter=False, add_all_lazy_violations=True)
+
+            lpu.uc_instance_binary_enforcer(m, solver)
+            m._ptdf_options['lazy_rel_flow_tol'] += relax_add_flow_tol
+
+            ## solve the MIP after enforcing binaries
+            solver.solve(m, tee=solver_tee)
+
+        ## if relaxed, do an initial solve
+        else:
+            m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
 
         iter_limit = m._ptdf_options['iteration_limit']
-        solver.solve(m, tee=solver_tee)
         termination_cond = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True)
 
     else:
