@@ -99,16 +99,18 @@ def _ptdf_dcopf_network_model(block,tm):
     libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
     block.pl.fix()
 
+    libbus.declare_var_p_nw(block, m.Buses)
+
     ### get the fixed shunts at the buses
     bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
     ### declare net withdraw expression for use in PTDF power flows
-    libbus.declare_expr_p_net_withdraw_at_bus(model=block,
-                                              index_set=m.Buses,
-                                              bus_p_loads=bus_p_loads,
-                                              gens_by_bus=gens_by_bus,
-                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                              )
+    libbus.declare_eq_p_net_withdraw_at_bus(model=block,
+                                            index_set=m.Buses,
+                                            bus_p_loads=bus_p_loads,
+                                            gens_by_bus=gens_by_bus,
+                                            bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                            )
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=block,
