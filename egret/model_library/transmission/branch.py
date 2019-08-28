@@ -17,6 +17,9 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.decl as decl
 from egret.model_library.defn import FlowType, CoordinateType, ApproximationType, RelaxationType
 from egret.data.model_data import zip_items
+from pyomo.core.util import quicksum
+
+import time
 
 
 def declare_var_dva(model, index_set, **kwargs):
@@ -371,29 +374,28 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     Create a pyomo power flow expression from PTDF matrix
     """
 
+    
+    #start_time = time.time()
+    #print("\nBuilding branch {} flow expression".format(branch_name))
     if rel_ptdf_tol is None:
         rel_ptdf_tol = 0.
     if abs_ptdf_tol is None:
         abs_ptdf_tol = 0.
+    #print("[{} s] Set tolerances".format(time.time()-start_time))
 
-    expr = PTDF.get_branch_phase_shift(branch_name)
+    const = PTDF.get_branch_phase_shift(branch_name) + PTDF.get_branch_phi_adj(branch_name)
 
     max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
+    #print("[{} s] Got branch phase shift and abs_max".format(time.time()-start_time))
     ## This case is weird, but could happen, causing divison by 0 below
     if max_coef == 0:
         return expr
+    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
-    for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
-        if abs(coef) < abs_ptdf_tol:
-            ## no point in excuting the rest of the for loop
-            continue
-        if abs(coef)/max_coef < rel_ptdf_tol:
-            ## no point in excuting the rest of the for loop
-            continue
-        phi_adjust = PTDF.get_bus_phi_adj(bus_name)
+    expr = quicksum( (coef*model.p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
 
-        expr += coef*model.p_nw[bus_name]+coef*phi_adjust
+    #print("[{} s] Expression built".format(time.time()-start_time))
 
     return expr
 

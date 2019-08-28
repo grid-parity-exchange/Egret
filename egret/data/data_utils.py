@@ -171,6 +171,12 @@ class PTDFMatrix(object):
     def get_bus_phi_adj(self, bus_name):
         return self.phi_adjust_array[self._busname_to_index_map[bus_name]]
 
+    def get_branch_phi_adj(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        PTDF_row = self.PTDFM[row_idx]
+        return np.dot(PTDF_row, self.phi_adjust_array)
+
     def bus_iterator(self):
         yield from self.buses_keys
 
