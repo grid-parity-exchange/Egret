@@ -305,15 +305,10 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
 
     ptdf_options = m._ptdf_options
 
-    lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
-
     rel_flow_tol = ptdf_options['rel_flow_tol']
     abs_flow_tol = ptdf_options['abs_flow_tol']
 
     branch_limits = PTDF.branch_limits_array
-
-    ## if lazy_rel_flow_tol < 0, this narrows the branch limits
-    PTDF.lazy_branch_limits = branch_limits*(1+lazy_rel_flow_tol)
 
     ## only enforce the relative and absolute, within tollerance
     PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)

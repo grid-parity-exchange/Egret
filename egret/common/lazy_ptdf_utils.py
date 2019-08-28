@@ -58,6 +58,11 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
 
     lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
 
+    max_violations_per_iteration = ptdf_options['max_violations_per_iteration']
+
+    if max_violations_per_iteration < 1 or (not isinstance(max_violations_per_iteration, int)):
+        raise Exception("max_violations_per_iteration must be an integer least 1, max_violations_per_iteration={}".format(max_violations_per_iteration))
+
     if abs_flow_tol < lazy_rel_flow_tol:
         raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
                         " abs_flow_tol={0}, lazy_flow_tol={1}, baseMVA={2}".format(abs_flow_tol*baseMVA, lazy_flow_tol, baseMVA))
@@ -79,33 +84,47 @@ def check_violations(m, PTDF, max_viol_add):
     PFV  = np.dot(PTDF.PTDFM, NWV)
     PFV += PTDF.phase_shift_array
 
-    ## get the indices of the violations, but do it in numpy
-    gt_viol_lazy = np.nonzero(np.greater(PFV, PTDF.lazy_branch_limits))[0]
-    lt_viol_lazy = np.nonzero(np.less(PFV, -PTDF.lazy_branch_limits))[0]
-
-
+    ## calculate the violations
     gt_viol = np.nonzero(np.greater(PFV, PTDF.enforced_branch_limits))[0]
     lt_viol = np.nonzero(np.less(PFV, -PTDF.enforced_branch_limits))[0]
 
+    ## these will hold the violations we add at this iteration
+    gt_viol_lazy = gt_viol
+    lt_viol_lazy = lt_viol
+
     ## limit the number of lines we add in one iteration
-    ## we have too many violations, just take those largest
+    ## if we have too many violations, just take those largest
     ## in absolute value in either direction
-    if len(gt_viol_lazy) > max_viol_add:
-        viol_add = min(max_viol_add, len(gt_viol))
-        if viol_add == 0:
-            ## if there are no actual violations, but lots of lazy ones, don't do anything
-            gt_viol_lazy = list()
-        else:
-            measured_gt_viol = np.argpartition(PTDF.branch_limits_array - PFV, range(viol_add))
-            gt_viol_lazy = measured_gt_viol[0:viol_add]
-    if len(lt_viol_lazy) > max_viol_add:
-        viol_add = min(max_viol_add, len(lt_viol))
-        if viol_add == 0:
-            ## if there are no actual violations, but lots of lazy ones, don't do anything
-            lt_viol_lazy = list()
-        else:
-            measured_lt_viol = np.argpartition(PFV + PTDF.branch_limits_array, range(viol_add))
-            lt_viol_lazy = measured_lt_viol[0:viol_add]
+    if len(gt_viol_lazy)+len(lt_viol_lazy) > max_viol_add:
+
+        ## these store the negative of the violations for
+        ## sorting below
+        gt_viol_array = PTDF.branch_limits_array - PFV
+        lt_viol_array = PFV + PTDF.branch_limits_array
+
+        ## give the order of the first max_viol_add violations
+        measured_gt_viol = np.argpartition(gt_viol_array, range(max_viol_add))
+        measured_lt_viol = np.argpartition(lt_viol_array, range(max_viol_add))
+
+        measured_gt_viol_pos = 0
+        measured_lt_viol_pos = 0
+        gt_viol_lazy = list()
+        lt_viol_lazy = list()
+        for _ in range(max_viol_add):
+            gt_v = gt_viol_array[measured_gt_viol[measured_gt_viol_pos]]
+            lt_v = lt_viol_array[measured_lt_viol[measured_lt_viol_pos]]
+
+            ## because we negated for sorting, this means the
+            ## overall violation is more for the gt side
+            ## dont have any more actual violations
+            if gt_v > 0 and lt_v > 0:
+                break
+            elif gt_v < lt_v:
+                gt_viol_lazy.append(measured_gt_viol[measured_gt_viol_pos])
+                measured_gt_viol_pos += 1
+            else:
+                lt_viol_lazy.append(measured_lt_viol[measured_lt_viol_pos])
+                measured_lt_viol_pos += 1
 
     viol_num = len(gt_viol)+len(lt_viol)
 
