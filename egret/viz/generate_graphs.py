@@ -378,9 +378,14 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     for _, gen_data in generators_dict.items():
         is_quickstart = gen_data.get('quickstart_capable', False)
 
-        if gen_data['generator_type'] == 'thermal' and not is_quickstart:
+        if gen_data['generator_type'] == 'thermal':
             headroom = attribute_to_array(gen_data['headroom'])
-            reserves_available = np.maximum(headroom, 0)
+
+            if is_quickstart:
+                commitment = attribute_to_array(gen_data['commitment'])
+                reserves_available = [headroom[ix] if commit_status > 0.0 else 0 for ix, commit_status in enumerate(commitment)]
+            else:
+                reserves_available = headroom
 
             reserves_by_hour += reserves_available
     
@@ -396,15 +401,18 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                label='Implicit Reserve')
         bottom += implicit_reserves_by_hour
     
-    # Add quick-start capacity, if applicable.
+    # Add quickstart capacity, if applicable.
     total_quickstart_capacity_by_hour = np.zeros(len(indices))
 
     for _, gen_data in generators_dict.items():
         is_quickstart = gen_data.get('quickstart_capable', False)
 
         if is_quickstart:
-            headroom = attribute_to_array(gen_data['headroom'])
-            quickstart_capacity_available = np.maximum(headroom, 0)
+            p_max = gen_data['p_max']
+            startup_capacity = gen_data['startup_capacity']
+            quickstart_capacity = min(p_max, startup_capacity)
+
+            quickstart_capacity_available = [quickstart_capacity if commit_status > 0.0 else 0 for ix, commit_status in enumerate(commitment)]
 
             total_quickstart_capacity_by_hour += quickstart_capacity_available
     
@@ -413,7 +421,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
         ax.bar(indices, total_quickstart_capacity_by_hour, bar_width, bottom=bottom, color=component_color, 
                edgecolor=None, linewidth=0, 
                hatch='//',
-               label='Available Quick Start')
+               label='Available Quickstart')
         bottom += total_quickstart_capacity_by_hour
     
     # Add renewable curtailment.
