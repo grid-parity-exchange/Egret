@@ -30,8 +30,6 @@ def populate_default_ptdf_options(ptdf_options):
         ptdf_options['abs_flow_tol'] = 1.e-3
     if 'rel_flow_tol' not in ptdf_options:
         ptdf_options['rel_flow_tol'] = 1.e-5
-    if 'lazy_rel_flow_tol' not in ptdf_options:
-        ptdf_options['lazy_rel_flow_tol'] = -0.05
     if 'iteration_limit' not in ptdf_options:
         ptdf_options['iteration_limit'] = 100000
     if 'lp_iteration_limit' not in ptdf_options:
@@ -56,16 +54,11 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
     rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
     abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
 
-    lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
-
     max_violations_per_iteration = ptdf_options['max_violations_per_iteration']
 
     if max_violations_per_iteration < 1 or (not isinstance(max_violations_per_iteration, int)):
         raise Exception("max_violations_per_iteration must be an integer least 1, max_violations_per_iteration={}".format(max_violations_per_iteration))
 
-    if abs_flow_tol < lazy_rel_flow_tol:
-        raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
-                        " abs_flow_tol={0}, lazy_flow_tol={1}, baseMVA={2}".format(abs_flow_tol*baseMVA, lazy_flow_tol, baseMVA))
     if abs_flow_tol < 1e-6:
         print("WARNING: abs_flow_tol={0}, which is below the numeric threshold of most solvers.".format(abs_flow_tol*baseMVA))
     if abs_flow_tol < rel_ptdf_tol*10:
