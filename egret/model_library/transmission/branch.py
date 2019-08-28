@@ -18,6 +18,7 @@ import egret.model_library.decl as decl
 from egret.model_library.defn import FlowType, CoordinateType, ApproximationType, RelaxationType
 from egret.data.model_data import zip_items
 from pyomo.core.util import quicksum
+from pyomo.core.expr.numeric_expr import LinearExpression
 
 def declare_var_dva(model, index_set, **kwargs):
     """
@@ -383,7 +384,21 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
-    expr = quicksum( (coef*model.p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+    m_p_nw = model.p_nw
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_p_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+            if abs(coef) >= ptdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_p_nw[bus_name])
+
+        lin_expr_list = [const] + coef_list + var_list 
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
 
     return expr
 
@@ -435,7 +450,21 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
-    expr = quicksum( (coef*model.p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+    m_p_nw = model.p_nw
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_p_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
+            if abs(coef) >= ptdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_p_nw[bus_name])
+
+        lin_expr_list = [const] + coef_list + var_list 
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
 
     return expr
 
