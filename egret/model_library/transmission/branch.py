@@ -380,9 +380,6 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
 
     max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
 
-    ## This case is weird, but could happen, causing divison by 0 below
-    if max_coef == 0:
-        return const
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
@@ -434,9 +431,6 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
     const += PTDF.get_branch_phi_losses_adj(branch_name)
 
     max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
-
-    if max_coef == 0:
-        return const
 
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,

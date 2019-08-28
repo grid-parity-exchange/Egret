@@ -322,7 +322,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
 
     for i in range(iteration_limit):
 
-        PFV, viol_num, viols_tup = lpu.check_violations(m, PTDF)
+        PFV, viol_num, viols_tup = lpu.check_violations(m, PTDF, ptdf_options['max_violations_per_iteration'])
 
         print("iteration {0}, found {1} violation(s)".format(i,viol_num))
 

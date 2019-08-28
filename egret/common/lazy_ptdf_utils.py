@@ -36,6 +36,8 @@ def populate_default_ptdf_options(ptdf_options):
         ptdf_options['iteration_limit'] = 100000
     if 'lp_iteration_limit' not in ptdf_options:
         ptdf_options['lp_iteration_limit'] = 100
+    if 'max_violations_per_iteration' not in ptdf_options:
+        ptdf_options['max_violations_per_iteration'] = 1
     if 'lazy' not in ptdf_options:
         ptdf_options['lazy'] = True
     if 'load_from' not in ptdf_options:
@@ -69,7 +71,7 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
         print("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol.".format(abs_ptdf_tol*baseMVA))
 
 ## violation checker
-def check_violations(m, PTDF):
+def check_violations(m, PTDF, max_viol_add):
 
     NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
     NWV += PTDF.phi_adjust_array
@@ -81,8 +83,29 @@ def check_violations(m, PTDF):
     gt_viol_lazy = np.nonzero(np.greater(PFV, PTDF.lazy_branch_limits))[0]
     lt_viol_lazy = np.nonzero(np.less(PFV, -PTDF.lazy_branch_limits))[0]
 
+
     gt_viol = np.nonzero(np.greater(PFV, PTDF.enforced_branch_limits))[0]
     lt_viol = np.nonzero(np.less(PFV, -PTDF.enforced_branch_limits))[0]
+
+    ## limit the number of lines we add in one iteration
+    ## we have too many violations, just take those largest
+    ## in absolute value in either direction
+    if len(gt_viol_lazy) > max_viol_add:
+        viol_add = min(max_viol_add, len(gt_viol))
+        if viol_add == 0:
+            ## if there are no actual violations, but lots of lazy ones, don't do anything
+            gt_viol_lazy = list()
+        else:
+            measured_gt_viol = np.argpartition(PTDF.branch_limits_array - PFV, range(viol_add))
+            gt_viol_lazy = measured_gt_viol[0:viol_add]
+    if len(lt_viol_lazy) > max_viol_add:
+        viol_add = min(max_viol_add, len(lt_viol))
+        if viol_add == 0:
+            ## if there are no actual violations, but lots of lazy ones, don't do anything
+            lt_viol_lazy = list()
+        else:
+            measured_lt_viol = np.argpartition(PFV + PTDF.branch_limits_array, range(viol_add))
+            lt_viol_lazy = measured_lt_viol[0:viol_add]
 
     viol_num = len(gt_viol)+len(lt_viol)
 
