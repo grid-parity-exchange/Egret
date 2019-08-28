@@ -263,3 +263,9 @@ class PTDFLossesMatrix(PTDFMatrix):
 
     def get_bus_phi_losses_adj(self, bus_name):
         return self.phi_losses_adjust_array[self._busname_to_index_map[bus_name]]
+
+    def get_branch_phi_losses_adj(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        losses_row = self.LDF[row_idx]
+        return np.dot(losses_row, self.phi_losses_adjust_array)
