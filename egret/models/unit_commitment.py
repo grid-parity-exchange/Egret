@@ -580,7 +580,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
                 PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
 
             PVF[t], viol_num[t], mon_viol_num[t], gt_viol_lazy[t], lt_viol_lazy[t] = \
-                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'])
+                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t)
 
         total_viol_num = sum(viol_num.values())
         total_mon_viol_num = sum(mon_viol_num.values())
