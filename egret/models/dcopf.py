@@ -264,6 +264,9 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                                      approximation_type=None,
                                                      )
 
+        ### add helpers for tracking monitored branches
+        lpu.add_monitored_branch_tracker(model)
+
     else:
         p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
         ## add all the constraints
@@ -317,9 +320,13 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
 
     for i in range(iteration_limit):
 
-        PFV, viol_num, viols_tup = lpu.check_violations(m, PTDF, ptdf_options['max_violations_per_iteration'])
+        PFV, viol_num, mon_viol_num, gt_viol_lazy, lt_viol_lazy = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
 
-        print("iteration {0}, found {1} violation(s)".format(i,viol_num))
+        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,viol_num)
+        if mon_viol_num:
+            iter_status_str += ", {} of which are already monitored".format(mon_viol_num)
+
+        print(iter_status_str)
 
         if viol_num <= 0:
             ## in this case, there are no violations!
@@ -328,14 +335,14 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.NORMAL
 
-        all_viol_in_model = lpu.add_violations(viols_tup, PFV, m, md, solver, ptdf_options, PTDF)
-
-        if all_viol_in_model:
+        elif viol_num == mon_viol_num:
             print('WARNING: Terminating with monitored violations!')
             print('         Result is not transmission feasible.')
             if persistent_solver:
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
+
+        lpu.add_violations(gt_viol_lazy, lt_viol_lazy, PFV, m, md, solver, ptdf_options, PTDF)
 
         #m.ineq_pf_branch_thermal_lb.pprint()
         #m.ineq_pf_branch_thermal_ub.pprint()
@@ -345,7 +352,8 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
             solver.load_vars()
         else:
             solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
-    else:
+
+    else: # we hit the iteration limit
         print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
         print('         Result is not transmission feasible.')
         if persistent_solver:

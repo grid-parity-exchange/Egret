@@ -22,6 +22,7 @@ import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 import egret.data.data_utils as data_utils
+import egret.common.lazy_ptdf_utils as lpu
 
 from egret.model_library.defn import BasePointType, CoordinateType, ApproximationType
 from math import pi
@@ -153,6 +154,8 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      p_thermal_limits=None,
                                                      approximation_type=None,
                                                      )
+        ### add helpers for tracking monitored branches
+        lpu.add_monitored_branch_tracker(block)
         
     else: ### add all the dense constraints
         rel_ptdf_tol = m._ptdf_options['rel_ptdf_tol']
