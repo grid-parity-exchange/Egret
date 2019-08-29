@@ -22,6 +22,10 @@ class LazyPTDFTerminationCondition(Enum):
     ITERATION_LIMIT = 2
     FLOW_VIOLATION = 3
 
+class ViolationSense(Enum):
+    GT = 1
+    LT = 2
+
 def populate_default_ptdf_options(ptdf_options):
     if 'rel_ptdf_tol' not in ptdf_options:
         ptdf_options['rel_ptdf_tol'] = 1.e-6
@@ -129,6 +133,9 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None):
     ## in absolute value in either direction
     if len(gt_viol_lazy)+len(lt_viol_lazy) > max_viol_add:
 
+        tracking_gt_viol_lazy = set(gt_viol_lazy)
+        tracking_lt_viol_lazy = set(lt_viol_lazy)
+
         ## for those in the monitored set, assume they're feasible for
         ## the purposes of sorting the worst violations, which means
         ## resetting the values for these lines as computed above
@@ -138,29 +145,33 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None):
         gt_viol_array[gt_idx_monitored] = LARGE_CONST
         lt_viol_array[lt_idx_monitored] = LARGE_CONST
 
-        ## give the order of the first max_viol_add violations
-        measured_gt_viol = np.argpartition(gt_viol_array, range(max_viol_add))
-        measured_lt_viol = np.argpartition(lt_viol_array, range(max_viol_add))
+        ## get the largest violation (array is inverted)
+        gt_arg_max = np.argmin(gt_viol_array)
+        lt_arg_max = np.argmin(lt_viol_array)
+        if gt_viol_array[gt_arg_max] < lt_viol_array[lt_arg_max]:
+            ptdf_idx = gt_arg_max
+            tracking_gt_viol_lazy.remove(gt_arg_max)
+            sense = ViolationSense.GT
+        else:
+            ptdf_idx = lt_arg_max
+            tracking_lt_viol_lazy.remove(gt_arg_max)
+            sense = ViolationSense.LT
 
-        measured_gt_viol_pos = 0
-        measured_lt_viol_pos = 0
-        gt_viol_lazy = set()
-        lt_viol_lazy = set()
-        for _ in range(max_viol_add):
-            gt_v = gt_viol_array[measured_gt_viol[measured_gt_viol_pos]]
-            lt_v = lt_viol_array[measured_lt_viol[measured_lt_viol_pos]]
+        ptdf_row = PTDF.M[ptdf_idx]
 
-            ## because we negated for sorting, this means the
-            ## overall violation is more for the gt side
-            ## dont have any more actual violations
-            if gt_v > 0 and lt_v > 0:
-                break
-            elif gt_v < lt_v:
-                gt_viol_lazy.add(measured_gt_viol[measured_gt_viol_pos])
-                measured_gt_viol_pos += 1
-            else:
-                lt_viol_lazy.add(measured_lt_viol[measured_lt_viol_pos])
-                measured_lt_viol_pos += 1
+        all_other_violation_idx = list(tracking_gt_viol_lazy + tracking_lt_viol_lazy)
+
+        other_viol_rows = PTDF.M[all_other_violation_idx]
+
+        orthogonality = np.dot(other_viol_rows.T, ptdf_row)
+
+        ## divide by transmission limits to give
+        ## high priority to those lines with larger
+        ## violations
+        scale = -1.
+        orthogonality /= scale*other_viol_limits
+
+
 
     viol_num = len(gt_viol)+len(lt_viol)
     monitored_viol_num = len(lt_viol_in_mb)+len(gt_viol_in_mb)
