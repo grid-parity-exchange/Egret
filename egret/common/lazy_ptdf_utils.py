@@ -9,8 +9,9 @@
 
 ## helpers for flow verification across dcopf and unit commitment models
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
-import egret.model_library.transmission.branch as libbranch
 from egret.model_library.defn import ApproximationType
+from egret.common.log import logger
+import egret.model_library.transmission.branch as libbranch
 import pyomo.environ as pe
 import numpy as np
 
@@ -61,13 +62,13 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
         raise Exception("max_violations_per_iteration must be an integer least 1, max_violations_per_iteration={}".format(max_violations_per_iteration))
 
     if abs_flow_tol < 1e-6:
-        print("WARNING: abs_flow_tol={0}, which is below the numeric threshold of most solvers.".format(abs_flow_tol*baseMVA))
+        logger.warning("WARNING: abs_flow_tol={0}, which is below the numeric threshold of most solvers.".format(abs_flow_tol*baseMVA))
     if abs_flow_tol < rel_ptdf_tol*10:
-        print("WARNING: abs_flow_tol={0}, rel_ptdf_tol={1}, which will likely result in violations. Consider raising abs_flow_tol or lowering rel_ptdf_tol.".format(abs_flow_tol*baseMVA, rel_ptdf_tol))
+        logger.warning("WARNING: abs_flow_tol={0}, rel_ptdf_tol={1}, which will likely result in violations. Consider raising abs_flow_tol or lowering rel_ptdf_tol.".format(abs_flow_tol*baseMVA, rel_ptdf_tol))
     if rel_ptdf_tol < 1e-6:
-        print("WARNING: rel_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing rel_ptdf_tol.".format(rel_ptdf_tol))
+        logger.warning("WARNING: rel_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing rel_ptdf_tol.".format(rel_ptdf_tol))
     if abs_ptdf_tol < 1e-12:
-        print("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol.".format(abs_ptdf_tol*baseMVA))
+        logger.warning("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol.".format(abs_ptdf_tol*baseMVA))
 
 ## to hold the indicies of the violations
 ## in the model or block
@@ -111,12 +112,12 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None):
     for i in lt_viol_in_mb:
         bn = PTDF.branches_keys[i]
         thermal_limit = PTDF.branch_limits_array[i]
-        print(_generate_flow_viol_warning('LB', mb, bn, PFV[i], -thermal_limit, baseMVA, time))
+        logger.warning(_generate_flow_viol_warning('LB', mb, bn, PFV[i], -thermal_limit, baseMVA, time))
 
     for i in gt_viol_in_mb:
         bn = PTDF.branches_keys[i]
         thermal_limit = PTDF.branch_limits_array[i]
-        print(_generate_flow_viol_warning('UB', mb, bn, PFV[i], thermal_limit, baseMVA, time))
+        logger.warning(_generate_flow_viol_warning('UB', mb, bn, PFV[i], thermal_limit, baseMVA, time))
 
     ## *t_viol_lazy will hold the lines we're adding
     ## this iteration -- don't want to add lines
@@ -209,7 +210,7 @@ def add_violations(gt_viol_lazy, lt_viol_lazy, PFV, mb, md, solver, ptdf_options
     lt_viol_in_mb = mb._lt_idx_monitored
     for i, bn in _iter_over_viol_set(lt_viol_lazy):
         thermal_limit = PTDF.branch_limits_array[i]
-        print(_generate_flow_monitor_message('LB', bn, PFV[i], -thermal_limit, baseMVA, time))
+        logger.info(_generate_flow_monitor_message('LB', bn, PFV[i], -thermal_limit, baseMVA, time))
         constr[bn] = (-thermal_limit, mb.pf[bn], None)
         lt_viol_in_mb.append(i)
         if persistent_solver:
@@ -219,7 +220,7 @@ def add_violations(gt_viol_lazy, lt_viol_lazy, PFV, mb, md, solver, ptdf_options
     gt_viol_in_mb = mb._gt_idx_monitored
     for i, bn in _iter_over_viol_set(gt_viol_lazy):
         thermal_limit = PTDF.branch_limits_array[i]
-        print(_generate_flow_monitor_message('UB', bn, PFV[i], thermal_limit, baseMVA, time))
+        logger.info(_generate_flow_monitor_message('UB', bn, PFV[i], thermal_limit, baseMVA, time))
         constr[bn] = (None, mb.pf[bn], thermal_limit)
         gt_viol_in_mb.append(i)
         if persistent_solver:

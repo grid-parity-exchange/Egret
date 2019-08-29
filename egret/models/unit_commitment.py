@@ -16,6 +16,7 @@ unit commitment formulations
 
 from egret.model_library.unit_commitment.uc_model_generator \
         import UCFormulation, generate_model 
+from egret.common.log import logger
 from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
@@ -589,15 +590,14 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         if total_mon_viol_num:
             iter_status_str += ", {} of which are already monitored".format(total_mon_viol_num)
 
-        print(iter_status_str)
+        logger.info(iter_status_str)
 
         if total_viol_num <= 0:
             if persistent_solver and duals and results is not None and vars_to_load is None:
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
         elif total_viol_num == total_mon_viol_num:
-            print('WARNING: Terminating with monitored violations!')
-            print('         Result is not transmission feasible.')
+            logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
             if persistent_solver and duals:
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
@@ -619,8 +619,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
     else:
         if warn_on_max_iter:
-            print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
-            print('         Result is not transmission feasible.')
+            logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
         if persistent_solver and duals:
             solver.load_duals()
         return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
@@ -1212,7 +1211,7 @@ def solve_unit_commitment(model_data,
                 for dt, mt in zip(data_time_periods, m.TimePeriods):
                     fuel_consumed[dt] = value(m.TotalFuelConsumedAtInstFuelSupply[f,mt])
             else:
-                print('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
+                logger.warning('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
             f_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
 
     md.data['system']['total_cost'] = value(m.TotalCostObjective)
