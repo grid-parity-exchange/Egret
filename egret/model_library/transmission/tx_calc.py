@@ -371,8 +371,8 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
     _len_branch = len(index_set_branch)
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
-    phi_from = np.zeros((_len_bus,_len_branch))
-    phi_to = np.zeros((_len_bus,_len_branch))
+    phi_from = sp.zeros((_len_bus,_len_branch))
+    phi_to = sp.zeros((_len_bus,_len_branch))
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -411,8 +411,8 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
     _len_branch = len(index_set_branch)
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
-    phi_loss_from = np.zeros((_len_bus,_len_branch))
-    phi_loss_to = np.zeros((_len_bus,_len_branch))
+    phi_loss_from = sp.zeros((_len_bus,_len_branch))
+    phi_loss_to = sp.zeros((_len_bus,_len_branch))
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -451,7 +451,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
     _len_branch = len(index_set_branch)
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
-    pf_constant = np.zeros(_len_branch)
+    pf_constant = sp.zeros(_len_branch)
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -493,7 +493,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     _len_branch = len(index_set_branch)
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
-    pfl_constant = np.zeros(_len_branch)
+    pfl_constant = sp.zeros(_len_branch)
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -626,6 +626,9 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     Jc = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
     Lc = _calculate_pfl_constant(branches,buses,index_set_branch,base_point)
 
+    if sp.all(Jc == 0) and sp.all(Lc == 0):
+        return sp.sparse.lil_matrix((_len_branch, _len_bus)), sp.sparse.lil_matrix((_len_branch, _len_bus)), np.zeros((1,_len_branch))
+
     A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
     AA = calculate_absolute_adjacency_matrix(A)
     M1 = np.matmul(A.transpose(),J)
@@ -675,10 +678,10 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
         _ldf = sp.sparse.linalg.spsolve(sp.sparse.csr_matrix(J0.transpose()), B_L).T
         LDF[row_idx] = _ldf[:, :-1]
 
-        M1 = sp.sparse.lil_matrix(sp.matmul(A.transpose(), Jc))
-        M2 = sp.sparse.lil_matrix(sp.matmul(AA.transpose(), Lc))
-        M = M1 + 0.5 * M2
-        LDF_constant = -sp.sparse.lil_matrix(sp.matmul(LDF,M)) + Lc
+    M1 = np.matmul(A.transpose(),Jc)
+    M2 = np.matmul(AA.transpose(),Lc)
+    M = M1 + 0.5 * M2
+    LDF_constant = np.array(-sp.sparse.lil_matrix(LDF.__matmul__(M)) + Lc)[0]
 
     return PTDF, LDF, LDF_constant
 
@@ -695,7 +698,7 @@ def calculate_adjacency_matrix(branches,index_set_branch,index_set_bus):
     _len_branch = len(index_set_branch)
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
-    adjacency_matrix = np.zeros((_len_branch,_len_bus))
+    adjacency_matrix = sp.zeros((_len_branch,_len_bus))
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -715,4 +718,4 @@ def calculate_absolute_adjacency_matrix(adjacency_matrix):
     """
     Calculates the absolute value of the adjacency matrix
     """
-    return np.absolute(adjacency_matrix)
+    return sp.absolute(adjacency_matrix)

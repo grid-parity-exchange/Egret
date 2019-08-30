@@ -100,7 +100,6 @@ class PTDFMatrix(object):
         self._busname_to_index_map = {bus_n : j for j, bus_n in enumerate(self.buses_keys)}
 
         self.branch_limits_array = np.array([branches[branch]['rating_long_term'] for branch in self.branches_keys])
-        ## protect the array using numpy
         self.branch_limits_array.flags.writeable = False
 
         self._base_point = base_point
@@ -121,10 +120,10 @@ class PTDFMatrix(object):
         ## calculate and store the PTDF matrix
         PTDFM = tx_calc.calculate_ptdf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
 
-        ## protect the array using numpy
-        #PTDFM.flags.writeable = False
+        self.PTDFM = PTDFM.toarray()
 
-        self.PTDFM = PTDFM
+        ## protect the array using numpy
+        self.PTDFM.flags.writeable = False
 
     def _calculate_phi_from_phi_to(self):
         return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF)
@@ -139,18 +138,18 @@ class PTDFMatrix(object):
         ## sum the across the columns, which are indexed by branch
         phi_adjust_array = phi_from.sum(axis=1)-phi_to.sum(axis=1)
 
-        ## protect the array using numpy
-        phi_adjust_array.flags.writeable = False
-
         self.phi_adjust_array = phi_adjust_array
+
+        ## protect the array using numpy
+        self.phi_adjust_array.flags.writeable = False
 
     def _calculate_phase_shift(self):
         
         phase_shift_array = np.array([ -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in (self._branches[bn] for bn in self.branches_keys)])
 
-        ## protect the array using numpy
-        phase_shift_array.flags.writeable = False
         self.phase_shift_array = phase_shift_array
+        ## protect the array using numpy
+        self.phase_shift_array.flags.writeable = False
 
     def get_branch_ptdf_iterator(self, branch_name):
         row_idx = self._branchname_to_index_map[branch_name]
@@ -174,7 +173,7 @@ class PTDFMatrix(object):
         row_idx = self._branchname_to_index_map[branch_name]
         ## get the row slice
         PTDF_row = self.PTDFM[row_idx]
-        return np.dot(PTDF_row, self.phi_adjust_array)
+        return PTDF_row.dot(self.phi_adjust_array)
 
     def bus_iterator(self):
         yield from self.buses_keys
@@ -193,14 +192,14 @@ class PTDFLossesMatrix(PTDFMatrix):
     def _calculate_ptdf(self):
         ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
 
-        ## protect the arrays using numpy
-        #ptdf_r.flags.writeable = False
-        #ldf.flags.writeable = False
-        #ldf_c.flags.writeable = False
-
-        self.PTDFM = ptdf_r
-        self.LDF = ldf
+        self.PTDFM = ptdf_r.toarray()
+        self.LDF = ldf.toarray()
         self.LDF_C = ldf_c
+
+        ## protect the arrays using numpy
+        self.PTDFM.flags.writeable = False
+        self.LDF.flags.writeable = False
+        self.LDF_C.flags.writeable = False
 
     def _calculate_phi_from_phi_to(self):
         return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES)
@@ -215,10 +214,10 @@ class PTDFLossesMatrix(PTDFMatrix):
         ## sum the across the columns, which are indexed by branch
         phi_losses_adjust_array = phi_loss_from.sum(axis=1)-phi_loss_to.sum(axis=1)
 
-        ## protect the array using numpy
-        phi_losses_adjust_array.flags.writeable = False
-
         self.phi_losses_adjust_array = phi_losses_adjust_array
+
+        ## protect the array using numpy
+        self.phi_losses_adjust_array.flags.writeable = False
 
     def _calculate_phase_shift(self):
         
@@ -227,9 +226,10 @@ class PTDFLossesMatrix(PTDFMatrix):
             else 0. 
             for branch in (self._branches[bn] for bn in self.branches_keys)])
 
-        ## protect the array using numpy
-        phase_shift_array.flags.writeable = False
         self.phase_shift_array = phase_shift_array
+
+        ## protect the array using numpy
+        self.phase_shift_array.flags.writeable = False
 
     def _calculate_losses_phase_shift(self):
 
@@ -238,9 +238,10 @@ class PTDFLossesMatrix(PTDFMatrix):
             else 0.
             for branch in (self._branches[bn] for bn in self.branches_keys)])
 
-        ## protect the array using numpy
-        losses_phase_shift_array.flags.writeable = False
         self.losses_phase_shift_array = losses_phase_shift_array
+
+        ## protect the array using numpy
+        self.losses_phase_shift_array.flags.writeable = False
 
     def get_branch_ldf_iterator(self, branch_name):
         row_idx = self._branchname_to_index_map[branch_name]
@@ -267,4 +268,4 @@ class PTDFLossesMatrix(PTDFMatrix):
         row_idx = self._branchname_to_index_map[branch_name]
         ## get the row slice
         losses_row = self.LDF[row_idx]
-        return np.dot(losses_row, self.phi_losses_adjust_array)
+        return losses_row.dot(self.phi_losses_adjust_array)
