@@ -14,7 +14,8 @@ different computations for transmission models
 import math
 import numpy as np
 from math import cos, sin
-from egret.model_library.defn import BasePointType, ApproximationType, SensitivityCalculationMethod
+from egret.model_library.defn import BasePointType, ApproximationType
+import scipy as sp
 
 def calculate_conductance(branch):
     rs = branch['resistance']
@@ -271,13 +272,65 @@ def calculate_va_from_vj_vr(vj, vr):
     return None
 
 
-def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=BasePointType.FLATSTART,approximation_type=ApproximationType.PTDF):
+def calculate_btheta_coefficients(branches,buses,index_set_branch,index_set_bus,base_point=BasePointType.FLATSTART,approximation_type=ApproximationType.PTDF):
     """
-    Compute the power flow Jacobian for partial derivative of real power flow to voltage angle
+    Compute the matrix coefficients for the B-Theta power flows
     """
     _len_bus = len(index_set_bus)
     _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
 
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    btheta_branch = np.zeros((_len_branch,_len_bus))
+    btheta_shift = np.zeros((_len_bus,1))
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+
+        if approximation_type == ApproximationType.PTDF:
+            x = branch['reactance']
+            b = -1/(tau*x)
+        elif approximation_type == ApproximationType.PTDF_LOSSES:
+            b = calculate_susceptance(branch)/tau
+
+        if base_point == BasePointType.FLATSTART:
+            vn = 1.
+            vm = 1.
+        elif base_point == BasePointType.SOLUTION:
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+
+        idx_from_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        btheta_branch[idx_row][idx_from_col] = -b * vn * vm
+
+        idx_to_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        btheta_branch[idx_row][idx_to_col] = b * vn * vm
+
+        btheta_shift[idx_from_col] += b * vn * vm * shift
+
+    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
+    btheta_bus = -np.matmul(A.transpose(),btheta_branch)
+    return btheta_bus, btheta_branch, btheta_shift
+
+
+def calculate_J11(branches,buses,base_point=BasePointType.FLATSTART,approximation_type=ApproximationType.PTDF):
+    """
+    Compute the power flow Jacobian for partial derivative of real power flow to voltage angle
+    """
+    index_set_bus = tuple(buses.keys())
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    index_set_branch = tuple(branches.keys())
     _len_branch = len(index_set_branch)
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
@@ -303,7 +356,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -345,7 +398,7 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -470,7 +523,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -513,7 +566,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -525,50 +578,6 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     return pfl_constant
 
 
-def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,calculation_method=SensitivityCalculationMethod.FACTORIZE):
-    """
-    Calculates the sensitivity of the voltage angle to real power injections
-    """
-
-    _len_bus = len(index_set_bus)
-    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
-
-    _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
-
-    _ref_bus_idx = [key for key, value in _mapping_bus.items() if value == reference_bus][0]
-
-    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point,approximation_type=ApproximationType.PTDF)
-    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
-    M = np.matmul(A.transpose(),J)
-
-    if calculation_method == SensitivityCalculationMethod.INVERT:
-        J0 = np.zeros((_len_bus+1,_len_bus+1))
-        J0[:-1,:-1] = M
-        J0[-1][_ref_bus_idx] = 1
-        J0[_ref_bus_idx][-1] = 1
-
-        try:
-            SENSI = np.linalg.inv(J0)
-        except np.linalg.LinAlgError:
-            print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            SENSI = np.linalg.pinv(J0,rcond=1e-7)
-            pass
-        SENSI = SENSI[:-1,:-1]
-
-        PTDF = np.matmul(J,SENSI)
-    elif calculation_method == SensitivityCalculationMethod.FACTORIZE:
-        n, m = M.shape
-        y = np.array([], dtype=np.int64).reshape(0,len(_mapping_branch))
-        for idx, branch_name in _mapping_branch.items():
-            b = np.zeros((m,1))
-            b[idx] = 1
-            y = np.concatenate((y,np.matmul(J,b).T), axis=0)
-        import scipy as sp
-        #sp.sparse.linalg.spsolve(M.transpose(), np.concatenate((y.T, y2.T, np.zeros((1, 3))), axis=0).T).T
-        sp.sparse.linalg.spsolve(M.transpose(), y.T).T
-
-    return PTDF
 
 
 def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION):

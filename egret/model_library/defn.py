@@ -23,6 +23,10 @@ class ApproximationType(Enum):
     PTDF = 3
     PTDF_LOSSES = 4
 
+class DistributionFactorType(Enum):
+    PTDF = 1
+    PTDF_LOSSES = 2
+
 class BasePointType(Enum):
     FLATSTART = 1
     SOLUTION = 2
@@ -30,8 +34,3 @@ class BasePointType(Enum):
 class RelaxationType(Enum):
     NONE = 1
     SOC = 2
-
-
-class SensitivityCalculationMethod(Enum):
-    INVERT = 1
-    FACTORIZE = 2

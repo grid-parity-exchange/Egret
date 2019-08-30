@@ -100,10 +100,9 @@ class PTDFMatrix(object):
         self._busname_to_index_map = {bus_n : j for j, bus_n in enumerate(self.buses_keys)}
 
         self.branch_limits_array = np.array([branches[branch]['rating_long_term'] for branch in self.branches_keys])
-        ## protect the array using numpy
-        self.branch_limits_array.flags.writeable = False
 
         self._base_point = base_point
+        self._calculate_btheta_coefficients()
         self._calculate()
 
         ## for lazy PTDF
@@ -121,9 +120,6 @@ class PTDFMatrix(object):
         '''
         ## calculate and store the PTDF matrix
         PTDFM = tx_calc.calculate_ptdf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
-
-        ## protect the array using numpy
-        PTDFM.flags.writeable = False
 
         self.PTDFM = PTDFM
 
@@ -152,6 +148,9 @@ class PTDFMatrix(object):
         ## protect the array using numpy
         phase_shift_array.flags.writeable = False
         self.phase_shift_array = phase_shift_array
+
+    def _calculate_btheta_coefficients(self):
+        self.btheta_bus, self.btheta_branch, self.btheta_shift = tx_calc.calculate_btheta_coefficients(self._branches,self._buses,self.branches_keys,self.buses_keys,self._base_point,ApproximationType.PTDF)
 
     def get_branch_ptdf_iterator(self, branch_name):
         row_idx = self._branchname_to_index_map[branch_name]
