@@ -106,7 +106,6 @@ class PTDFMatrix(object):
         self._calculate()
 
         ## for lazy PTDF
-        self.lazy_branch_limits = None
         self.enforced_branch_limits = None
 
     def _calculate(self):
@@ -169,6 +168,12 @@ class PTDFMatrix(object):
 
     def get_bus_phi_adj(self, bus_name):
         return self.phi_adjust_array[self._busname_to_index_map[bus_name]]
+
+    def get_branch_phi_adj(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        PTDF_row = self.PTDFM[row_idx]
+        return np.dot(PTDF_row, self.phi_adjust_array)
 
     def bus_iterator(self):
         yield from self.buses_keys
@@ -256,3 +261,9 @@ class PTDFLossesMatrix(PTDFMatrix):
 
     def get_bus_phi_losses_adj(self, bus_name):
         return self.phi_losses_adjust_array[self._busname_to_index_map[bus_name]]
+
+    def get_branch_phi_losses_adj(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        losses_row = self.LDF[row_idx]
+        return np.dot(losses_row, self.phi_losses_adjust_array)

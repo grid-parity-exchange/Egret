@@ -74,7 +74,8 @@ def _solve_model(model,
                  solver_tee = True,
                  symbolic_solver_labels = False,
                  options = None,
-                 return_solver = False):
+                 return_solver = False,
+                 vars_to_load = None):
     '''
     Create and solve an Egret power system optimization model
 
@@ -97,6 +98,9 @@ def _solve_model(model,
         Other options to pass into the solver. Default is dict().
     return_solver : bool (optional)
         Returns the solver object
+    vars_to_load : list (optional)
+        When supplied, and the solver is persistent, this will just load
+        pyomo variables specificed
 
     Returns
     -------
@@ -130,13 +134,23 @@ def _solve_model(model,
 
     if isinstance(solver, PersistentSolver):
         solver.set_instance(model, symbolic_solver_labels=symbolic_solver_labels)
-        results = solver.solve(model, tee=solver_tee)
+        results = solver.solve(model, tee=solver_tee, load_solutions=False, save_results=False)
     else:
         results = solver.solve(model, tee=solver_tee, \
-                              symbolic_solver_labels=symbolic_solver_labels)
+                              symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
 
     if results.solver.termination_condition not in safe_termination_conditions:
         raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))
+
+    if isinstance(solver, PersistentSolver):
+        solver.load_vars(vars_to_load)
+        if vars_to_load is None:
+            if hasattr(model, "dual"):
+                solver.load_duals()
+            if hasattr(model, "slack"):
+                solver.load_slacks()
+    else:
+        model.solutions.load_from(results)
 
     if return_solver:
         return model, results, solver

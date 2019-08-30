@@ -157,6 +157,28 @@ def test_uc_transmission_models():
     md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
     assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
 
+def test_uc_relaxation():
+    test_name = 'tiny_uc_tc'
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+
+    md_results = solve_unit_commitment(md_in, solver='cbc', options={'presolve': 'off', 'primalS':''}, relaxed=True)
+    reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_relaxed_results.json')
+    md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+
+def test_uc_ptdf_termination():
+    test_name = 'tiny_uc_tc'
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+
+    kwargs = {'ptdf_options':{'lazy': True, 'rel_ptdf_tol':10.}}
+    md_results, results = solve_unit_commitment(md_in, solver='cbc', options={'presolve': 'off', 'primalS':''}, relaxed=True, return_results=True, **kwargs)
+
+    assert results.egret_metasolver['iterations'] == 1
+
 def test_uc_ptdf_serialization_deserialization():
 
     test_name = 'tiny_uc_tc' ## based on tiny_uc_1

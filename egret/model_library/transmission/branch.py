@@ -17,7 +17,8 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.decl as decl
 from egret.model_library.defn import FlowType, CoordinateType, ApproximationType, RelaxationType
 from egret.data.model_data import zip_items
-
+from pyomo.core.util import quicksum
+from pyomo.core.expr.numeric_expr import LinearExpression
 
 def declare_var_dva(model, index_set, **kwargs):
     """
@@ -376,24 +377,28 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     if abs_ptdf_tol is None:
         abs_ptdf_tol = 0.
 
-    expr = PTDF.get_branch_phase_shift(branch_name)
+    const = PTDF.get_branch_phase_shift(branch_name) + PTDF.get_branch_phi_adj(branch_name)
 
     max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
-    ## This case is weird, but could happen, causing divison by 0 below
-    if max_coef == 0:
-        return expr
+
+    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
-    for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
-        if abs(coef) < abs_ptdf_tol:
-            ## no point in excuting the rest of the for loop
-            continue
-        if abs(coef)/max_coef < rel_ptdf_tol:
-            ## no point in excuting the rest of the for loop
-            continue
-        phi_adjust = PTDF.get_bus_phi_adj(bus_name)
+    m_p_nw = model.p_nw
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_p_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+            if abs(coef) >= ptdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_p_nw[bus_name])
 
-        expr += coef*model.p_nw[bus_name]+coef*phi_adjust
+        lin_expr_list = [const] + coef_list + var_list 
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
 
     return expr
 
@@ -436,26 +441,30 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
     if abs_ptdf_tol is None:
         abs_ptdf_tol = 0.
 
-    expr = PTDF.get_branch_losses_phase_shift(branch_name)
-    expr += PTDF.get_branch_ldf_c(branch_name)
+    const = PTDF.get_branch_losses_phase_shift(branch_name)
+    const += PTDF.get_branch_ldf_c(branch_name)
+    const += PTDF.get_branch_phi_losses_adj(branch_name)
 
     max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
 
-    if max_coef == 0:
-        return expr
-
-    ## NOTE: It would be easy to hold on to the 'ldf' dictionary here,
+    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
+    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
-    for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
-        if abs(coef) < abs_ptdf_tol:
-            ## no point in excuting the rest of the for loop
-            continue
-        if abs(coef)/max_coef < rel_ptdf_tol:
-            ## no point in excuting the rest of the for loop
-            continue
-        phi_losses_adjust = PTDF.get_bus_phi_losses_adj(bus_name)
+    m_p_nw = model.p_nw
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_p_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
+            if abs(coef) >= ptdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_p_nw[bus_name])
 
-        expr += coef*model.p_nw[bus_name]+coef*phi_losses_adjust
+        lin_expr_list = [const] + coef_list + var_list 
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
 
     return expr
 

@@ -141,6 +141,20 @@ def load_params(model, model_data):
     
     model.Buses = Set(initialize=bus_attrs['names'])
     
+    if 'reference_bus' in system and system['reference_bus'] in model.Buses:
+        reference_bus = system['reference_bus']
+    else:
+        reference_bus = list(sorted(m.Buses))[0]
+
+    model.ReferenceBus = Param(within=model.Buses, initialize=reference_bus)
+
+    if 'reference_bus_angle' in system:
+        ref_angle = system['reference_bus_angle']
+    else:
+        ref_angle = 0.
+
+    model.ReferenceBusAngle = Param(within=Reals, initialize=ref_angle)
+    
     ################################
     
     ## in minutes, assert that this must be a positive integer
