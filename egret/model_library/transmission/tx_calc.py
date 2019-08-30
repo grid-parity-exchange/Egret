@@ -13,6 +13,7 @@ different computations for transmission models
 """
 import math
 import numpy as np
+import scipy as sp
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 
@@ -524,11 +525,27 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
     return pfl_constant
 
-def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART):
+
+def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None):
     """
     Calculates the sensitivity of the voltage angle to real power injections
+    Parameters
+    ----------
+    branches: dict{}
+        The dictionary of branches for the test case
+    buses: dict{}
+        The dictionary of buses for the test case
+    index_set_branch: list
+        The list of keys for branches for the test case
+    index_set_bus: list
+        The list of keys for buses for the test case
+    reference_bus: key value
+        The reference bus key value
+    base_point: egret.model_library_defn.BasePointType
+        The base-point type for calculating the PTDF matrix
+    sparse_index_set_branch: list
+        The list of keys for branches needed to compute a sparse PTDF matrix
     """
-
     _len_bus = len(index_set_bus)
     _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
 
@@ -541,25 +558,41 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
     M = np.matmul(A.transpose(),J)
 
-    J0 = np.zeros((_len_bus+1,_len_bus+1))
-    J0[:-1,:-1] = M
+    J0 = np.zeros((_len_bus + 1, _len_bus + 1))
+    J0[:-1, :-1] = M
     J0[-1][_ref_bus_idx] = 1
     J0[_ref_bus_idx][-1] = 1
 
-    try:
-        SENSI = np.linalg.inv(J0)
-    except np.linalg.LinAlgError:
-        print("Matrix not invertible. Calculating pseudo-inverse instead.")
-        SENSI = np.linalg.pinv(J0,rcond=1e-7)
-        pass
-    SENSI = SENSI[:-1,:-1]
+    if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
+        try:
+            SENSI = sp.linalg.inv(J0)
+        except sp.linalg.LinAlgError:
+            print("Matrix not invertible. Calculating pseudo-inverse instead.")
+            SENSI = sp.linalg.pinv(J0,rcond=1e-7)
+            pass
+        SENSI = SENSI[:-1,:-1]
 
-    PTDF = np.matmul(J,SENSI)
+        PTDF = sp.sparse.lil_matrix(sp.matmul(J,SENSI))
+    elif len(sparse_index_set_branch) < _len_branch:
+        n, m = M.shape
+        B = np.array([], dtype=np.int64).reshape(_len_bus + 1,0)
+        _sparse_mapping_branch = {i: index_set_branch[i] for i in list(range(0, _len_branch)) if index_set_branch[i] in sparse_index_set_branch}
+
+        for idx, branch_name in _sparse_mapping_branch.items():
+            b = np.zeros((_len_branch,1))
+            b[idx] = 1
+            _tmp = np.matmul(J.transpose(),b)
+            _tmp = np.vstack([_tmp,0])
+            B = np.concatenate((B,_tmp), axis=1)
+        row_idx = list(_sparse_mapping_branch.keys())
+        PTDF = sp.sparse.lil_matrix((_len_branch,_len_bus))
+        _ptdf = sp.sparse.linalg.spsolve(sp.sparse.csr_matrix(J0.transpose()), B).T
+        PTDF[row_idx] = _ptdf[:,:-1]
 
     return PTDF
 
 
-def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION):
+def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None):
     """
     Calculates the sensitivity of the voltage angle to real power injections and losses on the lines. Includes the
     calculation of the constant term for the quadratic losses on the lines.
@@ -589,21 +622,48 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     J0[-1][_ref_bus_idx] = 1
     J0[_ref_bus_idx][-1] = 1
 
-    try:
-        SENSI = np.linalg.inv(J0)
-    except np.linalg.LinAlgError:
-        print("Matrix not invertible. Calculating pseudo-inverse instead.")
-        SENSI = np.linalg.pinv(J0,rcond=1e-7)
-        pass
-    SENSI = SENSI[:-1,:-1]
+    if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
+        try:
+            SENSI = sp.linalg.inv(J0)
+        except sp.linalg.LinAlgError:
+            print("Matrix not invertible. Calculating pseudo-inverse instead.")
+            SENSI = sp.linalg.pinv(J0,rcond=1e-7)
+            pass
+        SENSI = SENSI[:-1,:-1]
+        PTDF = sp.sparse.lil_matrix(sp.matmul(J, SENSI))
+        LDF = sp.sparse.lil_matrix(sp.matmul(L, SENSI))
+    elif len(sparse_index_set_branch) < _len_branch:
+        n, m = M.shape
+        B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
+        B_L = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
+        _sparse_mapping_branch = {i: index_set_branch[i] for i in list(range(0, _len_branch)) if
+                                  index_set_branch[i] in sparse_index_set_branch}
 
-    PTDF = np.matmul(J, SENSI)
-    LDF = np.matmul(L,SENSI)
+        for idx, branch_name in _sparse_mapping_branch.items():
+            b = np.zeros((_len_branch, 1))
+            b[idx] = 1
 
-    M1 = np.matmul(A.transpose(), Jc)
-    M2 = np.matmul(AA.transpose(), Lc)
-    M = M1 + 0.5 * M2
-    LDF_constant = -np.matmul(LDF,M) + Lc
+            _tmp_J = np.matmul(J.transpose(), b)
+            _tmp_J = np.vstack([_tmp_J, 0])
+            B_J = np.concatenate((B_J, _tmp_J), axis=1)
+
+            _tmp_L = np.matmul(L.transpose(), b)
+            _tmp_L = np.vstack([_tmp_L, 0])
+            B_L = np.concatenate((B_L, _tmp_L), axis=1)
+
+        row_idx = list(_sparse_mapping_branch.keys())
+        PTDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
+        _ptdf = sp.sparse.linalg.spsolve(sp.sparse.csr_matrix(J0.transpose()), B_J).T
+        PTDF[row_idx] = _ptdf[:, :-1]
+
+        LDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
+        _ldf = sp.sparse.linalg.spsolve(sp.sparse.csr_matrix(J0.transpose()), B_L).T
+        LDF[row_idx] = _ldf[:, :-1]
+
+        M1 = sp.sparse.lil_matrix(sp.matmul(A.transpose(), Jc))
+        M2 = sp.sparse.lil_matrix(sp.matmul(AA.transpose(), Lc))
+        M = M1 + 0.5 * M2
+        LDF_constant = -sp.sparse.lil_matrix(sp.matmul(LDF,M)) + Lc
 
     return PTDF, LDF, LDF_constant
 
