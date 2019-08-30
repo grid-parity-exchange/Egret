@@ -22,6 +22,7 @@ import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 import egret.data.data_utils as data_utils
+import egret.common.lazy_ptdf_utils as lpu
 
 from egret.model_library.defn import BasePointType, CoordinateType, ApproximationType
 from math import pi
@@ -99,16 +100,18 @@ def _ptdf_dcopf_network_model(block,tm):
     libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
     block.pl.fix()
 
+    libbus.declare_var_p_nw(block, m.Buses)
+
     ### get the fixed shunts at the buses
     bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
     ### declare net withdraw expression for use in PTDF power flows
-    libbus.declare_expr_p_net_withdraw_at_bus(model=block,
-                                              index_set=m.Buses,
-                                              bus_p_loads=bus_p_loads,
-                                              gens_by_bus=gens_by_bus,
-                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                              )
+    libbus.declare_eq_p_net_withdraw_at_bus(model=block,
+                                            index_set=m.Buses,
+                                            bus_p_loads=bus_p_loads,
+                                            gens_by_bus=gens_by_bus,
+                                            bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                            )
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=block,
@@ -151,6 +154,8 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      p_thermal_limits=None,
                                                      approximation_type=None,
                                                      )
+        ### add helpers for tracking monitored branches
+        lpu.add_monitored_branch_tracker(block)
         
     else: ### add all the dense constraints
         rel_ptdf_tol = m._ptdf_options['rel_ptdf_tol']

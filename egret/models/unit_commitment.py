@@ -16,10 +16,14 @@ unit commitment formulations
 
 from egret.model_library.unit_commitment.uc_model_generator \
         import UCFormulation, generate_model 
+from egret.common.log import logger
 from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
+from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+
 import egret.common.lazy_ptdf_utils as lpu
 import egret.data.data_utils as data_utils
+import pyomo.environ as pe
 import numpy as np
 
 def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
@@ -546,8 +550,7 @@ def create_CA_unit_commitment_model(model_data,
                        ]
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
-def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, add_all_lazy_violations=False):
-    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, vars_to_load=None):
 
     persistent_solver = isinstance(solver, PersistentSolver)
     duals = hasattr(m, 'dual')
@@ -558,8 +561,9 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
     PVF = dict()
     viol_num = dict()
-    viols_tup = dict()
-    all_viol_in_model = dict()
+    mon_viol_num = dict()
+    gt_viol_lazy = dict()
+    lt_viol_lazy = dict()
 
     for i in range(iteration_limit):
         for t in m.TimePeriods:
@@ -568,25 +572,35 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
             PTDF = b._PTDF
 
             ## these should only need to be gathered once
-            if PTDF.lazy_branch_limits is None: 
+            if PTDF.enforced_branch_limits is None:
                 branch_limits = PTDF.branch_limits_array
                 rel_flow_tol = ptdf_options['rel_flow_tol']
                 abs_flow_tol = ptdf_options['abs_flow_tol']
-                lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
 
-                ## if lazy_rel_flow_tol < 0, this narrows the branch limits
-                PTDF.lazy_branch_limits = branch_limits*(1+lazy_rel_flow_tol)
                 ## only enforce the relative and absolute, within tollerance
                 PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
 
-            PVF[t], viol_num[t], viols_tup[t] = lpu.check_violations(b, PTDF)
+            PVF[t], viol_num[t], mon_viol_num[t], gt_viol_lazy[t], lt_viol_lazy[t] = \
+                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t)
 
-        total_viol_num = sum(val for val in viol_num.values())
-        print("iteration {0}, found {1} violation(s)".format(i,total_viol_num))
-        if total_viol_num <= 0 and not add_all_lazy_violations:
-            if persistent_solver and duals and results is not None:
+        total_viol_num = sum(viol_num.values())
+        total_mon_viol_num = sum(mon_viol_num.values())
+
+        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,total_viol_num)
+        if total_mon_viol_num:
+            iter_status_str += ", {} of which are already monitored".format(total_mon_viol_num)
+
+        logger.info(iter_status_str)
+
+        if total_viol_num <= 0:
+            if persistent_solver and duals and results is not None and vars_to_load is None:
                 solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.NORMAL, results
+            return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
+        elif total_viol_num == total_mon_viol_num:
+            logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
+            if persistent_solver and duals:
+                solver.load_duals()
+            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
 
         all_times_all_viol_in_model = True
         for t in m.TimePeriods:
@@ -594,33 +608,97 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
             PTDF = b._PTDF
 
-            all_viol_in_model[t] = lpu.add_violations(viols_tup[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t)
-            if all_times_all_viol_in_model and (not all_viol_in_model[t]):
-                all_times_all_viol_in_model = False
-
-        if all_times_all_viol_in_model or (total_viol_num <= 0.):
-            if all_times_all_viol_in_model:
-                print('WARNING: Terminating with monitored violations!')
-                print('         Result is not transmission feasible.')
-            if persistent_solver and duals:
-                solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results
+            lpu.add_violations(gt_viol_lazy[t], lt_viol_lazy[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t)
 
         if persistent_solver:
             results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
-            solver.load_vars()
+            solver.load_vars(vars_to_load)
         else:
             results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
             m.solutions.load_from(results)
 
     else:
         if warn_on_max_iter:
-            print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
-            print('         Result is not transmission feasible.')
+            logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
         if persistent_solver and duals:
             solver.load_duals()
-        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results
+        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
 
+def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed):
+
+    from egret.common.solver_interface import _solve_model
+    import time
+
+    egret_metasolver_status = dict()
+
+    start_time = time.time()
+
+    ## cache here the variables that need to be 
+    ## loaded to check transimission feasbility
+    ## for a persistent solver
+    if isinstance(solver, PersistentSolver) or (isinstance(solver,str) and 'persistent' in solver):
+        vars_to_load = list()
+        for t in m.TimePeriods:
+            b = m.TransmissionBlock[t]
+            if isinstance(b.p_nw, pe.Var):
+                vars_to_load.extend(b.p_nw.values())
+            else:
+                vars_to_load = None
+                break
+    else:
+        vars_to_load = None
+
+    lp_iter_limit = m._ptdf_options['lp_iteration_limit']
+    model_data = m.model_data
+
+    ## if this is a MIP, iterate though a few times with just the LP relaxation
+    if not relaxed and lp_iter_limit > 0:
+
+        lpu.uc_instance_binary_relaxer(m, None)
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load = vars_to_load)
+        lp_termination_cond, results, lp_iterations = \
+                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, warn_on_max_iter=False, vars_to_load = vars_to_load)
+        ## if the initial solve was transmission feasible, then
+        ## we never re-solved the problem
+        if results is None:
+            results = results_init
+
+        egret_metasolver_status['lp_termination_cond'] = lp_termination_cond
+        egret_metasolver_status['lp_iterations'] = lp_iterations
+
+        lpu.uc_instance_binary_enforcer(m, solver)
+
+        ## solve the MIP after enforcing binaries
+        results_init = solver.solve(m, tee=solver_tee, load_solutions=False)
+        if isinstance(solver, PersistentSolver):
+            solver.load_vars(vars_to_load)
+        else:
+            m.solutions.load_from(results_init)
+
+    ## else if relaxed or lp_iter_limit == 0, do an initial solve
+    else:
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load=vars_to_load)
+
+    iter_limit = m._ptdf_options['iteration_limit']
+    termination_cond, results, iterations = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True, vars_to_load=vars_to_load)
+    ## if the initial solve was transmission feasible, then
+    ## we never re-solved the problem
+    if results is None:
+        results = results_init
+
+    egret_metasolver_status['termination_cond'] = termination_cond
+    egret_metasolver_status['iterations'] = iterations
+
+    if isinstance(solver, PersistentSolver) and vars_to_load is not None:
+        solver.load_vars()
+        if hasattr(m, "dual"):
+            solver.load_duals()
+        if hasattr(m, "slack"):
+            solver.load_slacks()
+
+    egret_metasolver_status['time'] = time.time() - start_time
+    results.egret_metasolver = egret_metasolver_status
+    return m, results, solver
 
 def _time_series_dict(values):
     return {'data_type':'time_series', 'values':values}
@@ -635,6 +713,7 @@ def solve_unit_commitment(model_data,
                           uc_model_generator = create_tight_unit_commitment_model,
                           relaxed = False,
                           return_model = False,
+                          return_results = False,
                           **kwargs):
     '''
     Create and solve a new unit commitment model
@@ -664,15 +743,14 @@ def solve_unit_commitment(model_data,
         If True, creates a relaxed unit commitment model
     return_model : bool (optional)
         If True, returns the pyomo model object
+    return_results : bool (optional)
+        If True, returns the pyomo results object
     kwargs : dictionary (optional)
         Additional arguments for building model
     '''
 
-    import pyomo.environ as pe
     from pyomo.environ import value
     from egret.common.solver_interface import _solve_model
-    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
-
 
     m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
 
@@ -682,47 +760,7 @@ def solve_unit_commitment(model_data,
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
-        ## if we were asked to, serialize the PTDF matrices we calculated
-        data_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
-
-        ## if this is a MIP, iterate though a few times with just the LP relaxation
-        if not relaxed:
-            ## BK -- be a bit more aggressive bring in PTDF constraints
-            ##       from the relaxation
-            relax_add_flow_tol = 0.05
-            m._ptdf_options['lazy_rel_flow_tol'] -= relax_add_flow_tol
-
-            iter_limit = m._ptdf_options['lp_iteration_limit']
-
-            lpu.uc_instance_binary_relaxer(m, None)
-            m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
-            lp_termination_cond, results = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=iter_limit, warn_on_max_iter=False, add_all_lazy_violations=True)
-            ## if the initial solve was transmission feasible, then
-            ## we never re-solved the problem
-            if results is None:
-                results = results_init
-
-            lpu.uc_instance_binary_enforcer(m, solver)
-            m._ptdf_options['lazy_rel_flow_tol'] += relax_add_flow_tol
-
-            ## solve the MIP after enforcing binaries
-            results_init = solver.solve(m, tee=solver_tee, load_solutions=False)
-            if isinstance(solver, PersistentSolver):
-                solver.load_vars()
-            else:
-                m.solutions.load_from(results_init)
-
-        ## if relaxed, do an initial solve
-        else:
-            m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
-
-        iter_limit = m._ptdf_options['iteration_limit']
-        termination_cond, results = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True)
-        ## if the initial solve was transmission feasible, then
-        ## we never re-solved the problem
-        if results is None:
-            results = results_init
-
+        m, results, solver = _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed )
     else:
         m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
 
@@ -957,7 +995,7 @@ def solve_unit_commitment(model_data,
             PTDF = b._PTDF
             PTDFM = PTDF.PTDFM
             branches_idx = PTDF.branches_keys
-            NWV = np.array([pe.value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
+            NWV = np.array([value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
             PFV = np.dot(PTDFM, NWV)
             for i,bn in enumerate(branches_idx):
                 flows_dict[mt][bn] = PFV[i]
@@ -1173,15 +1211,19 @@ def solve_unit_commitment(model_data,
                 for dt, mt in zip(data_time_periods, m.TimePeriods):
                     fuel_consumed[dt] = value(m.TotalFuelConsumedAtInstFuelSupply[f,mt])
             else:
-                print('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
+                logger.warning('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
             f_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
 
     md.data['system']['total_cost'] = value(m.TotalCostObjective)
 
     unscale_ModelData_to_pu(md, inplace=True)
     
-    if return_model:
+    if return_model and return_results:
+        return md, m, results
+    elif return_model:
         return md, m
+    elif return_results:
+        return md, results
     return md
 
 # if __name__ == '__main__':

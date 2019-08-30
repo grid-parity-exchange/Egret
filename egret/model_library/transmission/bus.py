@@ -71,6 +71,12 @@ def declare_var_ql(model, index_set, **kwargs):
     """
     decl.declare_var('ql', model=model, index_set=index_set, **kwargs)
 
+def declare_var_p_nw(model, index_set, **kwargs):
+    """
+    Create variable for the reactive power load at a bus
+    """
+    decl.declare_var('p_nw', model=model, index_set=index_set, **kwargs)
+
 
 def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
                                     coordinate_type=CoordinateType.POLAR):
@@ -107,6 +113,20 @@ def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bu
         m.p_nw[b] = ( bus_gs_fixed_shunts[b] 
                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
                     - sum( m.pg[g] for g in gens_by_bus[b] ) )
+        
+def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+    """
+    Create a named pyomo expression for bus net withdraw
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_p_net_withdraw_at_bus', model, index_set)
+
+    m.eq_p_net_withdraw_at_bus = pe.Constraint(con_set)
+
+    for b in index_set:
+        m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] 
+                                                    + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
+                                                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
                     
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """

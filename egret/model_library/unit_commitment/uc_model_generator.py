@@ -88,7 +88,7 @@ def _generate_model( model_data,
     model.name = "UnitCommitment"
     
     ## munge ptdf_options, if necessary
-    if _power_balance in ['lazy_ptdf_power_flow', 'ptdf_power_flow']:
+    if _power_balance in ['ptdf_power_flow']:
         import egret.common.lazy_ptdf_utils as lpu
         if _ptdf_options is None:
             _ptdf_options = dict()
