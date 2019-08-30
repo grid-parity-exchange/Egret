@@ -122,7 +122,7 @@ class PTDFMatrix(object):
         PTDFM = tx_calc.calculate_ptdf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
 
         ## protect the array using numpy
-        PTDFM.flags.writeable = False
+        #PTDFM.flags.writeable = False
 
         self.PTDFM = PTDFM
 
@@ -194,9 +194,9 @@ class PTDFLossesMatrix(PTDFMatrix):
         ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
 
         ## protect the arrays using numpy
-        ptdf_r.flags.writeable = False
-        ldf.flags.writeable = False
-        ldf_c.flags.writeable = False
+        #ptdf_r.flags.writeable = False
+        #ldf.flags.writeable = False
+        #ldf_c.flags.writeable = False
 
         self.PTDFM = ptdf_r
         self.LDF = ldf
