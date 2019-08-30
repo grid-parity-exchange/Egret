@@ -24,7 +24,7 @@ import egret.data.data_utils as data_utils
 
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
 from egret.data.model_data import map_items, zip_items
-from egret.models.copperplate_dispatch import _include_system_feasibility_slack, create_copperplate_dispatch_approx_model
+from egret.models.copperplate_dispatch import _include_system_feasibility_slack, solve_copperplate_dispatch
 from math import pi, radians
 
 
@@ -301,8 +301,44 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
 
     return model, md
 
-def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
+def _lazy_ptdf_dcopf_model_solve_loop(md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, ptdf_options=None):
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+    '''
+    Solves the DCOPF using a sparse PTDF:
+    1. Build the Copperplate Dispatch model (CD), solve.
+    2. Post-compute voltage angle theta solution for all line flows of the current model.
+    3. If there are are line flow violations for the theta solution, compute the corresponding PTDF for that line; otherwise skip the line.
+    4. If the new PTDF calculations required is none, return the current solution.
+    5. If the new  PTDF calculations required is non-empty, compute the sparse PTDF and solve the PTDF model.
+    6. Go to step 2.
+    
+    This approach is equivalent to solving the full PTDF or full DCOPF B-theta formulation.
+    '''
+    if ptdf_options is None:
+        ptdf_options = dict()
+
+    lpu.populate_default_ptdf_options(ptdf_options)
+
+
+    md, m, results = solve_copperplate_dispatch(md,solver,return_model=True,return_results=True)
+
+    bus_attrs = md.attributes(element_type='bus')
+    p_nw = np.array([bus_attrs['p_nw'][k] for k in bus_attrs['names']])
+
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+    buses_idx = tuple(buses.keys())
+    branches_idx = tuple(branches.keys())
+    base_point = BasePointType.FLATSTART
+    reference_bus = md.data['system']['reference_bus']
+    PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, base_point, branches_keys=branches_idx,
+                                 buses_keys=buses_idx)
+
+    A = PTDF.btheta_bus
+    b = p_nw - PTDF.btheta_shift[:,0]
+    va = np.linalg.solve(A,b)
+    pf = np.dot(-PTDF.btheta_branch,va)
+
 
     PTDF = m._PTDF
 
@@ -318,6 +354,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
 
     persistent_solver = isinstance(solver, PersistentSolver)
 
+    iteration_limit = ptdf_options['iteration_limit']
     for i in range(iteration_limit):
 
         PFV, viol_num, mon_viol_num, gt_viol_lazy, lt_viol_lazy = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
@@ -407,6 +444,11 @@ def solve_dcopf(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
+    if dcopf_model_generator == create_ptdf_dcopf_model:
+        term_cond = _lazy_ptdf_dcopf_model_solve_loop(model_data, solver, timelimit=timelimit, solver_tee=solver_tee,
+                                                      symbolic_solver_labels=symbolic_solver_labels,
+                                                      **kwargs)
+
     m, md = dcopf_model_generator(model_data, **kwargs)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
@@ -414,9 +456,9 @@ def solve_dcopf(model_data,
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
-    if dcopf_model_generator == create_ptdf_dcopf_model and m._ptdf_options['lazy']:
-        iter_limit = m._ptdf_options['iteration_limit']
-        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
+    # if dcopf_model_generator == create_ptdf_dcopf_model and m._ptdf_options['lazy']:
+    #     iter_limit = m._ptdf_options['iteration_limit']
+    #     term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -532,21 +574,18 @@ def constraint_resid_to_string(name, con, resid):
         return '{0:10.4g} | {2:10.4} <= {3:10.4g} <= {4:10.4g} : {1}'.format(resid, name, value(con.lower), value(con.body), value(con.upper))
 
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     print(path)
-#     filename = 'pglib_opf_case300_ieee.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
-#
-#     kwargs = {'include_feasibility_slack':False}
-#     md_btheta, m_btheta, results_btheta = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model, return_model=True, return_results=True, **kwargs)
-#
-#     from acopf import solve_acopf
-#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-#     kwargs = {'include_feasibility_slack':False,'base_point':BasePointType.SOLUTION}
-#     md_ptdf, m_ptdf, results_ptdf = solve_dcopf(model_data, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, return_model=True, return_results=True, **kwargs)
-#
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    print(path)
+    filename = 'pglib_opf_case14_ieee.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
+    md = create_ModelData(matpower_file)
+
+    #md, m, results = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model, return_model=True, return_results=True)
+    #m.pprint()
+    kwargs = {'ptdf_options': {'lazy': True}}
+    md_ptdf, m_ptdf, results_ptdf = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, return_model=True, return_results=True, **kwargs)
+

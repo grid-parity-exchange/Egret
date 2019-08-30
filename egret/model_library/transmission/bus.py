@@ -110,10 +110,10 @@ def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bu
     decl.declare_expr('p_nw', model, index_set)
 
     for b in index_set:
-        m.p_nw[b] = ( bus_gs_fixed_shunts[b] 
+        m.p_nw[b] = ( bus_gs_fixed_shunts[b]
                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
                     - sum( m.pg[g] for g in gens_by_bus[b] ) )
-        
+
 def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
     """
     Create a named pyomo expression for bus net withdraw
@@ -127,7 +127,7 @@ def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus,
         m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] 
                                                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
                                                     - sum( m.pg[g] for g in gens_by_bus[b] ) )
-                    
+
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """
     Create an equality constraint to enforce tan(\theta) = vj/vr at  the reference bus

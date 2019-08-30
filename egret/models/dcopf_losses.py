@@ -417,7 +417,6 @@ def solve_dcopf_losses(model_data,
         return md, results
     return md
 
-
 #if __name__ == '__main__':
 #    import os
 #    from egret.parsers.matpower_parser import create_ModelData

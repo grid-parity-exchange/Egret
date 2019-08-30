@@ -53,7 +53,7 @@ def create_copperplate_dispatch_approx_model(model_data, include_feasibility_sla
     shunts = dict(md.elements(element_type='shunt'))
 
     gen_attrs = md.attributes(element_type='generator')
-    bus_attrs = md.attributes(element_type='bus')
+    buses_idx = tuple(buses.keys())
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
@@ -64,7 +64,7 @@ def create_copperplate_dispatch_approx_model(model_data, include_feasibility_sla
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
 
-    libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
+    libbus.declare_var_pl(model, buses_idx, initialize=bus_p_loads)
     model.pl.fix()
 
     ### declare the fixed shunts at the buses
@@ -83,13 +83,20 @@ def create_copperplate_dispatch_approx_model(model_data, include_feasibility_sla
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
-                                   index_set=bus_attrs['names'],
+                                   index_set=buses_idx,
                                    bus_p_loads=bus_p_loads,
                                    gens_by_bus=gens_by_bus,
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                    **p_rhs_kwargs
                                    )
 
+    ### declare net withdraw expression
+    libbus.declare_expr_p_net_withdraw_at_bus(model=model,
+                                              index_set=buses_idx,
+                                              bus_p_loads=bus_p_loads,
+                                              gens_by_bus=gens_by_bus,
+                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                              )
     ### declare the generator cost objective
     libgen.declare_expression_pgqg_operating_cost(model=model,
                                                   index_set=gen_attrs['names'],
@@ -171,6 +178,7 @@ def solve_copperplate_dispatch(model_data,
     for b,b_dict in buses.items():
         b_dict['pl'] = value(m.pl[b])
         b_dict['lmp'] = value(m.dual[m.eq_p_balance])
+        b_dict['p_nw'] = value(m.p_nw[b])
 
     unscale_ModelData_to_pu(md, inplace=True)
 
