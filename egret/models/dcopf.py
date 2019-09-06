@@ -436,7 +436,7 @@ def solve_dcopf(model_data,
         branches_idx = PTDF.branches_keys
 
         NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
-        PFV  = np.dot(PTDFM, NWV)
+        PFV  = PTDFM.dot(NWV)
         PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
             branches[bn]['pf'] = PFV[i]
@@ -446,7 +446,7 @@ def solve_dcopf(model_data,
                 PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_ub[bn]])
         ## TODO: PFD is likely to be sparse, implying we just need a few
         ##       rows of the PTDF matrix (or columns in its transpose).
-        LMPC = np.dot(-PTDFM.T, PFD)
+        LMPC = -PTDFM.T.dot(PFD)
     else:
         for k, k_dict in branches.items():
             k_dict['pf'] = value(m.pf[k])
@@ -538,15 +538,17 @@ def constraint_resid_to_string(name, con, resid):
 #
 #     path = os.path.dirname(__file__)
 #     print(path)
-#     filename = 'pglib_opf_case300_ieee.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
+#     filename = 'pglib_opf_case30_ieee.m'
+#     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
+#     md_dict = create_ModelData(test_case)
 #
-#     kwargs = {'include_feasibility_slack':False}
-#     md_btheta, m_btheta, results_btheta = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model, return_model=True, return_results=True, **kwargs)
+#     dcopf_model = create_ptdf_dcopf_model
 #
-#     from acopf import solve_acopf
-#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-#     kwargs = {'include_feasibility_slack':False,'base_point':BasePointType.SOLUTION}
-#     md_ptdf, m_ptdf, results_ptdf = solve_dcopf(model_data, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, return_model=True, return_results=True, **kwargs)
+#     kwargs = {'ptdf_options': {'save_to': test_case + '.pickle'}}
+#     md_serialization, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False,
+#                                             return_results=True, **kwargs)
 #
+#     kwargs = {'ptdf_options': {'load_from': test_case + '.pickle'}}
+#     md_deserialization, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False,
+#                                               return_results=True, **kwargs)
+

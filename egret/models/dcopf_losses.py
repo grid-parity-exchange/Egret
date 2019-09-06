@@ -418,19 +418,21 @@ def solve_dcopf_losses(model_data,
     return md
 
 
-#if __name__ == '__main__':
-#    import os
-#    from egret.parsers.matpower_parser import create_ModelData
+# if __name__ == '__main__':
+#     import os
+#     from egret.parsers.matpower_parser import create_ModelData
 #
-#    path = os.path.dirname(__file__)
-#    filename = 'pglib_opf_case300_ieee.m'
-#    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#    md = create_ModelData(matpower_file)
+#     path = os.path.dirname(__file__)
+#     print(path)
+#     filename = 'pglib_opf_case30_ieee.m'
+#     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
+#     md_dict = create_ModelData(test_case)
+#     dcopf_losses_model = create_ptdf_losses_dcopf_model
 #
-#    kwargs = {'include_feasibility_slack':False}
-#    md_btheta, m_btheta, results_btheta = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
+#     from egret.models.acopf import solve_acopf
 #
-#    from acopf import solve_acopf
-#    md = create_ModelData(matpower_file)
-#    model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-#    md_ptdf, m_ptdf, results_ptdf = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
+#     md_dict, _, _ = solve_acopf(md_dict, "ipopt", solver_tee=False, return_model=True, return_results=True)
+#
+#     kwargs = {}
+#     md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model,
+#                                      solver_tee=False, return_results=True, **kwargs)
