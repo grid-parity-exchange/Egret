@@ -186,10 +186,15 @@ def test_uc_ptdf_serialization_deserialization():
 
     md_in = ModelData(json.load(open(input_json_file_name, 'r')))
 
-    kwargs = {'ptdf_options' : {'save_to': test_name+'.pickle'}}
+    ptdf_file_name = test_name+'.pickle'
+
+    kwargs = {'ptdf_options' : {'save_to': ptdf_file_name}}
     md_serialization = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
 
-    kwargs = {'ptdf_options' : {'load_from': test_name+'.pickle'}}
+    ## ensure the file is present
+    assert os.path.isfile(ptdf_file_name)
+
+    kwargs = {'ptdf_options' : {'load_from': ptdf_file_name}}
     md_deserialization = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
 
     assert math.isclose(md_serialization.data['system']['total_cost'], md_deserialization.data['system']['total_cost'])
