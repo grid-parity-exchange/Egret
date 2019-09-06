@@ -82,7 +82,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None):
     NWV = np.array([pe.value(mb.p_nw[b]) for b in PTDF.bus_iterator()])
     NWV += PTDF.phi_adjust_array
 
-    PFV  = np.dot(PTDF.PTDFM, NWV)
+    PFV  = PTDF.PTDFM.dot(NWV)
     PFV += PTDF.phase_shift_array
 
     ## calculate the negative of the violations (for easy sorting)
