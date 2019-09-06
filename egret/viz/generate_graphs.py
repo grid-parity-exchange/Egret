@@ -408,6 +408,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
         is_quickstart = gen_data.get('quickstart_capable', False)
 
         if is_quickstart:
+            commitment = attribute_to_array(gen_data['commitment'])
             p_max = gen_data['p_max']
             startup_capacity = gen_data['startup_capacity']
             quickstart_capacity = min(p_max, startup_capacity)
