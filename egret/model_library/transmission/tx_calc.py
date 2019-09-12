@@ -12,7 +12,6 @@ This module collects some helper functions useful for performing
 different computations for transmission models
 """
 import math
-import scipy as sp
 import numpy as np
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
@@ -366,8 +365,8 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
 
     _len_branch = len(index_set_branch)
 
-    phi_from = sp.zeros((_len_bus,_len_branch))
-    phi_to = sp.zeros((_len_bus,_len_branch))
+    phi_from = np.zeros((_len_bus,_len_branch))
+    phi_to = np.zeros((_len_bus,_len_branch))
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -407,8 +406,8 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
 
     _len_branch = len(index_set_branch)
 
-    phi_loss_from = sp.zeros((_len_bus,_len_branch))
-    phi_loss_to = sp.zeros((_len_bus,_len_branch))
+    phi_loss_from = np.zeros((_len_bus,_len_branch))
+    phi_loss_to = np.zeros((_len_bus,_len_branch))
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -445,7 +444,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
     """
 
     _len_branch = len(index_set_branch)
-    pf_constant = sp.zeros(_len_branch)
+    pf_constant = np.zeros(_len_branch)
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -486,7 +485,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
     _len_branch = len(index_set_branch)
 
-    pfl_constant = sp.zeros(_len_branch)
+    pfl_constant = np.zeros(_len_branch)
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -559,14 +558,14 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
 
     if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
         try:
-            SENSI = sp.linalg.inv(J0)
-        except sp.linalg.LinAlgError:
+            SENSI = np.linalg.inv(J0)
+        except np.linalg.LinAlgError:
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            SENSI = sp.linalg.pinv(J0,rcond=1e-7)
+            SENSI = np.linalg.pinv(J0,rcond=1e-7)
             pass
         SENSI = SENSI[:-1,:-1]
 
-        PTDF = sp.sparse.lil_matrix(sp.matmul(J,SENSI))
+        PTDF = np.matmul(J,SENSI)
     elif len(sparse_index_set_branch) < _len_branch:
         n, m = M.shape
         B = np.array([], dtype=np.int64).reshape(_len_bus + 1,0)
@@ -579,8 +578,8 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
             _tmp = np.vstack([_tmp,0])
             B = np.concatenate((B,_tmp), axis=1)
         row_idx = list(_sparse_mapping_branch.keys())
-        PTDF = sp.sparse.lil_matrix((_len_branch,_len_bus))
-        _ptdf = sp.sparse.linalg.spsolve(sp.sparse.csr_matrix(J0.transpose()), B).T
+        PTDF = np.zeros((_len_branch,_len_bus))
+        _ptdf = np.linalg.solve(J0.transpose(), B).T
         PTDF[row_idx] = _ptdf[:,:-1]
 
     return PTDF
@@ -621,8 +620,8 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     Jc = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
     Lc = _calculate_pfl_constant(branches,buses,index_set_branch,base_point)
 
-    if sp.all(Jc == 0) and sp.all(Lc == 0):
-        return sp.sparse.lil_matrix((_len_branch, _len_bus)), sp.sparse.lil_matrix((_len_branch, _len_bus)), np.zeros((1,_len_branch))
+    if np.all(Jc == 0) and np.all(Lc == 0):
+        return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
 
     A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
     AA = calculate_absolute_adjacency_matrix(A)
@@ -637,14 +636,14 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
 
     if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
         try:
-            SENSI = sp.linalg.inv(J0)
-        except sp.linalg.LinAlgError:
+            SENSI = np.linalg.inv(J0)
+        except np.linalg.LinAlgError:
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            SENSI = sp.linalg.pinv(J0,rcond=1e-7)
+            SENSI = np.linalg.pinv(J0,rcond=1e-7)
             pass
         SENSI = SENSI[:-1,:-1]
-        PTDF = sp.sparse.lil_matrix(sp.matmul(J, SENSI))
-        LDF = sp.sparse.lil_matrix(sp.matmul(L, SENSI))
+        PTDF = np.matmul(J, SENSI)
+        LDF = np.matmul(L, SENSI)
     elif len(sparse_index_set_branch) < _len_branch:
         n, m = M.shape
         B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
@@ -664,18 +663,18 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
             B_L = np.concatenate((B_L, _tmp_L), axis=1)
 
         row_idx = list(_sparse_mapping_branch.keys())
-        PTDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
-        _ptdf = sp.sparse.linalg.spsolve(sp.sparse.csr_matrix(J0.transpose()), B_J).T
+        PTDF = np.zeros((_len_branch, _len_bus))
+        _ptdf = np.linalg.solve(J0.transpose(), B_J).T
         PTDF[row_idx] = _ptdf[:, :-1]
 
-        LDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
-        _ldf = sp.sparse.linalg.spsolve(sp.sparse.csr_matrix(J0.transpose()), B_L).T
+        LDF = np.zeros((_len_branch, _len_bus))
+        _ldf = np.linalg.solve(J0.transpose(), B_L).T
         LDF[row_idx] = _ldf[:, :-1]
 
     M1 = np.matmul(A.transpose(),Jc)
     M2 = np.matmul(AA.transpose(),Lc)
     M = M1 + 0.5 * M2
-    LDF_constant = np.array(-sp.sparse.lil_matrix(LDF.__matmul__(M)) + Lc)[0]
+    LDF_constant = -np.matmul(LDF,M) + Lc
 
     return PTDF, LDF, LDF_constant
 
@@ -690,7 +689,7 @@ def calculate_adjacency_matrix(branches,index_set_branch,index_set_bus, mapping_
 
     _len_branch = len(index_set_branch)
 
-    adjacency_matrix = sp.zeros((_len_branch,_len_bus))
+    adjacency_matrix = np.zeros((_len_branch,_len_bus))
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -710,4 +709,4 @@ def calculate_absolute_adjacency_matrix(adjacency_matrix):
     """
     Calculates the absolute value of the adjacency matrix
     """
-    return sp.absolute(adjacency_matrix)
+    return np.absolute(adjacency_matrix)
