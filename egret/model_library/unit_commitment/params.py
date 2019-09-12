@@ -22,19 +22,19 @@ def _verify_must_run_t0_state_consistency(model):
     # sure that the unit has satisifed its minimum down time condition if UnitOnT0 is negative.
     
     def verify_must_run_t0_state_consistency_rule(m, g):
-        t0_state = value(m.UnitOnT0State[g])
+        t0_state = value(m.UnitOnT0State[g]) / value(m.TimePeriodLengthHours)
         if t0_state < 0:
-            min_down_time = value(m.MinimumDownTime[g])
+            min_down_time = value(m.ScaledMinimumDownTime[g])
             if abs(t0_state) < min_down_time:
-                for t in range(m.TimePeriods.first(), min_down_time+t0_state+m.TimePeriods.first()+1):
+                for t in range(m.TimePeriods.first(), value(m.InitialTimePeriodsOffLine[g])+m.TimePeriods.first()):
                     fixed_commitment = value(m.FixedCommitment[g,t])
                     if (fixed_commitment is not None) and (fixed_commitment == 1):
                         print("DATA ERROR: The generator %s has been flagged as must-run at time %d, but its T0 state=%d is inconsistent with its minimum down time=%d" % (g, t, t0_state, min_down_time))
                         return False
         else: # t0_state > 0
-            min_up_time = value(m.MinimumUpTime[g])
+            min_up_time = value(m.ScaledMinimumUpTime[g])
             if abs(t0_state) < min_up_time:
-                for t in range(m.TimePeriods.first(), min_up_time+t0_state+m.TimePeriods.first()+1):
+                for t in range(m.TimePeriods.first(), value(m.InitialTimePeriodsOnLine[g])+m.TimePeriods.first()):
                     fixed_commitment = value(m.FixedCommitment[g,t])
                     if (fixed_commitment is not None) and (fixed_commitment == 0):
                         print("DATA ERROR: The generator %s has been flagged as off at time %d, but its T0 state=%d is inconsistent with its minimum up time=%d" % (g, t, t0_state, min_down_time))
@@ -476,9 +476,8 @@ def load_params(model, model_data):
                             initialize=t0_unit_on_rule,
                             mutable=True)
     
-    _verify_must_run_t0_state_consistency(model)
-
     _add_initial_time_periods_on_off_line(model)
+    _verify_must_run_t0_state_consistency(model)
     
     ####################################################################
     # generator power output at t=0 (initial condition). units are MW. #
