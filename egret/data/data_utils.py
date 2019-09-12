@@ -118,7 +118,8 @@ class PTDFMatrix(object):
         do the PTDF calculation
         '''
         ## calculate and store the PTDF matrix
-        PTDFM = tx_calc.calculate_ptdf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
+        PTDFM = tx_calc.calculate_ptdf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point,
+                                        mapping_bus_to_idx=self._busname_to_index_map)
 
         self.PTDFM = PTDFM.toarray()
 
@@ -126,7 +127,7 @@ class PTDFMatrix(object):
         self.PTDFM.flags.writeable = False
 
     def _calculate_phi_from_phi_to(self):
-        return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF)
+        return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF, mapping_bus_to_idx=self._busname_to_index_map)
 
     def _calculate_phi_adjust(self):
         phi_from, phi_to = self._calculate_phi_from_phi_to()
@@ -190,7 +191,8 @@ class PTDFLossesMatrix(PTDFMatrix):
         self._calculate_losses_phase_shift()
 
     def _calculate_ptdf(self):
-        ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point)
+        ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point,\
+                                                        mapping_bus_to_idx=self._busname_to_index_map)
 
         self.PTDFM = ptdf_r.toarray()
         self.LDF = ldf.toarray()
@@ -202,10 +204,10 @@ class PTDFLossesMatrix(PTDFMatrix):
         self.LDF_C.flags.writeable = False
 
     def _calculate_phi_from_phi_to(self):
-        return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES)
+        return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=self._busname_to_index_map)
 
     def _calculate_phi_loss_constant(self):
-        phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES)
+        phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=self._busname_to_index_map)
 
         ## hold onto these for line outages
         self._phi_loss_from = phi_loss_from

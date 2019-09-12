@@ -272,19 +272,16 @@ def calculate_va_from_vj_vr(vj, vr):
     return None
 
 
-def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=BasePointType.FLATSTART,approximation_type=ApproximationType.PTDF):
+def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART,approximation_type=ApproximationType.PTDF):
     """
     Compute the power flow Jacobian for partial derivative of real power flow to voltage angle
     """
     _len_bus = len(index_set_bus)
-    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
-
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     J11 = np.zeros((_len_branch,_len_bus))
 
-    for idx_row, branch_name in _mapping_branch.items():
+    for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -310,28 +307,25 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
-        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        idx_col = mapping_bus_to_idx[from_bus]
         J11[idx_row][idx_col] = -b * vn * vm * cos(tn - tm)
 
-        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        idx_col = mapping_bus_to_idx[to_bus]
         J11[idx_row][idx_col] = b * vn * vm * cos(tn - tm)
 
     return J11
 
 
-def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=BasePointType.FLATSTART):
+def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
     """
     Compute the power flow Jacobian for partial derivative of real power losses to voltage angle
     """
     _len_bus = len(index_set_bus)
-    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
-
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     L11 = np.zeros((_len_branch,_len_bus))
 
-    for idx_row, branch_name in _mapping_branch.items():
+    for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -352,29 +346,30 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
-        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        idx_col = mapping_bus_to_idx[from_bus]
         L11[idx_row][idx_col] = 2 * g * vn * vm * sin(tn - tm)
 
-        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        idx_col = mapping_bus_to_idx[to_bus]
         L11[idx_row][idx_col] = -2 * g * vn * vm * sin(tn - tm)
 
     return L11
 
 
-def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF):
+def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
     """
     Compute the phase shifter constant for fixed phase shift transformers
     """
     _len_bus = len(index_set_bus)
-    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
 
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     phi_from = sp.zeros((_len_bus,_len_branch))
     phi_to = sp.zeros((_len_bus,_len_branch))
 
-    for idx_row, branch_name in _mapping_branch.items():
+    for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -392,29 +387,30 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
         elif approximation_type == ApproximationType.PTDF_LOSSES:
             b = calculate_susceptance(branch)*(shift/tau)
 
-        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        idx_col = mapping_bus_to_idx[from_bus]
         phi_from[idx_col][idx_row] = b
 
-        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        idx_col = mapping_bus_to_idx[to_bus]
         phi_to[idx_col][idx_row] = b
 
     return phi_from, phi_to
 
 
-def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF_LOSSES):
+def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=None):
     """
     Compute the phase shifter constant for fixed phase shift transformers
     """
     _len_bus = len(index_set_bus)
-    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
 
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     phi_loss_from = sp.zeros((_len_bus,_len_branch))
     phi_loss_to = sp.zeros((_len_bus,_len_branch))
 
-    for idx_row, branch_name in _mapping_branch.items():
+    for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -432,10 +428,10 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
         elif approximation_type == ApproximationType.PTDF_LOSSES:
             g = calculate_conductance(branch)*(1/tau)*shift**2
 
-        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        idx_col = mapping_bus_to_idx[from_bus]
         phi_loss_from[idx_col][idx_row] = g
 
-        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        idx_col = mapping_bus_to_idx[to_bus]
         phi_loss_to[idx_col][idx_row] = g
 
     return phi_loss_from, phi_loss_to
@@ -449,11 +445,9 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
     """
 
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
-
     pf_constant = sp.zeros(_len_branch)
 
-    for idx_row, branch_name in _mapping_branch.items():
+    for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -491,11 +485,10 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     """
 
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     pfl_constant = sp.zeros(_len_branch)
 
-    for idx_row, branch_name in _mapping_branch.items():
+    for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -526,7 +519,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     return pfl_constant
 
 
-def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None):
+def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """
     Calculates the sensitivity of the voltage angle to real power injections
     Parameters
@@ -547,15 +540,16 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         The list of keys for branches needed to compute a sparse PTDF matrix
     """
     _len_bus = len(index_set_bus)
-    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
 
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
-    _ref_bus_idx = [key for key, value in _mapping_bus.items() if value == reference_bus][0]
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
 
-    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point,approximation_type=ApproximationType.PTDF)
-    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
+    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
+    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
     M = np.matmul(A.transpose(),J)
 
     J0 = np.zeros((_len_bus + 1, _len_bus + 1))
@@ -576,7 +570,7 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     elif len(sparse_index_set_branch) < _len_branch:
         n, m = M.shape
         B = np.array([], dtype=np.int64).reshape(_len_bus + 1,0)
-        _sparse_mapping_branch = {i: index_set_branch[i] for i in list(range(0, _len_branch)) if index_set_branch[i] in sparse_index_set_branch}
+        _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
 
         for idx, branch_name in _sparse_mapping_branch.items():
             b = np.zeros((_len_branch,1))
@@ -592,7 +586,7 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     return PTDF
 
 
-def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None):
+def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """
     Calculates the sensitivity of the voltage angle to real power injections and losses on the lines. Includes the
     calculation of the constant term for the quadratic losses on the lines.
@@ -614,22 +608,23 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
         The list of keys for branches needed to compute a sparse PTDF matrix
     """
     _len_bus = len(index_set_bus)
-    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
 
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
-    _ref_bus_idx = [key for key, value in _mapping_bus.items() if value == reference_bus][0]
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
 
-    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point,approximation_type=ApproximationType.PTDF_LOSSES)
-    L = _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point)
+    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF_LOSSES)
+    L = _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
     Jc = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
     Lc = _calculate_pfl_constant(branches,buses,index_set_branch,base_point)
 
     if sp.all(Jc == 0) and sp.all(Lc == 0):
         return sp.sparse.lil_matrix((_len_branch, _len_bus)), sp.sparse.lil_matrix((_len_branch, _len_bus)), np.zeros((1,_len_branch))
 
-    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
+    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
     AA = calculate_absolute_adjacency_matrix(A)
     M1 = np.matmul(A.transpose(),J)
     M2 = np.matmul(AA.transpose(),L)
@@ -654,8 +649,7 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
         n, m = M.shape
         B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         B_L = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
-        _sparse_mapping_branch = {i: index_set_branch[i] for i in list(range(0, _len_branch)) if
-                                  index_set_branch[i] in sparse_index_set_branch}
+        _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
 
         for idx, branch_name in _sparse_mapping_branch.items():
             b = np.zeros((_len_branch, 1))
@@ -687,28 +681,26 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
 
 
 
-def calculate_adjacency_matrix(branches,index_set_branch,index_set_bus):
+def calculate_adjacency_matrix(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):
     """
     Calculates the adjacency matrix where (-1) represents flow from the bus and (1) represents flow to the bus
     for a given branch
     """
     _len_bus = len(index_set_bus)
-    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
 
     _len_branch = len(index_set_branch)
-    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     adjacency_matrix = sp.zeros((_len_branch,_len_bus))
 
-    for idx_row, branch_name in _mapping_branch.items():
+    for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
 
         from_bus = branch['from_bus']
-        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        idx_col = mapping_bus_to_idx[from_bus]
         adjacency_matrix[idx_row,idx_col] = -1
 
         to_bus = branch['to_bus']
-        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        idx_col = mapping_bus_to_idx[to_bus]
         adjacency_matrix[idx_row,idx_col] = 1
 
     return adjacency_matrix
