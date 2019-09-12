@@ -725,7 +725,7 @@ def _get_datetimes(begin_time, end_time):
 
     # stay in the times provided
     assert begin_time >= datetime(year=2020, month=1, day=1)
-    assert end_time < datetime(year=2021, month=1, day=1)
+    assert end_time <= datetime(year=2021, month=1, day=1)
 
     # We only take times in whole hours (for now)
     assert (begin_time.minute == 0. and begin_time.second == 0. and begin_time.microsecond == 0.)
