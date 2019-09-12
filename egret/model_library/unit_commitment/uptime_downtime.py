@@ -155,18 +155,18 @@ def CA_UT_DT(model):
           # the right-hand side terms below are only positive if the unit was off in the previous time period but on in this one =>
           # the value is the minimum number of subsequent consecutive time periods that the unit is required to be on.
           if t == m.InitialTime:
-             return sum(m.UnitOn[g, n] for n in m.TimePeriods if n >= t and n <= (t + value(m.ScaledMinimumUpTime[g]) - 1)) >= \
+             return sum(m.UnitOn[g, n] for n in range(t,t+value(m.ScaledMinimumUpTime[g]))) >= \
                     m.ScaledMinimumUpTime[g] * (m.UnitOn[g, t] - m.UnitOnT0[g])
           else:
-             return sum(m.UnitOn[g, n] for n in m.TimePeriods if n >= t and n <= (t + value(m.ScaledMinimumUpTime[g]) - 1)) >= \
+             return sum(m.UnitOn[g, n] for n in range(t,t+value(m.ScaledMinimumUpTime[g]))) >= \
                     m.ScaledMinimumUpTime[g] * (m.UnitOn[g, t] - m.UnitOn[g, t-1])
        else:
           # handle the final (ScaledMinimumUpTime[g] - 1) time periods - if a unit is started up in
           # this interval, it must remain on-line until the end of the time span.
           if t == m.InitialTime: # can happen when small time horizons are specified
-             return sum((m.UnitOn[g, n] - (m.UnitOn[g, t] - m.UnitOnT0[g])) for n in m.TimePeriods if n >= t) >= 0.0
+             return sum((m.UnitOn[g, n] - (m.UnitOn[g, t] - m.UnitOnT0[g])) for n in range(t,m.TimePeriods.last()+1)) >= 0.0
           else:
-             return sum((m.UnitOn[g, n] - (m.UnitOn[g, t] - m.UnitOn[g, t-1])) for n in m.TimePeriods if n >= t) >= 0.0
+             return sum((m.UnitOn[g, n] - (m.UnitOn[g, t] - m.UnitOn[g, t-1])) for n in range(t, m.TimePeriods.last()+1)) >= 0.0
     
     model.UpTime = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_up_time_constraints_subsequent)
 
@@ -179,18 +179,18 @@ def CA_UT_DT(model):
           # the right-hand side terms below are only positive if the unit was off in the previous time period but on in this one =>
           # the value is the minimum number of subsequent consecutive time periods that the unit is required to be on.
           if t == m.InitialTime:
-             return sum((1 - m.UnitOn[g, n]) for n in m.TimePeriods if n >= t and n <= (t + value(m.ScaledMinimumDownTime[g]) - 1)) >= \
+             return sum((1 - m.UnitOn[g, n]) for n in range(t,t+value(m.ScaledMinimumDownTime[g]))) >= \
                     m.ScaledMinimumDownTime[g] * (m.UnitOnT0[g] - m.UnitOn[g, t])
           else:
-             return sum((1 - m.UnitOn[g, n]) for n in m.TimePeriods if n >= t and n <= (t + value(m.ScaledMinimumDownTime[g]) - 1)) >= \
+             return sum((1 - m.UnitOn[g, n]) for n in range(t,t+value(m.ScaledMinimumDownTime[g]))) >= \
                     m.ScaledMinimumDownTime[g] * (m.UnitOn[g, t-1] - m.UnitOn[g, t])
        else:
           # handle the final (ScaledMinimumDownTime[g] - 1) time periods - if a unit is shut down in
           # this interval, it must remain off-line until the end of the time span.
           if t == m.InitialTime: # can happen when small time horizons are specified
-             return sum(((1 - m.UnitOn[g, n]) - (m.UnitOnT0[g] - m.UnitOn[g, t])) for n in m.TimePeriods if n >= t) >= 0.0
+             return sum(((1 - m.UnitOn[g, n]) - (m.UnitOnT0[g] - m.UnitOn[g, t])) for n in range(t, m.TimePeriods.last()+1)) >= 0.0
           else:
-             return sum(((1 - m.UnitOn[g, n]) - (m.UnitOn[g, t-1] - m.UnitOn[g, t])) for n in m.TimePeriods if n >= t) >= 0.0
+             return sum(((1 - m.UnitOn[g, n]) - (m.UnitOn[g, t-1] - m.UnitOn[g, t])) for n in range(t, m.TimePeriods.last()+1)) >= 0.0
     
     model.DownTime = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_down_time_constraints_subsequent)
 
@@ -236,10 +236,10 @@ def DEKT_UT_DT(model):
         elif t <= (value(m.NumTimePeriods - m.ScaledMinimumUpTime[g]) + 1):
           # the right-hand side terms below are only positive if the unit was off in the previous time period but on in this one =>
           # the value is the minimum number of subsequent consecutive time periods that the unit is required to be on.
-            return sum(m.UnitOn[g, n] for n in m.TimePeriods if n >= t and n <= (t + value(m.ScaledMinimumUpTime[g]) - 1)) >= \
+            return sum(m.UnitOn[g, n] for n in range(t, t+value(m.ScaledMinimumUpTime[g]))) >= \
                     m.ScaledMinimumUpTime[g] * m.UnitStart[g, t]
         else:
-            return sum((m.UnitOn[g, n] - m.UnitStart[g,t]) for n in m.TimePeriods if n >= t) >= 0.0
+            return sum((m.UnitOn[g, n] - m.UnitStart[g,t]) for n in range(t, m.TimePeriods.last()+1)) >= 0.0
     
     model.UpTime = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_up_time_constraints_subsequent)
 
@@ -251,12 +251,12 @@ def DEKT_UT_DT(model):
         elif t <= (value(m.NumTimePeriods - m.ScaledMinimumDownTime[g]) + 1):
             # the right-hand side terms below are only positive if the unit was off in the previous time period but on in this one =>
             # the value is the minimum number of subsequent consecutive time periods that the unit is required to be on.
-            return sum((1 - m.UnitOn[g, n]) for n in m.TimePeriods if n >= t and n <= (t + value(m.ScaledMinimumDownTime[g]) - 1)) >= \
+            return sum((1 - m.UnitOn[g, n]) for n in range(t, t+value(m.ScaledMinimumDownTime[g]))) >= \
                     m.ScaledMinimumDownTime[g] * m.UnitStop[g, t]
         else:
             # handle the final (ScaledMinimumDownTime[g] - 1) time periods - if a unit is shut down in
             # this interval, it must remain off-line until the end of the time span.
-            return sum(((1 - m.UnitOn[g, n]) - m.UnitStop[g, t]) for n in m.TimePeriods if n >= t) >= 0.0
+            return sum(((1 - m.UnitOn[g, n]) - m.UnitStop[g, t]) for n in range(t, m.TimePeriods.last()+1)) >= 0.0
     
     model.DownTime = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_down_time_constraints_subsequent)
 
@@ -286,7 +286,7 @@ def rajan_takriti_UT_DT(model):
         if t < value(m.ScaledMinimumUpTime[g]):
             return Constraint.Skip
         else: 
-            return sum(m.UnitStart[g,i] for i in m.TimePeriods if i >= t - value(m.ScaledMinimumUpTime[g]) + 1 and i <= t) <= m.UnitOn[g,t] 
+            return sum(m.UnitStart[g,i] for i in range(t-value(m.ScaledMinimumUpTime[g])+1, t+1)) <= m.UnitOn[g,t] 
     
     model.UpTime = Constraint(model.ThermalGenerators, model.TimePeriods, rule=uptime_rule)
     
@@ -300,7 +300,7 @@ def rajan_takriti_UT_DT(model):
         if t < value(m.ScaledMinimumDownTime[g]):
             return Constraint.Skip
         else: 
-            return sum(m.UnitStop[g,i] for i in m.TimePeriods if i >= t - value(m.ScaledMinimumDownTime[g]) + 1 and i <= t) <= 1 - m.UnitOn[g,t] 
+            return sum(m.UnitStop[g,i] for i in range(t-value(m.ScaledMinimumDownTime[g])+1, t+1)) <= 1 - m.UnitOn[g,t] 
     
     model.DownTime = Constraint(model.ThermalGenerators,model.TimePeriods,rule=downtime_rule)
     
@@ -326,9 +326,9 @@ def rajan_takriti_UT_DT_2bin(model):
         if t < value(m.ScaledMinimumUpTime[g]):
             return Constraint.Skip
         if m.status_vars in ['ALS_state_transition_vars']:
-            return sum(m.UnitStart[g,i] for i in m.TimePeriods if i >= t - value(m.ScaledMinimumUpTime[g]) + 1 and i <= t-1) <= m.UnitStayOn[g,t] 
+            return sum(m.UnitStart[g,i] for i in range(t-value(m.ScaledMinimumUpTime[g])+1, t)) <= m.UnitStayOn[g,t] 
         else:
-            return sum(m.UnitStart[g,i] for i in m.TimePeriods if i >= t - value(m.ScaledMinimumUpTime[g]) + 1 and i <= t) <= m.UnitOn[g,t] 
+            return sum(m.UnitStart[g,i] for i in range(t-value(m.ScaledMinimumUpTime[g])+1, t+1)) <= m.UnitOn[g,t] 
     
     model.UpTime = Constraint(model.ThermalGenerators, model.TimePeriods, rule=uptime_rule)
     
@@ -342,9 +342,9 @@ def rajan_takriti_UT_DT_2bin(model):
         if t < value(m.ScaledMinimumDownTime[g]):
             return Constraint.Skip
         if t == value(m.ScaledMinimumDownTime[g]):
-            return sum(m.UnitStart[g,i] for i in m.TimePeriods if i >= t - value(m.ScaledMinimumDownTime[g]) + 1 and i <= t) <= 1 - m.UnitOnT0[g]
+            return sum(m.UnitStart[g,i] for i in range(t-value(m.ScaledMinimumDownTime[g])+1,t+1)) <= 1 - m.UnitOnT0[g]
         else: 
-            return sum(m.UnitStart[g,i] for i in m.TimePeriods if i >= t - value(m.ScaledMinimumDownTime[g]) + 1 and i <= t) <= 1 - m.UnitOn[g,t-value(m.ScaledMinimumDownTime[g])] 
+            return sum(m.UnitStart[g,i] for i in range(t-value(m.ScaledMinimumDownTime[g])+1,t+1)) <= 1 - m.UnitOn[g,t-value(m.ScaledMinimumDownTime[g])] 
     
     model.DownTime = Constraint(model.ThermalGenerators,model.TimePeriods,rule=downtime_rule)
 

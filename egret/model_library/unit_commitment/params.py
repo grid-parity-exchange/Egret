@@ -443,12 +443,12 @@ def load_params(model, model_data):
     ## Otherwise, turn on/offs may not be enforced correctly.
     def scale_min_uptime(m, g):
         scaled_up_time = int(round(m.MinimumUpTime[g] / m.TimePeriodLengthHours))
-        return min(max(value(scaled_up_time),1), value(m.NumTimePeriods))
+        return min(max(scaled_up_time,1), value(m.NumTimePeriods))
     model.ScaledMinimumUpTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_uptime)
     
     def scale_min_downtime(m, g):
         scaled_down_time = int(round(m.MinimumDownTime[g] / m.TimePeriodLengthHours))
-        return min(max(value(scaled_down_time),1), value(m.NumTimePeriods))
+        return min(max(scaled_down_time,1), value(m.NumTimePeriods))
     model.ScaledMinimumDownTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_downtime)
     
     #############################################
