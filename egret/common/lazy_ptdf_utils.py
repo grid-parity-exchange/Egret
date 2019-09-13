@@ -79,7 +79,7 @@ def add_monitored_branch_tracker(mb):
 ## violation checker
 def check_violations(mb, md, PTDF, max_viol_add, time=None):
 
-    NWV = np.array([pe.value(mb.p_nw[b]) for b in PTDF.bus_iterator()])
+    NWV = np.fromiter((pe.value(mb.p_nw[b]) for b in PTDF.bus_iterator()), float, count=len(PTDF.buses_keys))
     NWV += PTDF.phi_adjust_array
 
     PFV  = PTDF.PTDFM.dot(NWV)
