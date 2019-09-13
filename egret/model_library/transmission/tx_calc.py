@@ -279,7 +279,9 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     _len_bus = len(index_set_bus)
     _len_branch = len(index_set_branch)
 
-    J11 = sp.sparse.dok_matrix((_len_branch,_len_bus))
+    data = []
+    row = []
+    col = []
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -307,12 +309,19 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
+        val = -b * vn * vm * cos(tn - tm)
+
         idx_col = mapping_bus_to_idx[from_bus]
-        J11[idx_row,idx_col] = -b * vn * vm * cos(tn - tm)
+        row.append(idx_row)
+        col.append(idx_col)
+        data.append(val)
 
         idx_col = mapping_bus_to_idx[to_bus]
-        J11[idx_row,idx_col] = b * vn * vm * cos(tn - tm)
+        row.append(idx_row)
+        col.append(idx_col)
+        data.append(-val)
 
+    J11 = sp.sparse.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
     return J11.tocsr()
 
 
@@ -323,7 +332,9 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     _len_bus = len(index_set_bus)
     _len_branch = len(index_set_branch)
 
-    L11 = sp.sparse.dok_matrix((_len_branch,_len_bus))
+    row = []
+    col = []
+    data = []
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -346,12 +357,19 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
+        val = 2 * g * vn * vm * sin(tn - tm)
+
         idx_col = mapping_bus_to_idx[from_bus]
-        L11[idx_row,idx_col] = 2 * g * vn * vm * sin(tn - tm)
+        row.append(idx_row)
+        col.append(idx_col)
+        data.append(val)
 
         idx_col = mapping_bus_to_idx[to_bus]
-        L11[idx_row,idx_col] = -2 * g * vn * vm * sin(tn - tm)
+        row.append(idx_row)
+        col.append(idx_col)
+        data.append(-val)
 
+    L11 = sp.sparse.coo_matrix((data,(row,col)),shape=(_len_branch,_len_bus))
     return L11.tocsr()
 
 
@@ -366,10 +384,12 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
 
     _len_branch = len(index_set_branch)
 
-    phi_from = sp.sparse.dok_matrix((_len_bus,_len_branch))
-    phi_to = sp.sparse.dok_matrix((_len_bus,_len_branch))
+    row_from = []
+    row_to = []
+    col = []
+    data = []
 
-    for idx_row, branch_name in enumerate(index_set_branch):
+    for idx_col, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -387,11 +407,13 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
         elif approximation_type == ApproximationType.PTDF_LOSSES:
             b = calculate_susceptance(branch)*(shift/tau)
 
-        idx_col = mapping_bus_to_idx[from_bus]
-        phi_from[idx_col,idx_row] = b
+        row_from.append(mapping_bus_to_idx[from_bus])
+        row_to.append(mapping_bus_to_idx[to_bus])
+        col.append(idx_col)
+        data.append(b)
 
-        idx_col = mapping_bus_to_idx[to_bus]
-        phi_to[idx_col,idx_row] = b
+    phi_from = sp.sparse.coo_matrix((data,(row_from,col)), shape=(_len_bus,_len_branch))
+    phi_to = sp.sparse.coo_matrix((data,(row_to,col)), shape=(_len_bus,_len_branch))
 
     return phi_from.tocsr(), phi_to.tocsr()
 
@@ -407,10 +429,12 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
 
     _len_branch = len(index_set_branch)
 
-    phi_loss_from = sp.sparse.dok_matrix((_len_bus,_len_branch))
-    phi_loss_to = sp.sparse.dok_matrix((_len_bus,_len_branch))
+    row_from = []
+    row_to = []
+    col = []
+    data = []
 
-    for idx_row, branch_name in enumerate(index_set_branch):
+    for idx_col, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
@@ -428,11 +452,13 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
         elif approximation_type == ApproximationType.PTDF_LOSSES:
             g = calculate_conductance(branch)*(1/tau)*shift**2
 
-        idx_col = mapping_bus_to_idx[from_bus]
-        phi_loss_from[idx_col,idx_row] = g
+        row_from.append(mapping_bus_to_idx[from_bus])
+        row_to.append(mapping_bus_to_idx[to_bus])
+        col.append(idx_col)
+        data.append(g)
 
-        idx_col = mapping_bus_to_idx[to_bus]
-        phi_loss_to[idx_col,idx_row] = g
+    phi_loss_from = sp.sparse.coo_matrix((data,(row_from,col)),shape=(_len_bus,_len_branch))
+    phi_loss_to = sp.sparse.coo_matrix((data,(row_to,col)),shape=(_len_bus,_len_branch))
 
     return phi_loss_from.tocsr(), phi_loss_to.tocsr()
 
@@ -705,19 +731,24 @@ def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus
 
     _len_branch = len(index_set_branch)
 
-    adjacency_matrix = sp.sparse.dok_matrix((_len_bus,_len_branch))
+    row = []
+    col = []
+    data = []
 
-    for idx_row, branch_name in enumerate(index_set_branch):
+    for idx_col, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
 
         from_bus = branch['from_bus']
-        idx_col = mapping_bus_to_idx[from_bus]
-        adjacency_matrix[idx_col,idx_row] = -1
+        row.append(mapping_bus_to_idx[from_bus])
+        col.append(idx_col)
+        data.append(-1)
 
         to_bus = branch['to_bus']
-        idx_col = mapping_bus_to_idx[to_bus]
-        adjacency_matrix[idx_col,idx_row] = 1
+        row.append(mapping_bus_to_idx[to_bus])
+        col.append(idx_col)
+        data.append(1)
 
+    adjacency_matrix = sp.sparse.coo_matrix((data,(row,col)), shape=(_len_bus, _len_branch))
     return adjacency_matrix.tocsr()
 
 
