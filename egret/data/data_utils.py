@@ -136,10 +136,11 @@ class PTDFMatrix(object):
         self._phi_from = phi_from
         self._phi_to = phi_to
 
-        ## sum the across the columns, which are indexed by branch
-        phi_adjust_array = phi_from.sum(axis=1)-phi_to.sum(axis=1)
+        phi_adjust_array = phi_from-phi_to
 
-        self.phi_adjust_array = phi_adjust_array
+        ## sum across the rows to get the total impact, and convert
+        ## to dense for fast operations later
+        self.phi_adjust_array = phi_adjust_array.sum(axis=1).T.A[0]
 
         ## protect the array using numpy
         self.phi_adjust_array.flags.writeable = False
@@ -214,9 +215,11 @@ class PTDFLossesMatrix(PTDFMatrix):
         self._phi_loss_to = phi_loss_to
 
         ## sum the across the columns, which are indexed by branch
-        phi_losses_adjust_array = phi_loss_from.sum(axis=1)-phi_loss_to.sum(axis=1)
+        phi_losses_adjust_array = phi_loss_from-phi_loss_to
 
-        self.phi_losses_adjust_array = phi_losses_adjust_array
+        ## sum across the rows to get the total impact, and convert
+        ## to dense for fast operations later
+        self.phi_losses_adjust_array = phi_losses_adjust_array.sum(axis=1).T.A[0]
 
         ## protect the array using numpy
         self.phi_losses_adjust_array.flags.writeable = False

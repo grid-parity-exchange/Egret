@@ -13,6 +13,7 @@ different computations for transmission models
 """
 import math
 import numpy as np
+import scipy as sp
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 
@@ -278,7 +279,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     _len_bus = len(index_set_bus)
     _len_branch = len(index_set_branch)
 
-    J11 = np.zeros((_len_branch,_len_bus))
+    J11 = sp.sparse.dok_matrix((_len_branch,_len_bus))
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -307,12 +308,12 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             tm = buses[to_bus]['va']
 
         idx_col = mapping_bus_to_idx[from_bus]
-        J11[idx_row][idx_col] = -b * vn * vm * cos(tn - tm)
+        J11[idx_row,idx_col] = -b * vn * vm * cos(tn - tm)
 
         idx_col = mapping_bus_to_idx[to_bus]
-        J11[idx_row][idx_col] = b * vn * vm * cos(tn - tm)
+        J11[idx_row,idx_col] = b * vn * vm * cos(tn - tm)
 
-    return J11
+    return J11.tocsr()
 
 
 def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
@@ -322,7 +323,7 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     _len_bus = len(index_set_bus)
     _len_branch = len(index_set_branch)
 
-    L11 = np.zeros((_len_branch,_len_bus))
+    L11 = sp.sparse.dok_matrix((_len_branch,_len_bus))
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -346,12 +347,12 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             tm = buses[to_bus]['va']
 
         idx_col = mapping_bus_to_idx[from_bus]
-        L11[idx_row][idx_col] = 2 * g * vn * vm * sin(tn - tm)
+        L11[idx_row,idx_col] = 2 * g * vn * vm * sin(tn - tm)
 
         idx_col = mapping_bus_to_idx[to_bus]
-        L11[idx_row][idx_col] = -2 * g * vn * vm * sin(tn - tm)
+        L11[idx_row,idx_col] = -2 * g * vn * vm * sin(tn - tm)
 
-    return L11
+    return L11.tocsr()
 
 
 def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
@@ -365,8 +366,8 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
 
     _len_branch = len(index_set_branch)
 
-    phi_from = np.zeros((_len_bus,_len_branch))
-    phi_to = np.zeros((_len_bus,_len_branch))
+    phi_from = sp.sparse.dok_matrix((_len_bus,_len_branch))
+    phi_to = sp.sparse.dok_matrix((_len_bus,_len_branch))
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -387,12 +388,12 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
             b = calculate_susceptance(branch)*(shift/tau)
 
         idx_col = mapping_bus_to_idx[from_bus]
-        phi_from[idx_col][idx_row] = b
+        phi_from[idx_col,idx_row] = b
 
         idx_col = mapping_bus_to_idx[to_bus]
-        phi_to[idx_col][idx_row] = b
+        phi_to[idx_col,idx_row] = b
 
-    return phi_from, phi_to
+    return phi_from.tocsr(), phi_to.tocsr()
 
 
 def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=None):
@@ -406,8 +407,8 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
 
     _len_branch = len(index_set_branch)
 
-    phi_loss_from = np.zeros((_len_bus,_len_branch))
-    phi_loss_to = np.zeros((_len_bus,_len_branch))
+    phi_loss_from = sp.sparse.dok_matrix((_len_bus,_len_branch))
+    phi_loss_to = sp.sparse.dok_matrix((_len_bus,_len_branch))
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
@@ -428,12 +429,12 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
             g = calculate_conductance(branch)*(1/tau)*shift**2
 
         idx_col = mapping_bus_to_idx[from_bus]
-        phi_loss_from[idx_col][idx_row] = g
+        phi_loss_from[idx_col,idx_row] = g
 
         idx_col = mapping_bus_to_idx[to_bus]
-        phi_loss_to[idx_col][idx_row] = g
+        phi_loss_to[idx_col,idx_row] = g
 
-    return phi_loss_from, phi_loss_to
+    return phi_loss_from.tocsr(), phi_loss_to.tocsr()
 
 
 def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
@@ -444,6 +445,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
     """
 
     _len_branch = len(index_set_branch)
+    ## this will be fully dense
     pf_constant = np.zeros(_len_branch)
 
     for idx_row, branch_name in enumerate(index_set_branch):
@@ -485,6 +487,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
     _len_branch = len(index_set_branch)
 
+    ## this will be fully dense
     pfl_constant = np.zeros(_len_branch)
 
     for idx_row, branch_name in enumerate(index_set_branch):
@@ -537,6 +540,10 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         The base-point type for calculating the PTDF matrix
     sparse_index_set_branch: list
         The list of keys for branches needed to compute a sparse PTDF matrix
+        If this is None, a dense PTDF matrix is returned
+    mapping_bus_to_idx: dict
+        A map from bus names to indices for matrix construction. If None,
+        will be inferred from index_set_bus.
     """
     _len_bus = len(index_set_bus)
 
@@ -548,29 +555,32 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     _ref_bus_idx = mapping_bus_to_idx[reference_bus]
 
     J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
-    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
-    M = np.matmul(A.transpose(),J)
+    A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
+    M = A@J
 
-    J0 = np.zeros((_len_bus + 1, _len_bus + 1))
-    J0[:-1, :-1] = M
-    J0[-1][_ref_bus_idx] = 1
-    J0[_ref_bus_idx][-1] = 1
+    ref_bus_row = sp.sparse.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
+    ref_bus_col = sp.sparse.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
+ 
+    J0 = sp.sparse.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
 
     if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
+        ## the resulting matrix after inversion will be fairly dense,
+        ## the scipy documenation recommends using dense for the inversion
+        ## as well
         try:
-            SENSI = np.linalg.inv(J0)
+            SENSI = np.linalg.inv(J0.A)
         except np.linalg.LinAlgError:
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            SENSI = np.linalg.pinv(J0,rcond=1e-7)
-            pass
+            SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
         SENSI = SENSI[:-1,:-1]
-
-        PTDF = np.matmul(J,SENSI)
+        PTDF = np.matmul(J.A,SENSI)
     elif len(sparse_index_set_branch) < _len_branch:
-        n, m = M.shape
         B = np.array([], dtype=np.int64).reshape(_len_bus + 1,0)
         _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
 
+        ## TODO: Maybe just keep the sparse PTDFs as a dict of ndarrays?
+        ## Right now the return type depends on the options 
+        ## passed in
         for idx, branch_name in _sparse_mapping_branch.items():
             b = np.zeros((_len_branch,1))
             b[idx] = 1
@@ -578,8 +588,8 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
             _tmp = np.vstack([_tmp,0])
             B = np.concatenate((B,_tmp), axis=1)
         row_idx = list(_sparse_mapping_branch.keys())
-        PTDF = np.zeros((_len_branch,_len_bus))
-        _ptdf = np.linalg.solve(J0.transpose(), B).T
+        PTDF = sp.sparse.lil_matrix((_len_branch,_len_bus))
+        _ptdf = sp.sparse.linalg.spsolve(J0.transpose().tocsr(), B).T
         PTDF[row_idx] = _ptdf[:,:-1]
 
     return PTDF
@@ -605,6 +615,9 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
         The base-point type for calculating the PTDF and LDF matrix
     sparse_index_set_branch: list
         The list of keys for branches needed to compute a sparse PTDF matrix
+    mapping_bus_to_idx: dict
+        A map from bus names to indices for matrix construction. If None,
+        will be inferred from index_set_bus.
     """
     _len_bus = len(index_set_bus)
 
@@ -623,29 +636,32 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     if np.all(Jc == 0) and np.all(Lc == 0):
         return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
 
-    A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
+    A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
     AA = calculate_absolute_adjacency_matrix(A)
-    M1 = np.matmul(A.transpose(),J)
-    M2 = np.matmul(AA.transpose(),L)
+    M1 = A@J
+    M2 = AA@L
     M = M1 + 0.5 * M2
 
-    J0 = np.zeros((_len_bus+1,_len_bus+1))
-    J0[:-1,:-1] = M
-    J0[-1][_ref_bus_idx] = 1
-    J0[_ref_bus_idx][-1] = 1
+    ref_bus_row = sp.sparse.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
+    ref_bus_col = sp.sparse.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
+
+    J0 = sp.sparse.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
 
     if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
+        ## the resulting matrix after inversion will be fairly dense,
+        ## the scipy documenation recommends using dense for the inversion
+        ## as well
         try:
-            SENSI = np.linalg.inv(J0)
+            SENSI = np.linalg.inv(J0.A)
         except np.linalg.LinAlgError:
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            SENSI = np.linalg.pinv(J0,rcond=1e-7)
+            SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
             pass
         SENSI = SENSI[:-1,:-1]
-        PTDF = np.matmul(J, SENSI)
-        LDF = np.matmul(L, SENSI)
+
+        PTDF = np.matmul(J.A, SENSI)
+        LDF = np.matmul(L.A, SENSI)
     elif len(sparse_index_set_branch) < _len_branch:
-        n, m = M.shape
         B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         B_L = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
@@ -663,24 +679,24 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
             B_L = np.concatenate((B_L, _tmp_L), axis=1)
 
         row_idx = list(_sparse_mapping_branch.keys())
-        PTDF = np.zeros((_len_branch, _len_bus))
-        _ptdf = np.linalg.solve(J0.transpose(), B_J).T
+        PTDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
+        _ptdf = sp.sparse.linalg.spsolve(J0.transpose().tocsr(), B_J).T
         PTDF[row_idx] = _ptdf[:, :-1]
 
-        LDF = np.zeros((_len_branch, _len_bus))
-        _ldf = np.linalg.solve(J0.transpose(), B_L).T
+        LDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
+        _ldf = sp.sparselinalg.spsolve(J0.transpose().tocsr(), B_L).T
         LDF[row_idx] = _ldf[:, :-1]
 
-    M1 = np.matmul(A.transpose(),Jc)
-    M2 = np.matmul(AA.transpose(),Lc)
+    M1 = A@Jc
+    M2 = AA@Lc
     M = M1 + 0.5 * M2
-    LDF_constant = -np.matmul(LDF,M) + Lc
+    LDF_constant = -LDF@M + Lc
 
     return PTDF, LDF, LDF_constant
 
 
 
-def calculate_adjacency_matrix(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):
+def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):
     """
     Calculates the adjacency matrix where (-1) represents flow from the bus and (1) represents flow to the bus
     for a given branch
@@ -689,24 +705,24 @@ def calculate_adjacency_matrix(branches,index_set_branch,index_set_bus, mapping_
 
     _len_branch = len(index_set_branch)
 
-    adjacency_matrix = np.zeros((_len_branch,_len_bus))
+    adjacency_matrix = sp.sparse.dok_matrix((_len_bus,_len_branch))
 
     for idx_row, branch_name in enumerate(index_set_branch):
         branch = branches[branch_name]
 
         from_bus = branch['from_bus']
         idx_col = mapping_bus_to_idx[from_bus]
-        adjacency_matrix[idx_row,idx_col] = -1
+        adjacency_matrix[idx_col,idx_row] = -1
 
         to_bus = branch['to_bus']
         idx_col = mapping_bus_to_idx[to_bus]
-        adjacency_matrix[idx_row,idx_col] = 1
+        adjacency_matrix[idx_col,idx_row] = 1
 
-    return adjacency_matrix
+    return adjacency_matrix.tocsr()
 
 
 def calculate_absolute_adjacency_matrix(adjacency_matrix):
     """
     Calculates the absolute value of the adjacency matrix
     """
-    return np.absolute(adjacency_matrix)
+    return sp.absolute(adjacency_matrix)
