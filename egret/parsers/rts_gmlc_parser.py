@@ -322,7 +322,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
         Returns a dict loaded from the RTS-GMLC data
     """
 
-    base_dir = os.path.join(rts_gmlc_dir,'RTS_DATA', 'SourceData')
+    base_dir = os.path.join(rts_gmlc_dir,'RTS_Data', 'SourceData')
 
     case_name = "RTS-GMLC"
 
