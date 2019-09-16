@@ -179,6 +179,10 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
                 filtered_timeseries[name] = renewables_timeseries
 
     load_timeseries_spec = timeseries_pointer_dict[("Load",simulation)]
+    ## FIX issue with RTS-GMLC
+    if simulation == "REAL_TIME" and load_timeseries_spec.DataFile == os.path.join(base_dir,'../timeseries_data_files/Load/REAL_TIME_regional_Load.csv'):
+        load_timeseries_spec = TimeSeriesPointer(load_timeseries_spec.Object, load_timeseries_spec.Simulation, load_timeseries_spec.Parameter,
+						 os.path.join(base_dir, '../timeseries_data_files/Load/REAL_TIME_regional_load.csv'))
     load_timeseries_df = _read_rts_gmlc_table(load_timeseries_spec.DataFile, simulation)
     load_timeseries_df = load_timeseries_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
     start_mask = load_timeseries_df["DateTime"] >= begin_time
