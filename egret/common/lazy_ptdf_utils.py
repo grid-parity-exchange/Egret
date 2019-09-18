@@ -23,10 +23,6 @@ class LazyPTDFTerminationCondition(Enum):
     ITERATION_LIMIT = 2
     FLOW_VIOLATION = 3
 
-class ViolationSense(Enum):
-    GT = 1
-    LT = 2
-
 def populate_default_ptdf_options(ptdf_options):
     if 'rel_ptdf_tol' not in ptdf_options:
         ptdf_options['rel_ptdf_tol'] = 1.e-6
