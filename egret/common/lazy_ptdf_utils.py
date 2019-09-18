@@ -97,17 +97,28 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None):
     PFV  = PTDF.PTDFM.dot(NWV)
     PFV += PTDF.phase_shift_array
 
-    ## calculate the violations
-    gt_viol_array = PFV - PTDF.enforced_branch_limits
-    lt_viol_array = -PFV - PTDF.enforced_branch_limits
+    ## calculate the lazy violations
+    gt_viol_lazy_array = PFV - PTDF.lazy_branch_limits
+    lt_viol_lazy_array = -PFV - PTDF.lazy_branch_limits
 
+    ## *_viol_lazy has the indices of the violations at
+    ## the lazy limit
+    gt_viol_lazy = np.nonzero(gt_viol_lazy_array > 0)[0]
+    lt_viol_lazy = np.nonzero(lt_viol_lazy_array > 0)[0]
+
+    ## calculate the violations
+    ## these will be just a subset
+    gt_viol_array = PFV[gt_viol_lazy] - PTDF.enforced_branch_limits[gt_viol_lazy]
+    lt_viol_array = -PFV[lt_viol_lazy]- PTDF.enforced_branch_limits[lt_viol_lazy]
+
+    ## *_viol will be indexed by *_viol_lazy
     gt_viol = np.nonzero(gt_viol_array > 0)[0]
     lt_viol = np.nonzero(lt_viol_array > 0)[0]
 
     ## these will hold the violations 
     ## we found this iteration
-    gt_viol = frozenset(gt_viol)
-    lt_viol = frozenset(lt_viol)
+    gt_viol = frozenset(gt_viol_lazy[gt_viol])
+    lt_viol = frozenset(lt_viol_lazy[lt_viol])
 
     ## get the lines we're monitoring
     gt_idx_monitored = mb._gt_idx_monitored
@@ -135,16 +146,9 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None):
     ## this iteration -- don't want to add lines
     ## that are already in the monitored set
 
-    ## calculate the lazy violations
-    gt_viol_lazy_array = PFV - PTDF.lazy_branch_limits
-    lt_viol_lazy_array = -PFV - PTDF.lazy_branch_limits
-
-    gt_viol_lazy = set(np.nonzero(gt_viol_lazy_array > 0)[0])
-    lt_viol_lazy = set(np.nonzero(lt_viol_lazy_array > 0)[0])
-
     # eliminate lines in the monitored set
-    gt_viol_lazy = gt_viol_lazy.difference(gt_idx_monitored)
-    lt_viol_lazy = lt_viol_lazy.difference(lt_idx_monitored)
+    gt_viol_lazy = set(gt_viol_lazy).difference(gt_idx_monitored)
+    lt_viol_lazy = set(lt_viol_lazy).difference(lt_idx_monitored)
 
     ## limit the number of lines we add in one iteration
     ## if we have too many violations, just take those largest

@@ -317,7 +317,8 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
 
     ## only enforce the relative and absolute, within tollerance
     PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
-    PTDF.lazy_branch_limits= branch_limits*(1+lazy_flow_tol)
+    ## make sure the lazy limits are a superset of the enforce limits
+    PTDF.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), PTDF.enforced_branch_limits)
 
     persistent_solver = isinstance(solver, PersistentSolver)
 
