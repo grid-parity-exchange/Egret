@@ -107,6 +107,7 @@ class PTDFMatrix(object):
 
         ## for lazy PTDF
         self.enforced_branch_limits = None
+        self.lazy_branch_limits = None
 
     def _calculate(self):
         self._calculate_ptdf()
