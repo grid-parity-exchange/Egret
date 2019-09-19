@@ -64,14 +64,17 @@ BUILT_IN_FUEL_CODES = [
     ('Sync_Cond', 'SC'),
     ('Biomass', 'B'),
     # To accomodate data that uses the codes directly
-    ('O', 'O'),
+    ('Z', 'Z'),
+    ('N', 'N'),
+    ('E', 'E'),
+    ('B', 'B'),
     ('C', 'C'),
     ('G', 'G'),
-    ('S', 'S'),
+    ('O', 'O'),
+    ('H', 'H'),
     ('W', 'W'),
-    ('N', 'N'),
+    ('S', 'S'),
     ('SC', 'SC'),
-    ('B', 'B'),
 ]
 
 
@@ -104,7 +107,9 @@ def _fuel_type_to_code(x):
 def _build_attribute_to_array_func(time_indices):
     '''returns a function for converting EGRET time-valued objects to np arrays'''
     def attribute_to_array(attr):
-        '''returns a numpy array for the time-valued attr'''
+        '''returns a numpy array for the time-valued attr, or None if the attr is None'''
+        if attr is None:
+            return None
         if isinstance(attr, dict):
             return np.array([attr['values'][t] for t in time_indices])
         else:
@@ -349,20 +354,22 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     ax.step(demand_indices, demand_by_hour, linewidth=3, color='#000000', where='post')
     
     # Add reserve requirements, if applicable.
-    reserve_requirements_by_hour = egret_model_data.data['system'].get('reserve_requirement')
-    if reserve_requirements_by_hour is not None:
-        reserve_requirements_array = attribute_to_array(reserve_requirements_by_hour)
+    reserve_requirements_array = attribute_to_array(egret_model_data.data['system'].get('reserve_requirement'))
+    if reserve_requirements_array is not None:
+        # Add reserve shortfalls, if applicable.
+        reserve_shortfall_array = attribute_to_array(egret_model_data.data['system']['reserve_shortfall'])
+
+        ## Stack reserve shortfalls on top of the reserves required, to highlight shortfalls in a way
+        ## similar to unmet demand
+        graph_reserve_requirements_array = reserve_requirements_array - reserve_shortfall_array
 
         if sum(reserve_requirements_array) > 0.0:
             component_color = '#00c2ff'
-            ax.bar(indices, reserve_requirements_array, bar_width, bottom=bottom, color=component_color,
+            ax.bar(indices, graph_reserve_requirements_array, bar_width, bottom=bottom, color=component_color,
                    edgecolor=None, linewidth=0,
                    label='Required Reserve')
-            bottom += reserve_requirements_array
+            bottom += graph_reserve_requirements_array
     
-        # Add reserve shortfalls, if applicable.
-        reserve_shortfall_by_hour = egret_model_data.data['system']['reserve_shortfall']
-        reserve_shortfall_array = attribute_to_array(reserve_shortfall_by_hour)
     
         if sum(reserve_shortfall_array) > 0.0:
             component_color = '#ff00ff'
@@ -389,10 +396,10 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
 
             reserves_by_hour += reserves_available
     
-    if reserve_requirements_by_hour is not None:
-        implicit_reserves_by_hour = [max(0.0, reserves_by_hour[ix] - reserves_by_hour[ix]) for ix in range(len(reserve_requirements_by_hour))]
+    if reserve_requirements_array is not None:
+        implicit_reserves_by_hour = np.maximum(0.0, reserves_by_hour - reserve_requirements_array)
     else:
-        implicit_reserves_by_hour = [max(0.0, reserves_by_hour[ix]) for ix in range(len(reserves_by_hour))]
+        implicit_reserves_by_hour = np.maximum(0.0, reserves_by_hour)
     
     if sum(implicit_reserves_by_hour) > 0.0:
         component_color = '#00ffc7'
