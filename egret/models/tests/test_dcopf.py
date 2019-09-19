@@ -24,7 +24,7 @@ case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_
 test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
 soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'dcopf_solution_files', '{}_dcopf_solution.json'.format(i)) for i in case_names]
 
-class TestBThetaDCOPF(unittest.TestCase):
+class TestDCOPF(unittest.TestCase):
     show_output = True
 
     @classmethod
@@ -69,6 +69,25 @@ class TestBThetaDCOPF(unittest.TestCase):
 
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
+        self.assertTrue(comparison)
+
+    @parameterized.expand(zip(test_cases, soln_cases))
+    def test_ptdf_serialization_deserialization(self, test_case, soln_case):
+        dcopf_model = create_ptdf_dcopf_model
+
+        md_dict = create_ModelData(test_case)
+
+        kwargs = {'ptdf_options': {'save_to': test_case+'.pickle'}}
+        md_serialization, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False, return_results=True, **kwargs)
+        self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
+
+        self.assertTrue(os.path.isfile(test_case+'.pickle'))
+
+        kwargs = {'ptdf_options': {'load_from': test_case+'.pickle'}}
+        md_deserialization, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False, return_results=True, **kwargs)
+        self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
+
+        comparison = math.isclose(md_serialization.data['system']['total_cost'], md_deserialization.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
 
 if __name__ == '__main__':

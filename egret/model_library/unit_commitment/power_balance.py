@@ -15,78 +15,238 @@ from .uc_utils import add_model_attr
 from .power_vars import _add_reactive_power_vars
 from .generation_limits import _add_reactive_limits
 
-import pyomo.environ as pe
+import numpy as np
 import egret.model_library.transmission.tx_utils as tx_utils
 import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
+import egret.data.data_utils as data_utils
+import egret.common.lazy_ptdf_utils as lpu
 
-from egret.model_library.defn import CoordinateType, ApproximationType
+from egret.model_library.defn import BasePointType, CoordinateType, ApproximationType
 from math import pi
 
 component_name = 'power_balance'
 
-def _btheta_dcopf_network_model(md,block):
-    buses = dict(md.elements(element_type='bus'))
-    branches = dict(md.elements(element_type='branch'))
-    loads = dict(md.elements(element_type='load'))
-    shunts = dict(md.elements(element_type='shunt'))
+def _copperplate_relax_network_model(block,tm):
+    m = block.model()
 
-    bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
+    ## this is not the "real" gens by bus, but the
+    gens_by_bus = block.gens_by_bus
 
-    inlet_branches_by_bus, outlet_branches_by_bus = \
-        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+    ### declare (and fix) the loads at the buses
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
+
+    ## index of net injections from the UC model
+    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
+    block.pl.fix()
+
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
+
+    ### declare the p balance
+    libbus.declare_eq_p_balance_ed(model=block,
+                                   index_set=m.Buses,
+                                   bus_p_loads=bus_p_loads,
+                                   gens_by_bus=gens_by_bus,
+                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                   relax_balance = True,
+                                   )
+
+
+def _copperplate_approx_network_model(block,tm):
+    m = block.model()
+
+    ## this is not the "real" gens by bus, but the
+    gens_by_bus = block.gens_by_bus
+
+    ### declare (and fix) the loads at the buses
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
+
+    ## index of net injections from the UC model
+    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
+    block.pl.fix()
+
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
+
+    ### declare the p balance
+    libbus.declare_eq_p_balance_ed(model=block,
+                                   index_set=m.Buses,
+                                   bus_p_loads=bus_p_loads,
+                                   gens_by_bus=gens_by_bus,
+                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                   )
+
+def _ptdf_dcopf_network_model(block,tm):
+    m = block.model()
+
+    buses = m._buses
+    branches = m._branches
+    ptdf_options = m._ptdf_options
+
+    branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
+    ## this will serve as a key into our dict of PTDF matricies,
+    ## so that we can avoid recalculating them each time step
+    ## with the same network topology
+    branches_out_service = tuple(l for l in m.TransmissionLines if value(m.LineOutOfService[l,tm]))
+
+    gens_by_bus = block.gens_by_bus
+
+    ### declare (and fix) the loads at the buses
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
+
+    ## this is not the "real" gens by bus, but the
+    ## index of net injections from the UC model
+    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
+    block.pl.fix()
+
+    libbus.declare_var_p_nw(block, m.Buses)
+
+    ### get the fixed shunts at the buses
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
+
+    ### declare net withdraw expression for use in PTDF power flows
+    libbus.declare_eq_p_net_withdraw_at_bus(model=block,
+                                            index_set=m.Buses,
+                                            bus_p_loads=bus_p_loads,
+                                            gens_by_bus=gens_by_bus,
+                                            bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                            )
+
+    ### declare the p balance
+    libbus.declare_eq_p_balance_ed(model=block,
+                                   index_set=m.Buses,
+                                   bus_p_loads=bus_p_loads,
+                                   gens_by_bus=gens_by_bus,
+                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                   )
+
+    ### add "blank" power flow expressions
+    libbranch.declare_expr_pf(model=block,
+                             index_set=branches_in_service,
+                             )
+
+    ### Get the PTDF matrix from cache, from file, or create a new one
+    if branches_out_service not in m._PTDFs:
+        buses_idx = tuple(buses.keys())
+
+        reference_bus = value(m.ReferenceBus)
+
+        PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx)
+        
+        ## NOTE: For now, just use a flat-start for unit commitment
+        if PTDF is None:
+            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, branches_keys=branches_in_service, buses_keys=buses_idx)
+
+        m._PTDFs[branches_out_service] = PTDF
+
+    else:
+        PTDF = m._PTDFs[branches_out_service]
+
+    ### attach the current PTDF object to this block
+    block._PTDF = PTDF
+
+    if ptdf_options['lazy']:
+        ### add "blank" real power flow limits
+        libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
+                                                     index_set=branches_in_service,
+                                                     branches=branches,
+                                                     p_thermal_limits=None,
+                                                     approximation_type=None,
+                                                     )
+        ### add helpers for tracking monitored branches
+        lpu.add_monitored_branch_tracker(block)
+        
+    else: ### add all the dense constraints
+        rel_ptdf_tol = m._ptdf_options['rel_ptdf_tol']
+        abs_ptdf_tol = m._ptdf_options['abs_ptdf_tol']
+
+        p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
+
+        ### declare the branch power flow approximation constraints
+        libbranch.declare_eq_branch_power_ptdf_approx(model=block,
+                                                      index_set=branches_in_service,
+                                                      PTDF=PTDF,
+                                                      abs_ptdf_tol=abs_ptdf_tol,
+                                                      rel_ptdf_tol=rel_ptdf_tol
+                                                      )
+        ### declare the real power flow limits
+        libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
+                                                     index_set=branches_in_service,
+                                                     branches=branches,
+                                                     p_thermal_limits=p_max,
+                                                     approximation_type=ApproximationType.PTDF
+                                                     )
+
+
+def _btheta_dcopf_network_model(block,tm):
+    m = block.model()
+
+    buses = m._buses
+    branches = m._branches
+
+    branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
+    ## this will serve as a key into our dict of PTDF matricies,
+    ## so that we can avoid recalculating them each time step
+    ## with the same network topology
+    branches_out_service = tuple(l for l in m.TransmissionLines if value(m.LineOutOfService[l,tm]))
+
+    ## need the inlet/outlet relationship given some lines may be out
+    inlet_branches_by_bus = dict()
+    outlet_branches_by_bus = dict()
+    for b in m.Buses:
+        inlet_branches_by_bus[b] = list()
+        for l in m.LinesTo[b]:
+            if l not in branches_out_service:
+                inlet_branches_by_bus[b].append(l)
+        outlet_branches_by_bus[b] = list()
+        for l in m.LinesFrom[b]:
+            if l not in branches_out_service:
+                outlet_branches_by_bus[b].append(l)
 
     ## this is not the "real" gens by bus, but the
     ## index of net injections from the UC model
     gens_by_bus = block.gens_by_bus
 
     ### declare (and fix) the loads at the buses
-    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
 
-    libbus.declare_var_pl(block, bus_attrs['names'], initialize=bus_p_loads)
+    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
     block.pl.fix()
 
-    ### declare the fixed shunts at the buses
-    _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+    ### get the fixed shunts at the buses
+    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
     ### declare the polar voltages
-    va_bounds = {k: (-pi, pi) for k in bus_attrs['names']}
-    libbus.declare_var_va(block, bus_attrs['names'], initialize=None,
+    va_bounds = {k: (-pi, pi) for k in buses.keys()}
+    libbus.declare_var_va(block, buses.keys(), initialize=None,
                           bounds=va_bounds
                           )
 
     ### fix the reference bus
-    ref_bus = md.data['system']['reference_bus']
-    block.va[ref_bus].fix(0.0)
+    ref_bus = value(m.ReferenceBus)
+    ref_angle = value(m.ReferenceBusAngle)
+    block.va[ref_bus].fix(math.radians(ref_angle))
 
-    ref_angle = md.data['system']['reference_bus_angle']
-    if ref_angle != 0.0:
-        raise ValueError('The BTHETA DCOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
-
-    p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    p_lbub = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
+    p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
+    p_lbub = {k: (-p_max[k],p_max[k]) for k in branches_in_service}
     pf_bounds = p_lbub
 
     libbranch.declare_var_pf(model=block,
-                             index_set=branch_attrs['names'],
+                             index_set=branches_in_service,
                              initialize=None,
                              bounds=pf_bounds
                              )
 
     ### declare the branch power flow approximation constraints
     libbranch.declare_eq_branch_power_btheta_approx(model=block,
-                                                    index_set=branch_attrs['names'],
+                                                    index_set=branches_in_service,
                                                     branches=branches
                                                     )
 
     ### declare the p balance
     libbus.declare_eq_p_balance_dc_approx(model=block,
-                                          index_set=bus_attrs['names'],
+                                          index_set=buses.keys(),
                                           bus_p_loads=bus_p_loads,
                                           gens_by_bus=gens_by_bus,
                                           bus_gs_fixed_shunts=bus_gs_fixed_shunts,
@@ -97,7 +257,7 @@ def _btheta_dcopf_network_model(md,block):
 
     ### declare the real power flow limits
     libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
-                                                 index_set=branch_attrs['names'],
+                                                 index_set=branches_in_service,
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
                                                  approximation_type=ApproximationType.BTHETA
@@ -105,26 +265,28 @@ def _btheta_dcopf_network_model(md,block):
 
     ### declare angle difference limits on interconnected buses
     libbranch.declare_ineq_angle_diff_branch_lbub(model=block,
-                                                  index_set=branch_attrs['names'],
+                                                  index_set=branches_in_service,
                                                   branches=branches,
                                                   coordinate_type=CoordinateType.POLAR
                                                   )
 
     return block
 
-
-def _add_load_mismatch(model):
+def _add_system_load_mismatch(model):
 
     #####################################################
     # load "shedding" can be both positive and negative #
     #####################################################
-    model.LoadGenerateMismatch = Var(model.Buses, model.TimePeriods, within=Reals)
-    model.posLoadGenerateMismatch = Var(model.Buses, model.TimePeriods, within=NonNegativeReals) # load shedding
-    model.negLoadGenerateMismatch = Var(model.Buses, model.TimePeriods, within=NonNegativeReals) # over generation
-    
+    model.posLoadGenerateMismatch = Var(model.TimePeriods, within=NonNegativeReals) # load shedding
+    model.negLoadGenerateMismatch = Var(model.TimePeriods, within=NonNegativeReals) # over generation
+
+    ## for interfacing with the rest of the model code
     def define_pos_neg_load_generate_mismatch_rule(m, b, t):
-        return m.posLoadGenerateMismatch[b, t] - m.negLoadGenerateMismatch[b, t] == m.LoadGenerateMismatch[b, t]
-    model.DefinePosNegLoadGenerateMismatch = Constraint(model.Buses, model.TimePeriods, rule = define_pos_neg_load_generate_mismatch_rule)
+        if b == value(m.ReferenceBus):
+            return m.posLoadGenerateMismatch[t] - m.negLoadGenerateMismatch[t]
+        else:
+            return 0
+    model.LoadGenerateMismatch = Expression(model.Buses, model.TimePeriods, rule = define_pos_neg_load_generate_mismatch_rule )
 
     # the following constraints are necessarily, at least in the case of CPLEX 12.4, to prevent
     # the appearance of load generation mismatch component values in the range of *negative* e-5.
@@ -133,13 +295,97 @@ def _add_load_mismatch(model):
     # at this point, but it does seem to work broadly. we tried a single global constraint, across all
     # buses, but that failed to correct the problem, and caused the solve times to explode.
     
+    def pos_load_generate_mismatch_tolerance_rule(m):
+       return sum((m.posLoadGenerateMismatch[t] for t in m.TimePeriods)) >= 0.0
+    model.PosLoadGenerateMismatchTolerance = Constraint(rule=pos_load_generate_mismatch_tolerance_rule)
+    
+    def neg_load_generate_mismatch_tolerance_rule(m):
+       return sum((m.negLoadGenerateMismatch[t] for t in m.TimePeriods)) >= 0.0
+    model.NegLoadGenerateMismatchTolerance = Constraint(rule=neg_load_generate_mismatch_tolerance_rule)
+
+    def compute_load_mismatch_cost_rule(m, t):
+        return m.LoadMismatchPenalty*m.TimePeriodLengthHours*(m.posLoadGenerateMismatch[t] + m.negLoadGenerateMismatch[t]) 
+    model.LoadMismatchCost = Expression(model.TimePeriods, rule=compute_load_mismatch_cost_rule)
+
+def _add_load_mismatch(model):
+
+    def load_shedding_bus_times(m):
+        for b in m.Buses:
+            for t in m.TimePeriods:
+                if value(m.Demand[b,t]) > 0:
+                    yield b,t
+    model.LoadSheddingBusTimes = Set(dimen=2, initialize=load_shedding_bus_times)
+
+    load_shedding_times_per_bus = {b: list() for b in model.Buses}
+    for b,t in model.LoadSheddingBusTimes:
+        load_shedding_times_per_bus[b].append(t)
+
+    def load_shedding_bounds_times(m,b,t):
+        ## NOTE: depends on above which ensures no engative demand
+        return (0, value(m.Demand[b,t]))
+    model.LoadShedding = Var(model.LoadSheddingBusTimes, within=NonNegativeReals, bounds=load_shedding_bounds_times) # load shedding
+
+    over_gen_maxes = {}
+    over_gen_times_per_bus = {b: list() for b in model.Buses}
+    for b in model.Buses:
+        gen = sum(value(model.MaximumPowerOutput[g]) for g in model.ThermalGeneratorsAtBus[b])
+        for t in model.TimePeriods:
+            total_gen = gen + sum(value(model.MinNondispatchablePower[n,t]) for n in model.NondispatchableGeneratorsAtBus[b])
+            total_gen -= value(model.Demand[b,t])
+            if total_gen > 0:
+                over_gen_maxes[b,t] = total_gen
+                over_gen_times_per_bus[b].append(t)
+
+    model.OverGenerationBusTimes = Set(dimen=2, initialize=over_gen_maxes.keys())
+
+    def get_over_gen_bounds(m,b,t):
+        return (0,over_gen_maxes[b,t])
+    model.OverGeneration = Var(model.OverGenerationBusTimes, within=NonNegativeReals, bounds=get_over_gen_bounds) # over generation
+    
+    # the following constraints are necessarily, at least in the case of CPLEX 12.4, to prevent
+    # the appearance of load generation mismatch component values in the range of *negative* e-5.
+    # what these small negative values do is to cause the optimal objective to be a very large negative,
+    # due to obviously large penalty values for under or over-generation. JPW would call this a heuristic
+    # at this point, but it does seem to work broadly. we tried a single global constraint, across all
+    # buses, but that failed to correct the problem, and caused the solve times to explode.
+
+
     def pos_load_generate_mismatch_tolerance_rule(m, b):
-       return sum((m.posLoadGenerateMismatch[b,t] for t in m.TimePeriods)) >= 0.0
-    model.PosLoadGenerateMismatchTolerance = Constraint(model.Buses, rule=pos_load_generate_mismatch_tolerance_rule)
+        if load_shedding_times_per_bus[b]:
+            return sum(m.LoadShedding[b,t] for t in load_shedding_times_per_bus[b]) >= 0
+        else:
+            return Constraint.Feasible
+    model.PosLoadGenerateMismatchTolerance = Constraint(model.Buses, 
+                                                                rule=pos_load_generate_mismatch_tolerance_rule)
     
     def neg_load_generate_mismatch_tolerance_rule(m, b):
-       return sum((m.negLoadGenerateMismatch[b,t] for t in m.TimePeriods)) >= 0.0
-    model.NegLoadGenerateMismatchTolerance = Constraint(model.Buses, rule=neg_load_generate_mismatch_tolerance_rule)
+        if over_gen_times_per_bus[b]:
+            return sum(m.OverGeneration[b,t] for t in m.TimePeriods if (b,t) in m.OverGenerationBusTimes) >= 0
+        else:
+            return Constraint.Feasible
+    model.NegLoadGenerateMismatchTolerance = Constraint(model.Buses,
+                                                                rule=neg_load_generate_mismatch_tolerance_rule)
+    
+    #####################################################
+    # load "shedding" can be both positive and negative #
+    #####################################################
+    model.LoadGenerateMismatch = Expression(model.Buses, model.TimePeriods)
+    for b in model.Buses:
+        for t in model.TimePeriods:
+            model.LoadGenerateMismatch[b,t].expr = 0
+    for b,t in model.LoadSheddingBusTimes:
+        model.LoadGenerateMismatch[b,t].expr += model.LoadShedding[b,t]
+    for b,t in model.OverGenerationBusTimes:
+        model.LoadGenerateMismatch[b,t].expr -= model.OverGeneration[b,t]
+
+    model.LoadMismatchCost = Expression(model.TimePeriods)
+    for t in model.TimePeriods:
+        model.LoadMismatchCost[t].expr = 0
+    for b,t in model.LoadSheddingBusTimes:
+        model.LoadMismatchCost[t].expr += model.LoadMismatchPenalty*model.TimePeriodLengthHours*model.LoadShedding[b,t]
+    for b,t in model.OverGenerationBusTimes:
+        model.LoadMismatchCost[t].expr += model.LoadMismatchPenalty*model.TimePeriodLengthHours*model.OverGeneration[b,t]
+
 
 def _add_q_load_mismatch(model):
 
@@ -172,15 +418,22 @@ def _add_q_load_mismatch(model):
     model.NegLoadGenerateMismatchToleranceReactive = Constraint(model.Buses,
                                                                 rule=neg_load_generate_mismatch_tolerance_rule_reactive)
 
+    def compute_q_load_mismatch_cost_rule(m, t):
+        return m.LoadMismatchPenaltyReactive*m.TimePeriodLengthHours*sum(
+                    m.posLoadGenerateMismatchReactive[b, t] + m.negLoadGenerateMismatchReactive[b, t] for b in m.Buses) 
+    model.LoadMismatchCostReactive = Expression(model.TimePeriods, rule=compute_q_load_mismatch_cost_rule)
+
 def _add_blank_load_mismatch(model):
     model.LoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
     model.posLoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
     model.negLoadGenerateMismatch = Param(model.Buses, model.TimePeriods, default=0.)
+    model.LoadMismatchCost = Param(model.TimePeriods, default=0.)
 
 def _add_blank_q_load_mismatch(model):
     model.LoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
     model.posLoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
     model.negLoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
+    model.LoadMismatchCostReactive = Param(model.TimePeriods, default=0.)
 
 ## helper defining real power injection at a bus
 def _get_pg_expr_rule(t):
@@ -209,12 +462,22 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
     ## save flag for objective
     model.reactive_power = reactive_power
 
+    system_load_mismatch = (network_model_builder == _copperplate_approx_network_model)
+
     if slacks:
-        _add_load_mismatch(model)
+        if system_load_mismatch:
+            _add_system_load_mismatch(model)
+        else:
+            _add_load_mismatch(model)
     else:
-        _add_blank_load_mismatch(model)
+        if system_load_mismatch:
+            _add_blank_system_load_mismatch(model)
+        else:
+            _add_blank_load_mismatch(model)
 
     if reactive_power:
+        if system_load_mismatch:
+            raise Exception("Need to implement system mismatch for reactive power")
         _add_reactive_power_vars(model)
         _add_reactive_limits(model)
         if slacks:
@@ -222,12 +485,10 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
         else:
             _add_blank_q_load_mistmatch(model)
 
-    md = model.model_data
-
     # for transmission network
     model.TransmissionBlock = Block(model.TimePeriods, concrete=True)
 
-    for tm, td in zip(model.TimePeriods, md.data['system']['time_indices']):
+    for tm in model.TimePeriods:
         b = model.TransmissionBlock[tm]
         ## this creates a fake bus generator for all the
         ## appropriate injection/withdraws from the unit commitment
@@ -236,9 +497,32 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
         if reactive_power:
             b.qg = Expression(model.Buses, rule=_get_qg_expr_rule(tm))
         b.gens_by_bus = {bus : [bus] for bus in model.Buses}
-        md_t = md.clone_at_timestamp(td)
-        network_model_builder(md_t,b)
+        network_model_builder(b,tm)
 
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'power_vars': None,
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
+                                            })
+def copperplate_power_flow(model, slacks=True):
+    _add_egret_power_flow(model, _copperplate_approx_network_model, reactive_power=False, slacks=slacks)
+
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'power_vars': None,
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
+                                            })
+def copperplate_relaxed_power_flow(model, slacks=True):
+    _add_egret_power_flow(model, _copperplate_relax_network_model, reactive_power=False, slacks=slacks)
+
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'power_vars': None,
+                                            'non_dispatchable_vars': None,
+                                            'storage_service': None,
+                                            })
+def ptdf_power_flow(model, slacks=True):
+    model._PTDFs = dict()
+    _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,

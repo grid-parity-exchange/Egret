@@ -71,6 +71,12 @@ def declare_var_ql(model, index_set, **kwargs):
     """
     decl.declare_var('ql', model=model, index_set=index_set, **kwargs)
 
+def declare_var_p_nw(model, index_set, **kwargs):
+    """
+    Create variable for the reactive power load at a bus
+    """
+    decl.declare_var('p_nw', model=model, index_set=index_set, **kwargs)
+
 
 def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
                                     coordinate_type=CoordinateType.POLAR):
@@ -96,7 +102,32 @@ def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
                 m.shunt_p[bus_name] = shunt_attrs['gs'][bus_name]*vmsq
                 m.shunt_q[bus_name] = -shunt_attrs['bs'][bus_name]*vmsq
 
+def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+    """
+    Create a named pyomo expression for bus net withdraw
+    """
+    m = model
+    decl.declare_expr('p_nw', model, index_set)
 
+    for b in index_set:
+        m.p_nw[b] = ( bus_gs_fixed_shunts[b] 
+                    + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
+                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+        
+def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+    """
+    Create a named pyomo expression for bus net withdraw
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_p_net_withdraw_at_bus', model, index_set)
+
+    m.eq_p_net_withdraw_at_bus = pe.Constraint(con_set)
+
+    for b in index_set:
+        m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] 
+                                                    + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
+                                                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+                    
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """
     Create an equality constraint to enforce tan(\theta) = vj/vr at  the reference bus
@@ -150,6 +181,8 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
     p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
+    relaxed_balance = False
+
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
             if idx == 'include_feasibility_slack_pos':
@@ -158,8 +191,13 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
                 p_expr += eval("m." + val)
             if idx == 'include_losses':
                 p_expr -= sum(m.pfl[branch_name] for branch_name in val)
+            if idx == 'relax_balance':
+                relaxed_balance = True
 
-    m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
+    if relaxed_balance:
+        m.eq_p_balance = pe.Constraint(expr = p_expr >= 0.0)
+    else:
+        m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
 
 def declare_eq_p_balance_dc_approx(model, index_set,

@@ -49,6 +49,14 @@ def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
         assert result.solver.termination_condition == TerminationCondition.optimal
         assert math.isclose(ref_objval, result.problem.upper_bound)
 
+def _make_get_dcopf_uc_model(network):
+    def get_dcopf_uc_model(model_data, relaxed=False, **kwargs):
+        return create_tight_unit_commitment_model(model_data,
+                                network_constraints=network,
+                                relaxed=relaxed,
+                                **kwargs)
+    return get_dcopf_uc_model
+
 ## definitely skip MIP tests if we don't have one of gurobi or cplex available
 @unittest.skipUnless(SolverFactory('gurobi').available() or SolverFactory('cplex').available(), "Neither Gurobi or CPLEX solver is available")
 @pytest.mark.mip
@@ -115,7 +123,7 @@ def test_CA_uc_model():
     _test_uc_model(create_CA_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_uc_runner():
-    test_names = ['tiny_uc_1', 'tiny_uc_2']
+    test_names = ['tiny_uc_{}'.format(i) for i in range(1,6+1)]
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
         md_in = ModelData(json.load(open(input_json_file_name, 'r')))
@@ -124,3 +132,69 @@ def test_uc_runner():
         reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
         md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
         assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+
+def test_uc_transmission_models():
+
+    ## the network tests can optionally specify some kwargs so we can pass them into solve_unit_commitment
+    tc_networks = {'btheta_power_flow': [dict()], 'ptdf_power_flow':[{'ptdf_options': {'lazy':False}}, dict()], 'power_balance_constraints':[dict()],}
+    no_network = 'copperplate_power_flow'
+    test_name = 'tiny_uc_tc' ## based on tiny_uc_1
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+    for tc in tc_networks:
+        for kwargs in tc_networks[tc]:
+
+            md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(tc), **kwargs)
+            reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
+            md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+            assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+
+    ## test copperplate
+    test_name = 'tiny_uc_1'
+    md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(no_network))
+    reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
+    md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+
+def test_uc_relaxation():
+    test_name = 'tiny_uc_tc'
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+
+    md_results = solve_unit_commitment(md_in, solver='cbc', options={'presolve': 'off', 'primalS':''}, relaxed=True)
+    reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_relaxed_results.json')
+    md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+
+def test_uc_ptdf_termination():
+    test_name = 'tiny_uc_tc'
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+
+    kwargs = {'ptdf_options':{'lazy': True, 'rel_ptdf_tol':10.}}
+    md_results, results = solve_unit_commitment(md_in, solver='cbc', options={'presolve': 'off', 'primalS':''}, relaxed=True, return_results=True, **kwargs)
+
+    assert results.egret_metasolver['iterations'] == 1
+
+def test_uc_ptdf_serialization_deserialization():
+
+    test_name = 'tiny_uc_tc' ## based on tiny_uc_1
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+
+    ptdf_file_name = test_name+'.pickle'
+
+    kwargs = {'ptdf_options' : {'save_to': ptdf_file_name}}
+    md_serialization = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
+
+    ## ensure the file is present
+    assert os.path.isfile(ptdf_file_name)
+
+    kwargs = {'ptdf_options' : {'load_from': ptdf_file_name}}
+    md_deserialization = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
+
+    assert math.isclose(md_serialization.data['system']['total_cost'], md_deserialization.data['system']['total_cost'])

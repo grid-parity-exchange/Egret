@@ -17,7 +17,7 @@ from egret.model_library.unit_commitment import \
         ramping_limits, production_costs, \
         uptime_downtime, startup_costs, \
         services, power_balance, reserve_requirement, \
-        objective, fuel_supply
+        objective, fuel_supply, fuel_consumption
 
 from collections import namedtuple
 import pyomo.environ as pe
@@ -37,7 +37,7 @@ UCFormulation = namedtuple('UCFormulation',
                              ]
                             )
 
-def generate_model( model_data, uc_formulation, relax_binaries = False ):
+def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_options=None ):
     """
     returns a UC uc_formulation as an abstract model with the 
     components specified in a UCFormulation, with the option
@@ -51,6 +51,8 @@ def generate_model( model_data, uc_formulation, relax_binaries = False ):
     relax_binaries : bool, optional
         Relaxes all binary variables in the constructed model, resulting in a continuous problem.
         Default is False.
+    ptdf_options : dict, optional
+        Dictionary of options for ptdf transmission model
 
     Returns
     -------
@@ -58,7 +60,7 @@ def generate_model( model_data, uc_formulation, relax_binaries = False ):
                                       from model_data
     """
 
-    return _generate_model( model_data, *_get_formulation_from_UCFormulation( uc_formulation ), relax_binaries )
+    return _generate_model( model_data, *_get_formulation_from_UCFormulation( uc_formulation ), relax_binaries , ptdf_options )
 
 def _generate_model( model_data,
                     _status_vars,
@@ -74,6 +76,7 @@ def _generate_model( model_data,
                     _reserve_requirement, 
                     _objective, 
                     _relax_binaries = False,
+                    _ptdf_options = None,
                     ):
 
     
@@ -84,6 +87,18 @@ def _generate_model( model_data,
     
     model.name = "UnitCommitment"
     
+    ## munge ptdf_options, if necessary
+    if _power_balance in ['ptdf_power_flow']:
+        import egret.common.lazy_ptdf_utils as lpu
+        if _ptdf_options is None:
+            _ptdf_options = dict()
+        lpu.populate_default_ptdf_options(_ptdf_options)
+
+        baseMVA = model_data.data['system']['baseMVA']
+        lpu.check_and_scale_ptdf_options(_ptdf_options, baseMVA)
+
+        model._ptdf_options = _ptdf_options
+
     ## enforece time 1 ramp rates
     model.enforce_t1_ramp_rates = True
     
@@ -104,10 +119,12 @@ def _generate_model( model_data,
     services.ancillary_services(model)
     getattr(power_balance, _power_balance)(model)
     getattr(reserve_requirement, _reserve_requirement)(model)
-    getattr(objective, _objective)(model)
 
     if 'fuel_supply' in model_data.data['elements'] and bool(model_data.data['elements']['fuel_supply']):
+        fuel_consumption.fuel_consumption_model(model)
         fuel_supply.fuel_supply_model(model)
+
+    getattr(objective, _objective)(model)
 
     return model
 

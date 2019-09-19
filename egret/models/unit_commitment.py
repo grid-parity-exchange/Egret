@@ -16,18 +16,26 @@ unit commitment formulations
 
 from egret.model_library.unit_commitment.uc_model_generator \
         import UCFormulation, generate_model 
+from egret.common.log import logger
 from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
+from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
-def _get_uc_model(model_data, formulation_list, relax_binaries):
+import egret.common.lazy_ptdf_utils as lpu
+import egret.data.data_utils as data_utils
+import pyomo.environ as pe
+import numpy as np
+
+def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
     formulation = UCFormulation(*formulation_list)
     md = model_data.clone_in_service()
     scale_ModelData_to_pu(md, inplace=True)
-    return generate_model(md, formulation, relax_binaries)
+    return generate_model(md, formulation, relax_binaries, **kwargs)
 
 def create_tight_unit_commitment_model(model_data,
-                                       network_constraints='btheta_power_flow',
-                                       relaxed=False):
+                                       network_constraints='ptdf_power_flow',
+                                       relaxed=False,
+                                       **kwargs):
     '''
     Create a new unit commitment model based on the "Tight" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -45,6 +53,8 @@ def create_tight_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -63,11 +73,12 @@ def create_tight_unit_commitment_model(model_data,
                         'KOW_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_compact_unit_commitment_model(model_data,
-                                         network_constraints='btheta_power_flow',
-                                         relaxed=False):
+                                         network_constraints='ptdf_power_flow',
+                                         relaxed=False,
+                                         **kwargs):
     '''
     Create a new unit commitment model based on the "Compact" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -85,6 +96,8 @@ def create_compact_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -103,11 +116,12 @@ def create_compact_unit_commitment_model(model_data,
                          'MLR_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_KOW_unit_commitment_model(model_data,
-                                     network_constraints='btheta_power_flow',
-                                     relaxed=False):
+                                     network_constraints='ptdf_power_flow',
+                                     relaxed=False,
+                                     **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "A Novel Matching 
@@ -125,6 +139,8 @@ def create_KOW_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -143,11 +159,12 @@ def create_KOW_unit_commitment_model(model_data,
                          'KOW_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_ALS_unit_commitment_model(model_data,
-                                     network_constraints='btheta_power_flow',
-                                     relaxed=False):
+                                     network_constraints='ptdf_power_flow',
+                                     relaxed=False,
+                                     **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Atakan, Semih, Guglielmo Lulli, and Suvrajeet Sen. "A state transition 
@@ -165,6 +182,8 @@ def create_ALS_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -183,11 +202,12 @@ def create_ALS_unit_commitment_model(model_data,
                          'ALS_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_MLR_unit_commitment_model(model_data,
-                                     network_constraints='btheta_power_flow',
-                                     relaxed=False):
+                                     network_constraints='ptdf_power_flow',
+                                     relaxed=False,
+                                     **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Morales-España, Germán, Jesus M. Latorre, and Andres Ramos. "Tight and
@@ -205,6 +225,8 @@ def create_MLR_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -222,11 +244,12 @@ def create_MLR_unit_commitment_model(model_data,
                          'MLR_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_random1_unit_commitment_model(model_data,
-                                         network_constraints='btheta_power_flow',
-                                         relaxed=False):
+                                         network_constraints='ptdf_power_flow',
+                                         relaxed=False,
+                                         **kwargs):
     '''
     Create a new unit commitment model based on the "Random1" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -244,6 +267,8 @@ def create_random1_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -262,11 +287,12 @@ def create_random1_unit_commitment_model(model_data,
                         'MLR_startup_costs2',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_random2_unit_commitment_model(model_data,
-                                         network_constraints='btheta_power_flow',
-                                         relaxed=False):
+                                         network_constraints='ptdf_power_flow',
+                                         relaxed=False,
+                                         **kwargs):
     '''
     Create a new unit commitment model based on the "Random2" formulation from
     B. Knueven, J. Ostrowski, and J.-P. Watson. "On Mixed Integer Programming
@@ -284,6 +310,8 @@ def create_random2_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -302,11 +330,12 @@ def create_random2_unit_commitment_model(model_data,
                         'MLR_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_unit_commitment_model(model_data,
-                                     network_constraints='btheta_power_flow',
-                                     relaxed=False):
+                                     network_constraints='ptdf_power_flow',
+                                     relaxed=False,
+                                     **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Ostrowski, James, Miguel F. Anjos, and Anthony Vannelli. "Tight mixed 
@@ -324,6 +353,8 @@ def create_OAV_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -342,11 +373,12 @@ def create_OAV_unit_commitment_model(model_data,
                         'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_tighter_unit_commitment_model(model_data,
-                                             network_constraints='btheta_power_flow',
-                                             relaxed=False):
+                                             network_constraints='ptdf_power_flow',
+                                            relaxed=False,
+                                            **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Ostrowski, James, Miguel F. Anjos, and Anthony Vannelli. "Tight mixed 
@@ -367,6 +399,8 @@ def create_OAV_tighter_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -385,11 +419,12 @@ def create_OAV_tighter_unit_commitment_model(model_data,
                          'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_original_unit_commitment_model(model_data,
-                                              network_constraints='btheta_power_flow',
-                                              relaxed=False):
+                                              network_constraints='ptdf_power_flow',
+                                              relaxed=False,
+                                              **kwargs):
     '''
     Create a new unit commitment model based on the "original" formulation from
     Ostrowski, James, Miguel F. Anjos, and Anthony Vannelli. "Tight mixed 
@@ -407,6 +442,8 @@ def create_OAV_original_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -425,11 +462,12 @@ def create_OAV_original_unit_commitment_model(model_data,
                          'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_OAV_up_downtime_unit_commitment_model(model_data,
-                                                 network_constraints='btheta_power_flow',
-                                                 relaxed=False):
+                                                 network_constraints='ptdf_power_flow',
+                                                 relaxed=False,
+                                                 **kwargs):
     '''
     Create a new unit commitment model based on the "up/downtime" formulation from
     Ostrowski, James, Miguel F. Anjos, and Anthony Vannelli. "Tight mixed 
@@ -447,6 +485,8 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -465,11 +505,12 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
                          'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
 def create_CA_unit_commitment_model(model_data,
-                                    network_constraints='btheta_power_flow',
-                                    relaxed=False):
+                                    network_constraints='ptdf_power_flow',
+                                    relaxed=False,
+                                    **kwargs):
     '''
     Create a new unit commitment model based on the formulation from
     Carrión, Miguel, and José M. Arroyo. "A computationally efficient
@@ -487,6 +528,8 @@ def create_CA_unit_commitment_model(model_data,
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
@@ -505,7 +548,161 @@ def create_CA_unit_commitment_model(model_data,
                          'CA_startup_costs',
                          network_constraints,
                        ]
-    return _get_uc_model(model_data, formulation_list, relaxed)
+    return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
+
+def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, vars_to_load=None):
+
+    persistent_solver = isinstance(solver, PersistentSolver)
+    duals = hasattr(m, 'dual')
+
+    results = None 
+
+    ptdf_options = m._ptdf_options
+
+    PVF = dict()
+    viol_num = dict()
+    mon_viol_num = dict()
+    gt_viol_lazy = dict()
+    lt_viol_lazy = dict()
+
+    for i in range(iteration_limit):
+        for t in m.TimePeriods:
+            b = m.TransmissionBlock[t]
+
+            PTDF = b._PTDF
+
+            ## these should only need to be gathered once
+            if PTDF.enforced_branch_limits is None:
+                branch_limits = PTDF.branch_limits_array
+                rel_flow_tol = ptdf_options['rel_flow_tol']
+                abs_flow_tol = ptdf_options['abs_flow_tol']
+
+                ## only enforce the relative and absolute, within tollerance
+                PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+
+            PVF[t], viol_num[t], mon_viol_num[t], gt_viol_lazy[t], lt_viol_lazy[t] = \
+                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t)
+
+        total_viol_num = sum(viol_num.values())
+        total_mon_viol_num = sum(mon_viol_num.values())
+
+        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,total_viol_num)
+        if total_mon_viol_num:
+            iter_status_str += ", {} of which are already monitored".format(total_mon_viol_num)
+
+        logger.info(iter_status_str)
+
+        if total_viol_num <= 0:
+            if persistent_solver and duals and results is not None and vars_to_load is None:
+                solver.load_duals()
+            return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
+        elif total_viol_num == total_mon_viol_num:
+            logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
+            if persistent_solver and duals:
+                solver.load_duals()
+            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
+
+        all_times_all_viol_in_model = True
+        for t in m.TimePeriods:
+            b = m.TransmissionBlock[t]
+
+            PTDF = b._PTDF
+
+            lpu.add_violations(gt_viol_lazy[t], lt_viol_lazy[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t)
+
+        if persistent_solver:
+            results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+            solver.load_vars(vars_to_load)
+        else:
+            results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
+            m.solutions.load_from(results)
+
+    else:
+        if warn_on_max_iter:
+            logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
+        if persistent_solver and duals:
+            solver.load_duals()
+        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
+
+def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed):
+
+    from egret.common.solver_interface import _solve_model
+    import time
+
+    egret_metasolver_status = dict()
+
+    start_time = time.time()
+
+    ## cache here the variables that need to be 
+    ## loaded to check transimission feasbility
+    ## for a persistent solver
+    if isinstance(solver, PersistentSolver) or (isinstance(solver,str) and 'persistent' in solver):
+        vars_to_load = list()
+        for t in m.TimePeriods:
+            b = m.TransmissionBlock[t]
+            if isinstance(b.p_nw, pe.Var):
+                vars_to_load.extend(b.p_nw.values())
+            else:
+                vars_to_load = None
+                break
+    else:
+        vars_to_load = None
+
+    lp_iter_limit = m._ptdf_options['lp_iteration_limit']
+    model_data = m.model_data
+
+    ## if this is a MIP, iterate though a few times with just the LP relaxation
+    if not relaxed and lp_iter_limit > 0:
+
+        lpu.uc_instance_binary_relaxer(m, None)
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load = vars_to_load)
+        lp_termination_cond, results, lp_iterations = \
+                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, warn_on_max_iter=False, vars_to_load = vars_to_load)
+        ## if the initial solve was transmission feasible, then
+        ## we never re-solved the problem
+        if results is None:
+            results = results_init
+
+        egret_metasolver_status['lp_termination_cond'] = lp_termination_cond
+        egret_metasolver_status['lp_iterations'] = lp_iterations
+
+        lpu.uc_instance_binary_enforcer(m, solver)
+
+        ## solve the MIP after enforcing binaries
+        results_init = solver.solve(m, tee=solver_tee, load_solutions=False)
+        if isinstance(solver, PersistentSolver):
+            solver.load_vars(vars_to_load)
+        else:
+            m.solutions.load_from(results_init)
+
+    ## else if relaxed or lp_iter_limit == 0, do an initial solve
+    else:
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load=vars_to_load)
+
+    iter_limit = m._ptdf_options['iteration_limit']
+    termination_cond, results, iterations = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True, vars_to_load=vars_to_load)
+    ## if the initial solve was transmission feasible, then
+    ## we never re-solved the problem
+    if results is None:
+        results = results_init
+
+    egret_metasolver_status['termination_cond'] = termination_cond
+    egret_metasolver_status['iterations'] = iterations
+
+    if isinstance(solver, PersistentSolver) and vars_to_load is not None:
+        solver.load_vars()
+        if hasattr(m, "dual"):
+            solver.load_duals()
+        if hasattr(m, "slack"):
+            solver.load_slacks()
+
+    egret_metasolver_status['time'] = time.time() - start_time
+    results.egret_metasolver = egret_metasolver_status
+
+    ## write the PTDF matrix, if told to
+    data_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
+
+    return m, results, solver
 
 def _time_series_dict(values):
     return {'data_type':'time_series', 'values':values}
@@ -519,7 +716,9 @@ def solve_unit_commitment(model_data,
                           options = None,
                           uc_model_generator = create_tight_unit_commitment_model,
                           relaxed = False,
-                          return_model = False):
+                          return_model = False,
+                          return_results = False,
+                          **kwargs):
     '''
     Create and solve a new unit commitment model
 
@@ -548,18 +747,26 @@ def solve_unit_commitment(model_data,
         If True, creates a relaxed unit commitment model
     return_model : bool (optional)
         If True, returns the pyomo model object
+    return_results : bool (optional)
+        If True, returns the pyomo results object
+    kwargs : dictionary (optional)
+        Additional arguments for building model
     '''
 
-    import pyomo.environ as pe
     from pyomo.environ import value
     from egret.common.solver_interface import _solve_model
 
-    m = uc_model_generator(model_data, relaxed=relaxed)
+    m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
+
+    network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
 
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    m, results = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options)
+    if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
+        m, results, solver = _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed )
+    else:
+        m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
 
     md = m.model_data
 
@@ -594,6 +801,9 @@ def solve_unit_commitment(model_data,
     fs = False
     if hasattr(m, 'fuel_supply'):
         fs = True
+    fc = False
+    if hasattr(m, 'fuel_consumption'):
+        fc = True
 
     for g,g_dict in thermal_gens.items():
         pg_dict = {}
@@ -638,15 +848,26 @@ def solve_unit_commitment(model_data,
         gfs = (fs and (g in m.FuelSupplyGenerators))
         if gfs:
             fuel_consumed = {}
+        gdf = (fc and (g in m.DualFuelGenerators))
+        if gdf:
+            aux_fuel_consumed = {}
+        gdsf = (gdf and (g in m.SingleFireDualFuelGenerators))
+        if gdsf:
+            aux_fuel_indicator = {}
+
 
         for dt, mt in zip(data_time_periods,m.TimePeriods):
             pg_dict[dt] = value(m.PowerGenerated[g,mt])
             if reserve_requirement:
                 rg_dict[dt] = value(m.ReserveProvided[g,mt])
             commitment_dict[dt] = value(m.UnitOn[g,mt])
-            commitment_cost_dict[dt] = value(m.StartupCost[g,mt]+m.ShutdownCost[g,mt]+\
-                                    m.MinimumProductionCost[g]*m.UnitOn[g,mt]*m.TimePeriodLengthHours)
-            production_cost_dict[dt] = value(m.ProductionCost[g,mt])
+            commitment_cost_dict[dt] = value(m.ShutdownCost[g,mt])
+            if g in m.DualFuelGenerators:
+                commitment_cost_dict[dt] += value(m.DualFuelCommitmentCost[g,mt])
+                production_cost_dict[dt] = value(m.DualFuelProductionCost[g,mt])
+            else:
+                commitment_cost_dict[dt] += value(m.NoLoadCost[g,mt]+m.StartupCost[g,mt])
+                production_cost_dict[dt] = value(m.ProductionCost[g,mt])
 
             if regulation:
                 if g in m.AGC_Generators:
@@ -677,7 +898,11 @@ def solve_unit_commitment(model_data,
                 flex_up_supp[dt] = value(m.FlexUpProvided[g,mt])
                 flex_dn_supp[dt] = value(m.FlexDnProvided[g,mt])
             if gfs:
-                fuel_consumed[dt] = value(m.FuelConsumed[g,mt])
+                fuel_consumed[dt] = value(m.PrimaryFuelConsumed[g,mt])
+            if gdsf:
+                aux_fuel_indicator[dt] = value(m.UnitOnAuxFuel[g,mt])
+            if gdf:
+                aux_fuel_consumed[dt] = value(m.AuxiliaryFuelConsumed[g,mt])
 
             ## pyomo doesn't add constraints that are skiped to the index set, so we also
             ## need check here if the index exists.
@@ -710,6 +935,10 @@ def solve_unit_commitment(model_data,
             g_dict['flex_down_supplied'] = _time_series_dict(flex_dn_supp)
         if gfs:
             g_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
+        if gdsf:
+            g_dict['aux_fuel_status'] = _time_series_dict(aux_fuel_indicator)
+        if gdf:
+            g_dict['aux_fuel_consumed'] = _time_series_dict(aux_fuel_consumed)
         g_dict['headroom'] = _time_series_dict(ramp_up_avail_dict)
 
     for g,g_dict in renewable_gens.items():
@@ -760,6 +989,58 @@ def solve_unit_commitment(model_data,
                     lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
+    elif m.power_balance == 'ptdf_power_flow':
+        flows_dict = dict()
+        if relaxed:
+            lmps_dict = dict()
+        for mt in m.TimePeriods:
+            b = m.TransmissionBlock[mt]
+            flows_dict[mt] = dict()
+            PTDF = b._PTDF
+            PTDFM = PTDF.PTDFM
+            branches_idx = PTDF.branches_keys
+            NWV = np.array([value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
+            PFV = np.dot(PTDFM, NWV)
+            for i,bn in enumerate(branches_idx):
+                flows_dict[mt][bn] = PFV[i]
+            if relaxed:
+                PFD = np.zeros(len(branches_idx))
+                for i,bn in enumerate(branches_idx):
+                    if bn in b.ineq_pf_branch_thermal_lb:
+                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_lb[bn]])
+                    if bn in b.ineq_pf_branch_thermal_ub:
+                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_ub[bn]])
+                ## TODO: PFD is likely to be sparse, implying we just need a few
+                ##       rows of the PTDF matrix (or columns in its transpose).
+                LMPC = np.dot(-PTDFM.T, PFD)
+                LMPE = value(m.dual[b.eq_p_balance])
+                buses_idx = PTDF.buses_keys
+                lmps_dict[mt] = dict()
+                for i,bn in enumerate(buses_idx):
+                    lmps_dict[mt][bn] = LMPE + LMPC[i]
+
+        for l,l_dict in branches.items():
+            pf_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                ## if the key doesn't exist, it is because that line was out
+                pf_dict[dt] = flows_dict[mt].get(l, 0.)
+            l_dict['pf'] = _time_series_dict(pf_dict)
+
+        for b,b_dict in buses.items():
+            va_dict = {}
+            p_balance_violation_dict = {}
+            pl_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
+                pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
+            b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
+            b_dict['pl'] = _time_series_dict(pl_dict)
+            if relaxed:
+                lmp_dict = {}
+                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                    lmp_dict[dt] = lmps_dict[mt][b]
+                b_dict['lmp'] = _time_series_dict(lmp_dict)
+
     elif m.power_balance == 'power_balance_constraints':
         for l,l_dict in branches.items():
             pf_dict = {}
@@ -780,6 +1061,17 @@ def solve_unit_commitment(model_data,
                 for dt, mt in zip(data_time_periods,m.TimePeriods):
                     lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
+    elif m.power_balance in ['copperplate_power_flow', 'copperplate_relaxed_power_flow']:
+        sys_dict = md.data['system']
+        p_viol_dict = {}
+        for dt, mt in zip(data_time_periods,m.TimePeriods):
+            p_viol_dict[dt] = sum(value(m.LoadGenerateMismatch[b,mt]) for b in m.Buses)
+        sys_dict['p_balance_violation'] = _time_series_dict(p_viol_dict)
+        if relaxed:
+            p_price_dict = {}
+            for dt, mt in zip(data_time_periods,m.TimePeriods):
+                p_price_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance])
+            sys_dict['p_price'] = _time_series_dict(p_price_dict)
     else:
         raise Exception("Unrecongized network type "+m.power_balance)
 
@@ -923,15 +1215,19 @@ def solve_unit_commitment(model_data,
                 for dt, mt in zip(data_time_periods, m.TimePeriods):
                     fuel_consumed[dt] = value(m.TotalFuelConsumedAtInstFuelSupply[f,mt])
             else:
-                print('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
+                logger.warning('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
             f_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
 
     md.data['system']['total_cost'] = value(m.TotalCostObjective)
 
     unscale_ModelData_to_pu(md, inplace=True)
     
-    if return_model:
+    if return_model and return_results:
+        return md, m, results
+    elif return_model:
         return md, m
+    elif return_results:
+        return md, results
     return md
 
 # if __name__ == '__main__':
