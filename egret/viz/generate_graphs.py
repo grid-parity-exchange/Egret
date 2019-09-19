@@ -64,14 +64,17 @@ BUILT_IN_FUEL_CODES = [
     ('Sync_Cond', 'SC'),
     ('Biomass', 'B'),
     # To accomodate data that uses the codes directly
-    ('O', 'O'),
+    ('Z', 'Z'),
+    ('N', 'N'),
+    ('E', 'E'),
+    ('B', 'B'),
     ('C', 'C'),
     ('G', 'G'),
-    ('S', 'S'),
+    ('O', 'O'),
+    ('H', 'H'),
     ('W', 'W'),
-    ('N', 'N'),
+    ('S', 'S'),
     ('SC', 'SC'),
-    ('B', 'B'),
 ]
 
 
@@ -351,7 +354,13 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     # Add reserve requirements, if applicable.
     reserve_requirements_by_hour = egret_model_data.data['system'].get('reserve_requirement')
     if reserve_requirements_by_hour is not None:
-        reserve_requirements_array = attribute_to_array(reserve_requirements_by_hour)
+        # Add reserve shortfalls, if applicable.
+        reserve_shortfall_by_hour = egret_model_data.data['system']['reserve_shortfall']
+        reserve_shortfall_array = attribute_to_array(reserve_shortfall_by_hour)
+
+        ## Stack reserve shortfalls on top of the reserves required, to highlight shortfalls in a way
+        ## similar to unmet demand
+        reserve_requirements_array = attribute_to_array(reserve_requirements_by_hour) - reserve_shortfall_array
 
         if sum(reserve_requirements_array) > 0.0:
             component_color = '#00c2ff'
@@ -360,9 +369,6 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                    label='Required Reserve')
             bottom += reserve_requirements_array
     
-        # Add reserve shortfalls, if applicable.
-        reserve_shortfall_by_hour = egret_model_data.data['system']['reserve_shortfall']
-        reserve_shortfall_array = attribute_to_array(reserve_shortfall_by_hour)
     
         if sum(reserve_shortfall_array) > 0.0:
             component_color = '#ff00ff'
@@ -390,9 +396,9 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
             reserves_by_hour += reserves_available
     
     if reserve_requirements_by_hour is not None:
-        implicit_reserves_by_hour = [max(0.0, reserves_by_hour[ix] - reserves_by_hour[ix]) for ix in range(len(reserve_requirements_by_hour))]
+        implicit_reserves_by_hour = np.maximum(0.0, reserves_by_hour - reserve_requirements_by_hour)
     else:
-        implicit_reserves_by_hour = [max(0.0, reserves_by_hour[ix]) for ix in range(len(reserves_by_hour))]
+        implicit_reserves_by_hour = np.maximum(0.0, reserves_by_hour)
     
     if sum(implicit_reserves_by_hour) > 0.0:
         component_color = '#00ffc7'
