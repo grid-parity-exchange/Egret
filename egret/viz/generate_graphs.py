@@ -355,7 +355,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     
     # Add reserve requirements, if applicable.
     reserve_requirements_array = attribute_to_array(egret_model_data.data['system'].get('reserve_requirement'))
-    if reserve_requirements_by_hour is not None:
+    if reserve_requirements_array is not None:
         # Add reserve shortfalls, if applicable.
         reserve_shortfall_array = attribute_to_array(egret_model_data.data['system']['reserve_shortfall'])
 
@@ -396,7 +396,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
 
             reserves_by_hour += reserves_available
     
-    if reserve_requirements_by_hour is not None:
+    if reserve_requirements_array is not None:
         implicit_reserves_by_hour = np.maximum(0.0, reserves_by_hour - reserve_requirements_array)
     else:
         implicit_reserves_by_hour = np.maximum(0.0, reserves_by_hour)
