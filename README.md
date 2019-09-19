@@ -20,7 +20,7 @@ EGRET is available under the BSD License (see LICENSE.txt)
 * Download (or clone) EGRET from this GitHub site.
 * From the main EGRET folder (i.e., the folder containing setup.py), use a terminal (or the Anaconda prompt for Windows users) to run setup.py to install EGRET into your Python installation - as follows:
 
-   python setup.py install
+   pip install -e .
 
 ### Requirements
 
@@ -58,10 +58,10 @@ To run the full test suite, without LP relaxations of the unit commitment MIPs, 
 The output from this command should look something like:
 
 ====================================================================== test session starts ======================================================================<br/>
-platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0<br/>  
+platform darwin -- Python 3.7.3, pytest-4.4.1, py-1.8.0, pluggy-0.11.0<br/>
 rootdir: /home/some-user/egret<br/>
 collected 14 items<br/>
-<br/>  
+<br/>
 test_unit_commitment.py ..............                                                                                                                    [100%]<br/>
 <br/>
 ================================================================== 14 passed in 352.67 seconds ==================================================================<br/>
