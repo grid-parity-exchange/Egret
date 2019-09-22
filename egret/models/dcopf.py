@@ -25,6 +25,7 @@ import egret.data.data_utils as data_utils
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
 from egret.data.model_data import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack, create_copperplate_dispatch_approx_model
+from egret.common.log import logger
 from math import pi, radians
 
 
@@ -310,11 +311,14 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
 
     rel_flow_tol = ptdf_options['rel_flow_tol']
     abs_flow_tol = ptdf_options['abs_flow_tol']
+    lazy_flow_tol = ptdf_options['lazy_rel_flow_tol']
 
     branch_limits = PTDF.branch_limits_array
 
     ## only enforce the relative and absolute, within tollerance
     PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+    ## make sure the lazy limits are a superset of the enforce limits
+    PTDF.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), PTDF.enforced_branch_limits)
 
     persistent_solver = isinstance(solver, PersistentSolver)
 
@@ -326,7 +330,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
         if mon_viol_num:
             iter_status_str += ", {} of which are already monitored".format(mon_viol_num)
 
-        print(iter_status_str)
+        logger.info(iter_status_str)
 
         if viol_num <= 0:
             ## in this case, there are no violations!
@@ -336,16 +340,14 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
             return lpu.LazyPTDFTerminationCondition.NORMAL
 
         elif viol_num == mon_viol_num:
-            print('WARNING: Terminating with monitored violations!')
-            print('         Result is not transmission feasible.')
+            logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
             if persistent_solver:
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
 
         lpu.add_violations(gt_viol_lazy, lt_viol_lazy, PFV, m, md, solver, ptdf_options, PTDF)
-
-        #m.ineq_pf_branch_thermal_lb.pprint()
-        #m.ineq_pf_branch_thermal_ub.pprint()
+        total_flow_constr_added = len(gt_viol_lazy) + len(lt_viol_lazy)
+        logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
         if persistent_solver:
             solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
@@ -354,8 +356,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
             solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
 
     else: # we hit the iteration limit
-        print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
-        print('         Result is not transmission feasible.')
+        logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
         if persistent_solver:
             solver.load_duals()
         return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT

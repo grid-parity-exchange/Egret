@@ -32,12 +32,14 @@ def populate_default_ptdf_options(ptdf_options):
         ptdf_options['abs_flow_tol'] = 1.e-3
     if 'rel_flow_tol' not in ptdf_options:
         ptdf_options['rel_flow_tol'] = 1.e-5
+    if 'lazy_rel_flow_tol' not in ptdf_options:
+        ptdf_options['lazy_rel_flow_tol'] = -0.01
     if 'iteration_limit' not in ptdf_options:
         ptdf_options['iteration_limit'] = 100000
     if 'lp_iteration_limit' not in ptdf_options:
         ptdf_options['lp_iteration_limit'] = 100
     if 'max_violations_per_iteration' not in ptdf_options:
-        ptdf_options['max_violations_per_iteration'] = 1
+        ptdf_options['max_violations_per_iteration'] = 5
     if 'lazy' not in ptdf_options:
         ptdf_options['lazy'] = True
     if 'load_from' not in ptdf_options:
@@ -56,10 +58,16 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
     rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
     abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
 
+    lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
+
     max_violations_per_iteration = ptdf_options['max_violations_per_iteration']
 
     if max_violations_per_iteration < 1 or (not isinstance(max_violations_per_iteration, int)):
         raise Exception("max_violations_per_iteration must be an integer least 1, max_violations_per_iteration={}".format(max_violations_per_iteration))
+
+    if abs_flow_tol < lazy_rel_flow_tol:
+        raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
+                        " abs_flow_tol={0}, lazy_flow_tol={1}, baseMVA={2}".format(abs_flow_tol*baseMVA, lazy_flow_tol, baseMVA))
 
     if abs_flow_tol < 1e-6:
         logger.warning("WARNING: abs_flow_tol={0}, which is below the numeric threshold of most solvers.".format(abs_flow_tol*baseMVA))
@@ -85,17 +93,28 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None):
     PFV  = PTDF.PTDFM.dot(NWV)
     PFV += PTDF.phase_shift_array
 
-    ## calculate the negative of the violations (for easy sorting)
-    gt_viol_array = PTDF.enforced_branch_limits - PFV
-    lt_viol_array = PFV + PTDF.enforced_branch_limits
+    ## calculate the lazy violations
+    gt_viol_lazy_array = PFV - PTDF.lazy_branch_limits
+    lt_viol_lazy_array = -PFV - PTDF.lazy_branch_limits
 
-    gt_viol = np.nonzero(gt_viol_array < 0)[0]
-    lt_viol = np.nonzero(lt_viol_array < 0)[0]
+    ## *_viol_lazy has the indices of the violations at
+    ## the lazy limit
+    gt_viol_lazy = np.nonzero(gt_viol_lazy_array > 0)[0]
+    lt_viol_lazy = np.nonzero(lt_viol_lazy_array > 0)[0]
+
+    ## calculate the violations
+    ## these will be just a subset
+    gt_viol_array = PFV[gt_viol_lazy] - PTDF.enforced_branch_limits[gt_viol_lazy]
+    lt_viol_array = -PFV[lt_viol_lazy]- PTDF.enforced_branch_limits[lt_viol_lazy]
+
+    ## *_viol will be indexed by *_viol_lazy
+    gt_viol = np.nonzero(gt_viol_array > 0)[0]
+    lt_viol = np.nonzero(lt_viol_array > 0)[0]
 
     ## these will hold the violations 
     ## we found this iteration
-    gt_viol = frozenset(gt_viol)
-    lt_viol = frozenset(lt_viol)
+    gt_viol = frozenset(gt_viol_lazy[gt_viol])
+    lt_viol = frozenset(lt_viol_lazy[lt_viol])
 
     ## get the lines we're monitoring
     gt_idx_monitored = mb._gt_idx_monitored
@@ -122,46 +141,96 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None):
     ## *t_viol_lazy will hold the lines we're adding
     ## this iteration -- don't want to add lines
     ## that are already in the monitored set
-    gt_viol_lazy = gt_viol.difference(gt_idx_monitored)
-    lt_viol_lazy = lt_viol.difference(lt_idx_monitored)
+
+    # eliminate lines in the monitored set
+    gt_viol_lazy = set(gt_viol_lazy).difference(gt_idx_monitored)
+    lt_viol_lazy = set(lt_viol_lazy).difference(lt_idx_monitored)
 
     ## limit the number of lines we add in one iteration
     ## if we have too many violations, just take those largest
     ## in absolute value in either direction
     if len(gt_viol_lazy)+len(lt_viol_lazy) > max_viol_add:
 
+        tracking_gt_viol_lazy = list(gt_viol_lazy)
+        tracking_lt_viol_lazy = list(lt_viol_lazy)
+
+        gt_viol_lazy = list()
+        lt_viol_lazy = list()
+
+        ## one of the tracking_*t_viol_lazy could be empty
+
+        if not tracking_gt_viol_lazy: 
+            idx = np.argmax(lt_viol_lazy_array[tracking_lt_viol_lazy])
+            ptdf_idx = tracking_lt_viol_lazy.pop(idx)
+            lt_viol_lazy.append(ptdf_idx)
+
+        elif not tracking_lt_viol_lazy:
+            idx = np.argmax(gt_viol_lazy_array[tracking_gt_viol_lazy])
+            ptdf_idx = tracking_gt_viol_lazy.pop(idx)
+            gt_viol_lazy.append(ptdf_idx)
+
+        else: ## get the worst of both
+            gt_idx = np.argmax(gt_viol_lazy_array[tracking_gt_viol_lazy])
+            lt_idx = np.argmax(lt_viol_lazy_array[tracking_lt_viol_lazy])
+            gt_branch_idx = tracking_gt_viol_lazy[gt_idx]
+            lt_branch_idx = tracking_lt_viol_lazy[lt_idx]
+
+            if gt_viol_lazy_array[gt_branch_idx] > lt_viol_lazy_array[lt_branch_idx]:
+                ptdf_idx = gt_branch_idx
+                gt_viol_lazy.append(ptdf_idx)
+                del tracking_gt_viol_lazy[gt_idx]
+            else:
+                ptdf_idx = lt_branch_idx
+                lt_viol_lazy.append(ptdf_idx)
+                del tracking_lt_viol_lazy[lt_idx]
+
+        if max_viol_add > 1:
+            ptdf_lin = np.zeros(len(PTDF.buses_keys))
+
         ## for those in the monitored set, assume they're feasible for
         ## the purposes of sorting the worst violations, which means
         ## resetting the values for these lines as computed above
+        for _ in range(max_viol_add-1):
 
-        ## use what most solvers consider +infty
-        LARGE_CONST = 1e+100
-        gt_viol_array[gt_idx_monitored] = LARGE_CONST
-        lt_viol_array[lt_idx_monitored] = LARGE_CONST
+            ptdf_lin += PTDF.PTDFM[ptdf_idx]
 
-        ## give the order of the first max_viol_add violations
-        measured_gt_viol = np.argpartition(gt_viol_array, range(max_viol_add))
-        measured_lt_viol = np.argpartition(lt_viol_array, range(max_viol_add))
+            all_other_violations = list(tracking_gt_viol_lazy + tracking_lt_viol_lazy)
 
-        measured_gt_viol_pos = 0
-        measured_lt_viol_pos = 0
-        gt_viol_lazy = set()
-        lt_viol_lazy = set()
-        for _ in range(max_viol_add):
-            gt_v = gt_viol_array[measured_gt_viol[measured_gt_viol_pos]]
-            lt_v = lt_viol_array[measured_lt_viol[measured_lt_viol_pos]]
+            other_gt_viols = gt_viol_lazy_array[all_other_violations]
+            other_lt_viols = lt_viol_lazy_array[all_other_violations]
 
-            ## because we negated for sorting, this means the
-            ## overall violation is more for the gt side
-            ## dont have any more actual violations
-            if gt_v > 0 and lt_v > 0:
-                break
-            elif gt_v < lt_v:
-                gt_viol_lazy.add(measured_gt_viol[measured_gt_viol_pos])
-                measured_gt_viol_pos += 1
+            other_viols = np.maximum(other_gt_viols, other_lt_viols)
+
+            ## put this in baseMVA
+            other_viols *= baseMVA
+
+            other_viol_rows = PTDF.PTDFM[all_other_violations]
+
+            orthogonality = np.absolute(np.dot(other_viol_rows, ptdf_lin))
+
+            ## divide by transmission limits to give higher
+            ## priority to those lines with larger violations
+
+            ## larger values emphasize violation
+            ## smaller emphasize orthogonality
+            ## TODO: try weighting by number of nonzeros
+            orthogonality /= other_viols
+
+            ## this is the index into the orthogonality matrix,
+            ## which is indexed by all_other_violations
+            all_other_idx = np.argmin(orthogonality)
+
+            ptdf_idx = all_other_violations[all_other_idx]
+
+            if ptdf_idx in tracking_gt_viol_lazy:
+                tracking_gt_viol_lazy.remove(ptdf_idx)
+                gt_viol_lazy.append(ptdf_idx)
+            elif ptdf_idx in tracking_lt_viol_lazy:
+                tracking_lt_viol_lazy.remove(ptdf_idx)
+                lt_viol_lazy.append(ptdf_idx)
             else:
-                lt_viol_lazy.add(measured_lt_viol[measured_lt_viol_pos])
-                measured_lt_viol_pos += 1
+                raise Exception("Unexpected case")
+
 
     viol_num = len(gt_viol)+len(lt_viol)
     monitored_viol_num = len(lt_viol_in_mb)+len(gt_viol_in_mb)
@@ -210,7 +279,7 @@ def add_violations(gt_viol_lazy, lt_viol_lazy, PFV, mb, md, solver, ptdf_options
     lt_viol_in_mb = mb._lt_idx_monitored
     for i, bn in _iter_over_viol_set(lt_viol_lazy):
         thermal_limit = PTDF.branch_limits_array[i]
-        logger.info(_generate_flow_monitor_message('LB', bn, PFV[i], -thermal_limit, baseMVA, time))
+        logger.debug(_generate_flow_monitor_message('LB', bn, PFV[i], -thermal_limit, baseMVA, time))
         constr[bn] = (-thermal_limit, mb.pf[bn], None)
         lt_viol_in_mb.append(i)
         if persistent_solver:
@@ -220,7 +289,7 @@ def add_violations(gt_viol_lazy, lt_viol_lazy, PFV, mb, md, solver, ptdf_options
     gt_viol_in_mb = mb._gt_idx_monitored
     for i, bn in _iter_over_viol_set(gt_viol_lazy):
         thermal_limit = PTDF.branch_limits_array[i]
-        logger.info(_generate_flow_monitor_message('UB', bn, PFV[i], thermal_limit, baseMVA, time))
+        logger.debug(_generate_flow_monitor_message('UB', bn, PFV[i], thermal_limit, baseMVA, time))
         constr[bn] = (None, mb.pf[bn], thermal_limit)
         gt_viol_in_mb.append(i)
         if persistent_solver:

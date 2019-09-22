@@ -550,7 +550,7 @@ def create_CA_unit_commitment_model(model_data,
                        ]
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
-def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, vars_to_load=None):
+def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, vars_to_load=None, add_all_lazy_violations=False):
 
     persistent_solver = isinstance(solver, PersistentSolver)
     duals = hasattr(m, 'dual')
@@ -576,9 +576,12 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
                 branch_limits = PTDF.branch_limits_array
                 rel_flow_tol = ptdf_options['rel_flow_tol']
                 abs_flow_tol = ptdf_options['abs_flow_tol']
+                lazy_flow_tol = ptdf_options['lazy_rel_flow_tol']
 
                 ## only enforce the relative and absolute, within tollerance
                 PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+                ## make sure the lazy limits are a superset of the enforce limits
+                PTDF.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), PTDF.enforced_branch_limits)
 
             PVF[t], viol_num[t], mon_viol_num[t], gt_viol_lazy[t], lt_viol_lazy[t] = \
                     lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t)
@@ -586,29 +589,39 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         total_viol_num = sum(viol_num.values())
         total_mon_viol_num = sum(mon_viol_num.values())
 
+        all_viol_in_model = (total_viol_num > 0) and (total_viol_num == total_mon_viol_num)
+
         iter_status_str = "iteration {0}, found {1} violation(s)".format(i,total_viol_num)
         if total_mon_viol_num:
             iter_status_str += ", {} of which are already monitored".format(total_mon_viol_num)
 
         logger.info(iter_status_str)
 
-        if total_viol_num <= 0:
+        if total_viol_num <= 0 and not add_all_lazy_violations:
             if persistent_solver and duals and results is not None and vars_to_load is None:
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
-        elif total_viol_num == total_mon_viol_num:
-            logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
-            if persistent_solver and duals:
-                solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
 
-        all_times_all_viol_in_model = True
+        total_flow_constr_added = 0
         for t in m.TimePeriods:
             b = m.TransmissionBlock[t]
 
             PTDF = b._PTDF
 
             lpu.add_violations(gt_viol_lazy[t], lt_viol_lazy[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t)
+            total_flow_constr_added += len(gt_viol_lazy[t]) + len(lt_viol_lazy[t])
+
+        logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
+
+        if total_viol_num <= 0 or all_viol_in_model:
+            if all_viol_in_model:
+                logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
+                if persistent_solver and duals:
+                    solver.load_duals()
+                return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
+            if persistent_solver and duals and results is not None and vars_to_load is None:
+                solver.load_duals()
+            return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
 
         if persistent_solver:
             results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
@@ -620,7 +633,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
     else:
         if warn_on_max_iter:
             logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
-        if persistent_solver and duals:
+        if persistent_solver and duals and results is not None and vars_to_load is None:
             solver.load_duals()
         return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
 
@@ -657,7 +670,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
         lpu.uc_instance_binary_relaxer(m, None)
         m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load = vars_to_load)
         lp_termination_cond, results, lp_iterations = \
-                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, warn_on_max_iter=False, vars_to_load = vars_to_load)
+                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, warn_on_max_iter=False, vars_to_load = vars_to_load, add_all_lazy_violations=True)
         ## if the initial solve was transmission feasible, then
         ## we never re-solved the problem
         if results is None:
