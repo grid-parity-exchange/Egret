@@ -16,6 +16,7 @@ import numpy as np
 import scipy as sp
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
+from egret.common.log import logger
 
 def calculate_conductance(branch):
     rs = branch['resistance']
@@ -580,6 +581,9 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
 
     _ref_bus_idx = mapping_bus_to_idx[reference_bus]
 
+    ## check if the network is connected
+    connected = check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx)
+
     J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
     M = A@J
@@ -593,10 +597,14 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         ## the resulting matrix after inversion will be fairly dense,
         ## the scipy documenation recommends using dense for the inversion
         ## as well
-        try:
-            SENSI = np.linalg.inv(J0.A)
-        except np.linalg.LinAlgError:
-            print("Matrix not invertible. Calculating pseudo-inverse instead.")
+        if connected:
+            try:
+                SENSI = np.linalg.inv(J0.A)
+            except np.linalg.LinAlgError:
+                logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
+                SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
+        else:
+            logger.warning("Using pseudo-inverse method as network is disconnected")
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
         SENSI = SENSI[:-1,:-1]
         PTDF = np.matmul(J.A,SENSI)
@@ -662,6 +670,9 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     if np.all(Jc == 0) and np.all(Lc == 0):
         return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
 
+    ## check if the network is connected
+    connected = check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx)
+
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
     AA = calculate_absolute_adjacency_matrix(A)
     M1 = A@J
@@ -677,12 +688,15 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
         ## the resulting matrix after inversion will be fairly dense,
         ## the scipy documenation recommends using dense for the inversion
         ## as well
-        try:
-            SENSI = np.linalg.inv(J0.A)
-        except np.linalg.LinAlgError:
-            print("Matrix not invertible. Calculating pseudo-inverse instead.")
+        if connected:
+            try:
+                SENSI = np.linalg.inv(J0.A)
+            except np.linalg.LinAlgError:
+                logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
+                SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
+        else:
+            logger.warning("Using pseudo-inverse method as network is disconnected")
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-            pass
         SENSI = SENSI[:-1,:-1]
 
         PTDF = np.matmul(J.A, SENSI)
@@ -757,3 +771,48 @@ def calculate_absolute_adjacency_matrix(adjacency_matrix):
     Calculates the absolute value of the adjacency matrix
     """
     return sp.absolute(adjacency_matrix)
+
+def check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx):
+    """
+    Checks for the connectivity of the network and prints some helpful information to the
+    logger if the network is disconnected
+    """
+    _len_bus = len(index_set_bus)
+
+    row = []
+    col = []
+    data = []
+
+    for branch in branches.values():
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        row.append(mapping_bus_to_idx[from_bus])
+        col.append(mapping_bus_to_idx[to_bus])
+
+    data = np.ones((len(branches),), dtype=int)
+
+    graph = sp.sparse.coo_matrix((data,(row,col)), shape=(_len_bus, _len_bus)).tocsr()
+
+    n_components, labels = sp.sparse.csgraph.connected_components(csgraph=graph, directed=False, return_labels=True)
+
+    if n_components > 1:
+        logger.warning("Network is disconnected. Number of components: {}".format(n_components))
+        ### get the counts to eliminate the largest connected component
+        unique, counts = np.unique(labels, return_counts=True)
+
+        largest_component_label = unique[counts.argmax()]
+
+        ## These are the indicies of the small connected components
+        small_connected_components = np.nonzero(labels != largest_component_label)[0]
+
+        components = { comp: [] for comp in unique if comp != largest_component_label }
+
+        for idx, comp in zip(small_connected_components, labels[small_connected_components]):
+            components[comp].append(index_set_bus[idx])
+
+        logger.warning("Buses not in largest component:")
+        for comp, buses in components.items():
+            logger.warning("{} : {}".format(comp, buses))
+
+    return (n_components == 1)
