@@ -81,6 +81,8 @@ class TestDCOPF(unittest.TestCase):
         md_serialization, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False, return_results=True, **kwargs)
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
 
+        self.assertTrue(os.path.isfile(test_case+'.pickle'))
+
         kwargs = {'ptdf_options': {'load_from': test_case+'.pickle'}}
         md_deserialization, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False, return_results=True, **kwargs)
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)

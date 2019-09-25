@@ -25,6 +25,7 @@ import egret.data.data_utils as data_utils
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
 from egret.data.model_data import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack, create_copperplate_dispatch_approx_model
+from egret.common.log import logger
 from math import pi, radians
 
 
@@ -264,6 +265,9 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                                      approximation_type=None,
                                                      )
 
+        ### add helpers for tracking monitored branches
+        lpu.add_monitored_branch_tracker(model)
+
     else:
         p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
         ## add all the constraints
@@ -305,26 +309,28 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
 
     ptdf_options = m._ptdf_options
 
-    lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
-
     rel_flow_tol = ptdf_options['rel_flow_tol']
     abs_flow_tol = ptdf_options['abs_flow_tol']
+    lazy_flow_tol = ptdf_options['lazy_rel_flow_tol']
 
     branch_limits = PTDF.branch_limits_array
 
-    ## if lazy_rel_flow_tol < 0, this narrows the branch limits
-    PTDF.lazy_branch_limits = branch_limits*(1+lazy_rel_flow_tol)
-
     ## only enforce the relative and absolute, within tollerance
     PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+    ## make sure the lazy limits are a superset of the enforce limits
+    PTDF.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), PTDF.enforced_branch_limits)
 
     persistent_solver = isinstance(solver, PersistentSolver)
 
     for i in range(iteration_limit):
 
-        PFV, viol_num, viols_tup = lpu.check_violations(m, PTDF)
+        PFV, viol_num, mon_viol_num, gt_viol_lazy, lt_viol_lazy = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
 
-        print("iteration {0}, found {1} violation(s)".format(i,viol_num))
+        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,viol_num)
+        if mon_viol_num:
+            iter_status_str += ", {} of which are already monitored".format(mon_viol_num)
+
+        logger.info(iter_status_str)
 
         if viol_num <= 0:
             ## in this case, there are no violations!
@@ -333,26 +339,24 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True,
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.NORMAL
 
-        all_viol_in_model = lpu.add_violations(viols_tup, PFV, m, md, solver, ptdf_options, PTDF)
-
-        if all_viol_in_model:
-            print('WARNING: Terminating with monitored violations!')
-            print('         Result is not transmission feasible.')
+        elif viol_num == mon_viol_num:
+            logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
             if persistent_solver:
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
 
-        #m.ineq_pf_branch_thermal_lb.pprint()
-        #m.ineq_pf_branch_thermal_ub.pprint()
+        lpu.add_violations(gt_viol_lazy, lt_viol_lazy, PFV, m, md, solver, ptdf_options, PTDF)
+        total_flow_constr_added = len(gt_viol_lazy) + len(lt_viol_lazy)
+        logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
         if persistent_solver:
             solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
             solver.load_vars()
         else:
             solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
-    else:
-        print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
-        print('         Result is not transmission feasible.')
+
+    else: # we hit the iteration limit
+        logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
         if persistent_solver:
             solver.load_duals()
         return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT
@@ -433,7 +437,7 @@ def solve_dcopf(model_data,
         branches_idx = PTDF.branches_keys
 
         NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
-        PFV  = np.dot(PTDFM, NWV)
+        PFV  = PTDFM.dot(NWV)
         PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
             branches[bn]['pf'] = PFV[i]
@@ -443,7 +447,7 @@ def solve_dcopf(model_data,
                 PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_ub[bn]])
         ## TODO: PFD is likely to be sparse, implying we just need a few
         ##       rows of the PTDF matrix (or columns in its transpose).
-        LMPC = np.dot(-PTDFM.T, PFD)
+        LMPC = -PTDFM.T.dot(PFD)
     else:
         for k, k_dict in branches.items():
             k_dict['pf'] = value(m.pf[k])
@@ -535,15 +539,17 @@ def constraint_resid_to_string(name, con, resid):
 #
 #     path = os.path.dirname(__file__)
 #     print(path)
-#     filename = 'pglib_opf_case300_ieee.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
+#     filename = 'pglib_opf_case30_ieee.m'
+#     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
+#     md_dict = create_ModelData(test_case)
 #
-#     kwargs = {'include_feasibility_slack':False}
-#     md_btheta, m_btheta, results_btheta = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model, return_model=True, return_results=True, **kwargs)
+#     dcopf_model = create_ptdf_dcopf_model
 #
-#     from acopf import solve_acopf
-#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-#     kwargs = {'include_feasibility_slack':False,'base_point':BasePointType.SOLUTION}
-#     md_ptdf, m_ptdf, results_ptdf = solve_dcopf(model_data, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, return_model=True, return_results=True, **kwargs)
+#     kwargs = {'ptdf_options': {'save_to': test_case + '.pickle'}}
+#     md_serialization, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False,
+#                                             return_results=True, **kwargs)
 #
+#     kwargs = {'ptdf_options': {'load_from': test_case + '.pickle'}}
+#     md_deserialization, results = solve_dcopf(md_dict, "ipopt", dcopf_model_generator=dcopf_model, solver_tee=False,
+#                                               return_results=True, **kwargs)
+
