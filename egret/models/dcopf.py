@@ -302,7 +302,35 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
 
     return model, md
 
-def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
+def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
+    '''
+    The lazy PTDF DCOPF solver loop. This function iteratively
+    adds violated transmission constraints until either the result is
+    transmission feasible or we're tracking every violated constraint
+    in the model
+
+    Parameters
+    ----------
+    m : pyomo.environ.ConcreteModel
+        An egret DCOPF model with no transmission constraints
+    md : egret.data.ModelData
+        An egret ModelData object
+    solver : pyomo.opt.solver
+        A pyomo solver object
+    solver_tee : bool (optional)
+        For displaying the solver log (default is True)
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels when writing to the solver (default is False)
+    iteration_limit : int (optional)
+        Number of iterations before a hard termination (default is 100000)
+
+    Returns
+    -------
+    egret.common.lazy_ptdf_utils.LazyPTDFTerminationCondition : the termination status
+    pyomo.opt.results.SolverResults : The results object from the pyomo solver
+    int : The number of iterations before termination
+
+    '''
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
     PTDF = m._PTDF
@@ -417,7 +445,7 @@ def solve_dcopf(model_data,
 
     if dcopf_model_generator == create_ptdf_dcopf_model and m._ptdf_options['lazy']:
         iter_limit = m._ptdf_options['iteration_limit']
-        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
+        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
