@@ -728,12 +728,20 @@ def load_params(model, model_data):
         points = list(m.CostPiecewisePoints[g])
     
         if min_output not in points:
-            raise Exception("Cost piecewise points for generator g="+str(g)+
-                            " must contain the minimum output level="+str(min_output))
+            for pnt in points:
+                if math.isclose(pnt, min_output):
+                    break
+            else:
+                raise Exception("Cost piecewise points for generator g="+str(g)+
+                                " must contain the minimum output level="+str(min_output))
     
         if max_output not in points:
-            raise Exception("Cost piecewise points for generator g="+str(g)+
-                            " must contain the maximum output level="+str(max_output))
+            for pnt in points:
+                if math.isclose(pnt, max_output):
+                    break
+            else:
+                raise Exception("Cost piecewise points for generator g="+str(g)+
+                                " must contain the maximum output level="+str(max_output))
         return True
 
     model.ValidateCostPiecewisePoints = BuildCheck(model.ThermalGenerators, rule=validate_cost_piecewise_points_and_values_rule)
@@ -742,7 +750,7 @@ def load_params(model, model_data):
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
     # back in to the objective if a unit is on
     def minimum_production_cost(m, g):
-        if len(m.CostPiecewisePoints[g]) > 1:
+        if len(m.CostPiecewisePoints[g]) >= 1:
             return m.CostPiecewiseValues[g].first()
         else:
             return (m.ProductionCostA0[g] + \
