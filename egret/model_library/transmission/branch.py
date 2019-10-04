@@ -19,6 +19,12 @@ from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
 from egret.data.model_data import zip_items
 from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
+from wntr.utils.ordered_set import OrderedSet
+try:
+    import coramin
+except ImportError:
+    pass
+
 
 def declare_var_dva(model, index_set, **kwargs):
     """
@@ -42,12 +48,14 @@ def declare_var_pf(model, index_set, **kwargs):
     """
     decl.declare_var('pf', model=model, index_set=index_set, **kwargs)
 
+
 def declare_expr_pf(model, index_set, **kwargs):
     """
     Create expression for the real part of the power flow in the "from"
     end of the transmission line
     """
     decl.declare_expr('pf', model=model, index_set=index_set, **kwargs)
+
 
 def declare_var_qf(model, index_set, **kwargs):
     """
@@ -105,6 +113,41 @@ def declare_var_itj(model, index_set, **kwargs):
     decl.declare_var('itj', model=model, index_set=index_set, **kwargs)
 
 
+def declare_var_vf_vt_cos_dva(model, index_set, **kwargs):
+    """
+    Create an auxiliary variable for vf * vt * cos(theta_f - theta_t)
+    """
+    decl.declare_var('vf_vt_cos_dva', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_vf_vt_sin_dva(model, index_set, **kwargs):
+    """
+    Create an auxiliary variable for vf * vt * sin(theta_f - theta_t)
+    """
+    decl.declare_var('vf_vt_sin_dva', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_cos_dva(model, index_set, **kwargs):
+    """
+    Create an auxiliary variable for cos(theta_f - theta_t)
+    """
+    decl.declare_var('cos_dva', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_sin_dva(model, index_set, **kwargs):
+    """
+    Create an auxiliary variable for sin(theta_f - theta_t)
+    """
+    decl.declare_var('sin_dva', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_vf_vt(model, index_set, **kwargs):
+    """
+    Create an auxiliary variable for vf * vt
+    """
+    decl.declare_var('vf_vt', model=model, index_set=index_set, **kwargs)
+
+
 def declare_eq_branch_dva(model, index_set, branches):
     """
     Create the equality constraints for the angle difference
@@ -147,6 +190,18 @@ def declare_expr_c(model, index_set, coordinate_type=CoordinateType.POLAR):
             m.c[(from_bus,to_bus)] = m.vm[from_bus]*m.vm[to_bus]*pe.cos(m.va[from_bus]-m.va[to_bus])
 
 
+def declare_expr_c_linear(model, index_set):
+    """
+    Create an expression named c and relate it to vf_vt_cos_dva
+    """
+    m = model
+    expr_set = decl.declare_set('_expr_c', model, index_set)
+    m.c = pe.Expression(expr_set)
+
+    for from_bus, to_bus in expr_set:
+        m.c[(from_bus, to_bus)] = m.vf_vt_cos_dva[(from_bus, to_bus)]
+
+
 def declare_expr_s(model, index_set, coordinate_type=CoordinateType.POLAR):
     """
     Create expression for the nonlinear, nonconvex term based on cosine
@@ -162,6 +217,18 @@ def declare_expr_s(model, index_set, coordinate_type=CoordinateType.POLAR):
     elif coordinate_type == CoordinateType.POLAR:
         for from_bus, to_bus in expr_set:
             m.s[(from_bus,to_bus)] = m.vm[from_bus]*m.vm[to_bus]*pe.sin(m.va[from_bus]-m.va[to_bus])
+
+
+def declare_expr_s_linear(model, index_set):
+    """
+    Create an expression named c and relate it to vf_vt_sin_dva
+    """
+    m = model
+    expr_set = decl.declare_set('_expr_s', model, index_set)
+    m.c = pe.Expression(expr_set)
+
+    for from_bus, to_bus in expr_set:
+        m.s[(from_bus, to_bus)] = m.vf_vt_sin_dva[(from_bus, to_bus)]
 
 
 def declare_eq_branch_current(model, index_set, branches, coordinate_type=CoordinateType.RECTANGULAR):
@@ -222,18 +289,12 @@ def declare_eq_branch_current(model, index_set, branches, coordinate_type=Coordi
             -(g21 * m.vj[from_bus] - g22 * m.vj[to_bus] + (b21 * m.vr[from_bus] - b22 * m.vr[to_bus]))
 
 
-def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate_type=CoordinateType.POLAR):
+def declare_eq_branch_power(model, index_set, branches):
     """
     Create the equality constraints for the real and reactive power
     in the branch
     """
     m = model
-
-    bus_pairs = zip_items(branch_attrs['from_bus'],branch_attrs['to_bus'])
-    unique_bus_pairs = list(set([val for idx,val in bus_pairs.items()]))
-    declare_expr_c(model,unique_bus_pairs,coordinate_type)
-    declare_expr_s(model,unique_bus_pairs,coordinate_type)
-
     con_set = decl.declare_set("_con_eq_branch_power_set", model, index_set)
 
     m.eq_pf_branch = pe.Constraint(con_set)
@@ -245,13 +306,8 @@ def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate
 
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
-
-        if coordinate_type == CoordinateType.POLAR:
-            vmsq_from_bus = m.vm[from_bus]**2
-            vmsq_to_bus = m.vm[to_bus] ** 2
-        elif coordinate_type == CoordinateType.RECTANGULAR:
-            vmsq_from_bus = m.vr[from_bus]**2 + m.vj[from_bus]**2
-            vmsq_to_bus = m.vr[to_bus] ** 2 + m.vj[to_bus] ** 2
+        vmsq_from_bus = m.vmsq[from_bus]
+        vmsq_to_bus = m.vmsq[to_bus]
 
         g = tx_calc.calculate_conductance(branch)
         b = tx_calc.calculate_susceptance(branch)
@@ -304,6 +360,18 @@ def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate
              b21 * m.s[(from_bus,to_bus)] +
              g12 * m.s[(from_bus,to_bus)] -
              g21 * m.c[(from_bus,to_bus)])
+
+
+def declare_eq_soc(model, index_set, branches, branch_attrs, coordinate_type=CoordinateType.POLAR):
+    """
+    create the constraint for the second order cone
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_soc", model, index_set)
+    m.eq_soc = pe.Constraint(con_set)
+    for from_bus, to_bus in con_set:
+        m.eq_soc[(from_bus, to_bus)] = m.c[from_bus] ** 2 + m.c[to_bus] ** 2 <= m.vmsq[from_bus] * m.vmsq[to_bus]
 
 
 def declare_eq_branch_power_btheta_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):
@@ -493,6 +561,7 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None
                 m.pfl[branch_name] == expr
         else:
             m.pfl[branch_name] = expr
+
 
 def declare_ineq_s_branch_thermal_limit(model, index_set,
                                         branches, s_thermal_limits,
