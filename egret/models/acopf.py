@@ -196,7 +196,6 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
                                 bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.POLAR,
                                 **p_rhs_kwargs
                                 )
 
@@ -207,7 +206,6 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
                                 bus_bs_fixed_shunts=bus_bs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.POLAR,
                                 **q_rhs_kwargs
                                 )
 
@@ -396,7 +394,6 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
                                 bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.RECTANGULAR,
                                 **p_rhs_kwargs
                                 )
 
@@ -407,7 +404,6 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
                                 bus_bs_fixed_shunts=bus_bs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.RECTANGULAR,
                                 **q_rhs_kwargs
                                 )
 

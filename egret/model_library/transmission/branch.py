@@ -190,7 +190,7 @@ def declare_expr_c(model, index_set, coordinate_type=CoordinateType.POLAR):
             m.c[(from_bus,to_bus)] = m.vm[from_bus]*m.vm[to_bus]*pe.cos(m.va[from_bus]-m.va[to_bus])
 
 
-def declare_expr_c_linear(model, index_set):
+def declare_expr_c_relaxation(model, index_set):
     """
     Create an expression named c and relate it to vf_vt_cos_dva
     """
@@ -219,13 +219,13 @@ def declare_expr_s(model, index_set, coordinate_type=CoordinateType.POLAR):
             m.s[(from_bus,to_bus)] = m.vm[from_bus]*m.vm[to_bus]*pe.sin(m.va[from_bus]-m.va[to_bus])
 
 
-def declare_expr_s_linear(model, index_set):
+def declare_expr_s_relaxation(model, index_set):
     """
     Create an expression named c and relate it to vf_vt_sin_dva
     """
     m = model
     expr_set = decl.declare_set('_expr_s', model, index_set)
-    m.c = pe.Expression(expr_set)
+    m.s = pe.Expression(expr_set)
 
     for from_bus, to_bus in expr_set:
         m.s[(from_bus, to_bus)] = m.vf_vt_sin_dva[(from_bus, to_bus)]
@@ -362,16 +362,16 @@ def declare_eq_branch_power(model, index_set, branches):
              g21 * m.c[(from_bus,to_bus)])
 
 
-def declare_eq_soc(model, index_set, branches, branch_attrs, coordinate_type=CoordinateType.POLAR):
+def declare_ineq_soc(model, index_set):
     """
     create the constraint for the second order cone
     """
     m = model
 
-    con_set = decl.declare_set("_con_eq_soc", model, index_set)
-    m.eq_soc = pe.Constraint(con_set)
+    con_set = decl.declare_set("_con_ineq_soc", model, index_set)
+    m.ineq_soc = pe.Constraint(con_set)
     for from_bus, to_bus in con_set:
-        m.eq_soc[(from_bus, to_bus)] = m.c[from_bus] ** 2 + m.c[to_bus] ** 2 <= m.vmsq[from_bus] * m.vmsq[to_bus]
+        m.ineq_soc[(from_bus, to_bus)] = m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 <= m.vmsq[from_bus] * m.vmsq[to_bus]
 
 
 def declare_eq_branch_power_btheta_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):
