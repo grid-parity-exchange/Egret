@@ -582,17 +582,17 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
             to_bus = branches[branch_name]['to_bus']
 
             m.ineq_angle_diff_branch_lb[branch_name] = \
-                branches[branch_name]['angle_diff_min'] <= m.va[from_bus] - m.va[to_bus]
+                math.radians(branches[branch_name]['angle_diff_min']) <= m.va[from_bus] - m.va[to_bus]
             m.ineq_angle_diff_branch_ub[branch_name] = \
-                m.va[from_bus] - m.va[to_bus] <= branches[branch_name]['angle_diff_max']
+                m.va[from_bus] - m.va[to_bus] <= math.radians(branches[branch_name]['angle_diff_max'])
     elif coordinate_type == CoordinateType.RECTANGULAR:
         for branch_name in con_set:
             from_bus = branches[branch_name]['from_bus']
             to_bus = branches[branch_name]['to_bus']
 
             m.ineq_angle_diff_branch_lb[branch_name] = \
-                branches[branch_name]['angle_diff_min'] <= pe.atan(m.vj[from_bus]/m.vr[from_bus]) \
+                math.radians(branches[branch_name]['angle_diff_min']) <= pe.atan(m.vj[from_bus]/m.vr[from_bus]) \
                 - pe.atan(m.vj[to_bus]/m.vr[to_bus])
             m.ineq_angle_diff_branch_ub[branch_name] = \
                 pe.atan(m.vj[from_bus] / m.vr[from_bus]) \
-                - pe.atan(m.vj[to_bus] / m.vr[to_bus]) <= branches[branch_name]['angle_diff_max']
+                - pe.atan(m.vj[to_bus] / m.vr[to_bus]) <= math.radians(branches[branch_name]['angle_diff_max'])
