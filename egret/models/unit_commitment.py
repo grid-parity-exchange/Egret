@@ -762,6 +762,9 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 def _time_series_dict(values):
     return {'data_type':'time_series', 'values':values}
 
+def _preallocated_list(other_iter):
+    return [ None for _ in other_iter ]
+
 def solve_unit_commitment(model_data,
                           solver,
                           mipgap = 0.001,
@@ -861,13 +864,13 @@ def solve_unit_commitment(model_data,
         fc = True
 
     for g,g_dict in thermal_gens.items():
-        pg_dict = {}
+        pg_dict = _preallocated_list(data_time_periods)
         if reserve_requirement:
-            rg_dict = {}
-        commitment_dict = {}
-        commitment_cost_dict = {}
-        production_cost_dict = {}
-        ramp_up_avail_dict = {}
+            rg_dict = _preallocated_list(data_time_periods)
+        commitment_dict = _preallocated_list(data_time_periods)
+        commitment_cost_dict = _preallocated_list(data_time_periods)
+        production_cost_dict = _preallocated_list(data_time_periods)
+        ramp_up_avail_dict = _preallocated_list(data_time_periods)
 
         ## all of the potential constraints that could limit maximum output
         ## Not all unit commitment models have these constraints, so first
@@ -888,30 +891,30 @@ def solve_unit_commitment(model_data,
                 ramp_up_avail_constrs.append(getattr(m, constr))
 
         if regulation:
-            reg_prov = {}
-            reg_up_supp = {}
-            reg_dn_supp = {}
+            reg_prov = _preallocated_list(data_time_periods)
+            reg_up_supp = _preallocated_list(data_time_periods)
+            reg_dn_supp = _preallocated_list(data_time_periods)
         if spin:
-            spin_supp = {}
+            spin_supp = _preallocated_list(data_time_periods)
         if nspin:
-            nspin_supp = {}
+            nspin_supp = _preallocated_list(data_time_periods)
         if supp:
-            supp_supp = {}
+            supp_supp = _preallocated_list(data_time_periods)
         if flex:
-            flex_up_supp = {}
-            flex_dn_supp = {}
+            flex_up_supp = _preallocated_list(data_time_periods)
+            flex_dn_supp = _preallocated_list(data_time_periods)
         gfs = (fs and (g in m.FuelSupplyGenerators))
         if gfs:
-            fuel_consumed = {}
+            fuel_consumed = _preallocated_list(data_time_periods)
         gdf = (fc and (g in m.DualFuelGenerators))
         if gdf:
-            aux_fuel_consumed = {}
+            aux_fuel_consumed = _preallocated_list(data_time_periods)
         gdsf = (gdf and (g in m.SingleFireDualFuelGenerators))
         if gdsf:
-            aux_fuel_indicator = {}
+            aux_fuel_indicator = _preallocated_list(data_time_periods)
 
 
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        for dt, mt in enumerate(m.TimePeriods):
             pg_dict[dt] = value(m.PowerGenerated[g,mt])
             if reserve_requirement:
                 rg_dict[dt] = value(m.ReserveProvided[g,mt])
@@ -997,17 +1000,17 @@ def solve_unit_commitment(model_data,
         g_dict['headroom'] = _time_series_dict(ramp_up_avail_dict)
 
     for g,g_dict in renewable_gens.items():
-        pg_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        pg_dict = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
             pg_dict[dt] = value(m.NondispatchablePowerUsed[g,mt])
         g_dict['pg'] = _time_series_dict(pg_dict)
 
     for s,s_dict in storage.items():
-        state_of_charge_dict = {}
-        p_discharge_dict = {}
-        p_charge_dict = {}
-        operational_cost_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        state_of_charge_dict = _preallocated_list(data_time_periods)
+        p_discharge_dict = _preallocated_list(data_time_periods)
+        p_charge_dict = _preallocated_list(data_time_periods)
+        operational_cost_dict = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
             p_discharge_dict[dt] = value(m.PowerOutputStorage[s,mt])
             p_charge_dict[dt] = value(m.PowerInputStorage[s,mt])
             operational_cost_dict[dt] = value(m.StorageCost[s,mt])
@@ -1022,16 +1025,16 @@ def solve_unit_commitment(model_data,
 
     if m.power_balance == 'btheta_power_flow':
         for l,l_dict in branches.items():
-            pf_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 pf_dict[dt] = value(m.TransmissionBlock[mt].pf[l])
             l_dict['pf'] = _time_series_dict(pf_dict)
 
         for b,b_dict in buses.items():
-            va_dict = {}
-            p_balance_violation_dict = {}
-            pl_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            va_dict = _preallocated_list(data_time_periods)
+            p_balance_violation_dict = _preallocated_list(data_time_periods)
+            pl_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 va_dict[dt] = value(m.TransmissionBlock[mt].va[b])
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
                 pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
@@ -1039,8 +1042,8 @@ def solve_unit_commitment(model_data,
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             b_dict['pl'] = _time_series_dict(pl_dict)
             if relaxed:
-                lmp_dict = {}
-                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                lmp_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
                     lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
@@ -1075,56 +1078,56 @@ def solve_unit_commitment(model_data,
                     lmps_dict[mt][bn] = LMPE + LMPC[i]
 
         for l,l_dict in branches.items():
-            pf_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 ## if the key doesn't exist, it is because that line was out
                 pf_dict[dt] = flows_dict[mt].get(l, 0.)
             l_dict['pf'] = _time_series_dict(pf_dict)
 
         for b,b_dict in buses.items():
-            va_dict = {}
-            p_balance_violation_dict = {}
-            pl_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            va_dict = _preallocated_list(data_time_periods)
+            p_balance_violation_dict = _preallocated_list(data_time_periods)
+            pl_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
                 pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             b_dict['pl'] = _time_series_dict(pl_dict)
             if relaxed:
-                lmp_dict = {}
-                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                lmp_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
                     lmp_dict[dt] = lmps_dict[mt][b]
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
     elif m.power_balance == 'power_balance_constraints':
         for l,l_dict in branches.items():
-            pf_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 pf_dict[dt] = value(m.LinePower[l,mt])
             l_dict['pf'] = _time_series_dict(pf_dict)
 
         for b,b_dict in buses.items():
-            va_dict = {}
-            p_balance_violation_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            va_dict = _preallocated_list(data_time_periods)
+            p_balance_violation_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 va_dict[dt] = value(m.Angle[b,mt])
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
             b_dict['va'] = _time_series_dict(va_dict)
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             if relaxed:
-                lmp_dict = {}
-                for dt, mt in zip(data_time_periods,m.TimePeriods):
+                lmp_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
                     lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
     elif m.power_balance in ['copperplate_power_flow', 'copperplate_relaxed_power_flow']:
         sys_dict = md.data['system']
-        p_viol_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        p_viol_dict = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
             p_viol_dict[dt] = sum(value(m.LoadGenerateMismatch[b,mt]) for b in m.Buses)
         sys_dict['p_balance_violation'] = _time_series_dict(p_viol_dict)
         if relaxed:
-            p_price_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            p_price_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 p_price_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance])
             sys_dict['p_price'] = _time_series_dict(p_price_dict)
     else:
@@ -1134,13 +1137,13 @@ def solve_unit_commitment(model_data,
     if reserve_requirement:
         ## populate the system attributes
         sys_dict = md.data['system']
-        sr_s_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        sr_s_dict = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
             sr_s_dict[dt] = value(m.ReserveShortfall[mt])
         sys_dict['reserve_shortfall'] = _time_series_dict(sr_s_dict)
         if relaxed:
-            sr_p_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            sr_p_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 ## TODO: if the 'relaxed' flag is set, we should automatically
                 ##       pick a formulation which uses the MLR reserve constraints
                 sr_p_dict[dt] = value(m.dual[m.EnforceReserveRequirements[mt]])
@@ -1233,26 +1236,26 @@ def solve_unit_commitment(model_data,
             me = string_handle+e
             for req, req_dict in _zonal_reserve_map.items():
                 if req in e_dict:
-                    req_shortfall_dict = {}
-                    for dt, mt in zip(data_time_periods, m.TimePeriods):
+                    req_shortfall_dict = _preallocated_list(data_time_series)
+                    for dt, mt in enumerate(m.TimePeriods):
                         req_shortfall_dict[dt] = value(req_dict['shortfall_m'][me,mt])
                     e_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                     if relaxed:
-                        req_price_dict = {}
-                        for dt, mt in zip(data_time_periods, m.TimePeriods):
+                        req_price_dict = _preallocated_list(data_time_series)
+                        for dt, mt in enumerate(m.TimePeriods):
                             req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])
                         e_dict[req_dict['price']] = _time_series_dict(req_price_dict)
 
     def _populate_system_reserves(sys_dict):
         for req, req_dict in _system_reserve_map.items():
             if req in sys_dict:
-                req_shortfall_dict = {}
-                for dt, mt in zip(data_time_periods, m.TimePeriods):
+                req_shortfall_dict = _preallocated_list(data_time_series)
+                for dt, mt in enumerate(m.TimePeriods):
                     req_shortfall_dict[dt] = value(req_dict['shortfall_m'][mt])
                 sys_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                 if relaxed:
-                    req_price_dict = {}
-                    for dt, mt in zip(data_time_periods, m.TimePeriods):
+                    req_price_dict = _preallocated_list(data_time_series)
+                    for dt, mt in enumerate(m.TimePeriods):
                         req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])
                     sys_dict[req_dict['price']] = _time_series_dict(req_price_dict)
     
@@ -1264,10 +1267,10 @@ def solve_unit_commitment(model_data,
     if fs:
         fuel_supplies = dict(md.elements(element_type='fuel_supply'))
         for f, f_dict in fuel_supplies.items():
-            fuel_consumed = {}
+            fuel_consumed = _preallocated_list(data_time_series)
             fuel_supply_type = f_dict['fuel_supply_type']
             if fuel_supply_type == 'instantaneous':
-                for dt, mt in zip(data_time_periods, m.TimePeriods):
+                for dt, mt in enumerate(m.TimePeriods):
                     fuel_consumed[dt] = value(m.TotalFuelConsumedAtInstFuelSupply[f,mt])
             else:
                 logger.warning('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
