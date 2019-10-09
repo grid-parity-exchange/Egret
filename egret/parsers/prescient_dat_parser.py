@@ -77,13 +77,13 @@ def create_model_data_dict(dat_file):
                 'in_service': True,
                 'p_load':
                         {'data_type':'time_series',
-                            'values': { str(t) : params.Demand[b,t] for t in params.TimePeriods }
+                            'values': [params.Demand[b,t] for t in params.TimePeriods ]
                         }
                }
         load_dict[b] = l_d
     elements['load'] = load_dict
 
-    reserve_dict = { str(t) : value(params.ReserveRequirement[t]) for t in params.TimePeriods }
+    reserve_dict = [ value(params.ReserveRequirement[t]) for t in params.TimePeriods ]
     system['reserve_requirement'] = { 'data_type':'time_series', 'values': reserve_dict }
 
     branch_dict = dict()
@@ -113,7 +113,7 @@ def create_model_data_dict(dat_file):
 
     zone_dict = dict()
     for z in sorted(params.ReserveZones):
-        reserve_dict = { t : params.ZonalReserveRequirement[z,t] }
+        reserve_dict = [ params.ZonalReserveRequirement[z,t] for t in params.TimePeriods ]
         z_d = { 'reserve_requirement' : {'data_type': 'time_series', 'values' : reserve_dict } }
         zone_dict[z] = z_d
     elements['zone'] = zone_dict
@@ -162,10 +162,10 @@ def create_model_data_dict(dat_file):
         g_d['in_service'] = True
         g_d['fuel'] = params.NondispatchableGeneratorType[g]
         g_d['p_min'] = { 'data_type':'time_series', 
-                            'values': { str(t) : params.MinNondispatchablePower[g,t] for t in params.TimePeriods }
+                            'values': [ params.MinNondispatchablePower[g,t] for t in params.TimePeriods ]
                        }
         g_d['p_max'] = { 'data_type':'time_series', 
-                            'values': { str(t) : params.MaxNondispatchablePower[g,t] for t in params.TimePeriods }
+                            'values': [ params.MaxNondispatchablePower[g,t] for t in params.TimePeriods ]
                        }
         ## NOTE: generators need unique names
         gen_dict[g+'_r'] = g_d
