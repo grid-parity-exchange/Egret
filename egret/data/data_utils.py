@@ -39,10 +39,14 @@ def get_ptdf_potentially_from_file(ptdf_options, branches_keys, buses_keys):
             for key, PTDFo in PTDF_pickle.items():
                 if _is_consistent_ptdfm(PTDFo, branches_keys, buses_keys):
                     PTDF = PTDFo
+                    break
         ## could be a single ptdf dict
         else:
             if _is_consistent_ptdfm(PTDF_pickle, branches_keys, buses_keys):
                 PTDF = PTDF_pickle
+
+    if PTDF is not None:
+        PTDF.set_lazy_limits(ptdf_options)
 
     return PTDF
 
@@ -76,7 +80,7 @@ class PTDFMatrix(object):
     This is a helper 
     '''
     def __init__(self, branches, buses, reference_bus, base_point,
-                        branches_keys = None, buses_keys = None):
+                        ptdf_options, branches_keys = None, buses_keys = None):
         '''
         Creates a new _PTDFMaxtrixManager object to provide
         some useful methods for interfacing with Egret pyomo models
@@ -105,9 +109,7 @@ class PTDFMatrix(object):
         self._base_point = base_point
         self._calculate()
 
-        ## for lazy PTDF
-        self.enforced_branch_limits = None
-        self.lazy_branch_limits = None
+        self.set_lazy_limits(ptdf_options)
 
     def _calculate(self):
         self._calculate_ptdf()
@@ -181,6 +183,18 @@ class PTDFMatrix(object):
     def bus_iterator(self):
         yield from self.buses_keys
 
+    def set_lazy_limits(self, ptdf_options):
+        if ptdf_options['lazy']:
+            ## add / reset the relative limits based on the current options
+            branch_limits = self.branch_limits_array
+            rel_flow_tol = ptdf_options['rel_flow_tol']
+            abs_flow_tol = ptdf_options['abs_flow_tol']
+            lazy_flow_tol = ptdf_options['lazy_rel_flow_tol']
+
+            ## only enforce the relative and absolute, within tollerance
+            self.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+            ## make sure the lazy limits are a superset of the enforce limits
+            self.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), self.enforced_branch_limits)
 
 
 class PTDFLossesMatrix(PTDFMatrix):
