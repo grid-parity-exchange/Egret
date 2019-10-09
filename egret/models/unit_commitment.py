@@ -1236,12 +1236,12 @@ def solve_unit_commitment(model_data,
             me = string_handle+e
             for req, req_dict in _zonal_reserve_map.items():
                 if req in e_dict:
-                    req_shortfall_dict = _preallocated_list(data_time_series)
+                    req_shortfall_dict = _preallocated_list(data_time_periods)
                     for dt, mt in enumerate(m.TimePeriods):
                         req_shortfall_dict[dt] = value(req_dict['shortfall_m'][me,mt])
                     e_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                     if relaxed:
-                        req_price_dict = _preallocated_list(data_time_series)
+                        req_price_dict = _preallocated_list(data_time_periods)
                         for dt, mt in enumerate(m.TimePeriods):
                             req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])
                         e_dict[req_dict['price']] = _time_series_dict(req_price_dict)
@@ -1249,12 +1249,12 @@ def solve_unit_commitment(model_data,
     def _populate_system_reserves(sys_dict):
         for req, req_dict in _system_reserve_map.items():
             if req in sys_dict:
-                req_shortfall_dict = _preallocated_list(data_time_series)
+                req_shortfall_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
                     req_shortfall_dict[dt] = value(req_dict['shortfall_m'][mt])
                 sys_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                 if relaxed:
-                    req_price_dict = _preallocated_list(data_time_series)
+                    req_price_dict = _preallocated_list(data_time_periods)
                     for dt, mt in enumerate(m.TimePeriods):
                         req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])
                     sys_dict[req_dict['price']] = _time_series_dict(req_price_dict)
@@ -1267,7 +1267,7 @@ def solve_unit_commitment(model_data,
     if fs:
         fuel_supplies = dict(md.elements(element_type='fuel_supply'))
         for f, f_dict in fuel_supplies.items():
-            fuel_consumed = _preallocated_list(data_time_series)
+            fuel_consumed = _preallocated_list(data_time_periods)
             fuel_supply_type = f_dict['fuel_supply_type']
             if fuel_supply_type == 'instantaneous':
                 for dt, mt in enumerate(m.TimePeriods):
