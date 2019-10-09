@@ -13,7 +13,7 @@ import math
 from egret.data.model_data import map_items, zip_items
 from egret.model_library.transmission import tx_utils
     
-from .uc_utils import add_model_attr, build_uc_time_mapping
+from .uc_utils import add_model_attr, uc_time_helper
 
 component_name = 'data_loader'
 
@@ -83,8 +83,7 @@ def load_params(model, model_data):
     elements = md.data['elements']
 
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
-
+    TimeMapper = uc_time_helper
     
     ## insert potentially missing keys
     if 'branch' not in elements:
