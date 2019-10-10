@@ -48,15 +48,13 @@ def _create_base_relaxation(model_data):
     ### declare the fixed shunts at the buses
     bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
 
-    ### declare the polar voltages
-    libbus.declare_var_vm_sq(model=model,
-                             index_set=bus_attrs['names'],
-                             initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
-                             bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
-                                              {k: v**2 for k, v in bus_attrs['v_max'].items()}))
-
-    libbranch.declare_var_vf_vt_cos_dva(model=model, index_set=unique_bus_pairs)
-    libbranch.declare_var_vf_vt_sin_dva(model=model, index_set=unique_bus_pairs)
+    libbus.declare_var_vmsq(model=model,
+                            index_set=bus_attrs['names'],
+                            initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
+                            bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
+                                             {k: v**2 for k, v in bus_attrs['v_max'].items()}))
+    libbranch.declare_var_c(model=model, index_set=unique_bus_pairs)
+    libbranch.declare_var_s(model=model, index_set=unique_bus_pairs)
 
     ### declare the generator real and reactive power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -68,10 +66,6 @@ def _create_base_relaxation(model_data):
     libgen.declare_var_qg(model, gen_attrs['names'], initialize=qg_init,
                           bounds=zip_items(gen_attrs['q_min'], gen_attrs['q_max'])
                           )
-
-    libbus.declare_expr_vmsq_relaxation(model=model, index_set=bus_attrs['names'])
-    libbranch.declare_expr_c_relaxation(model=model, index_set=unique_bus_pairs)
-    libbranch.declare_expr_s_relaxation(model=model, index_set=unique_bus_pairs)
 
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}

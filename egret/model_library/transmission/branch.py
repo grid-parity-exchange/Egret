@@ -113,41 +113,6 @@ def declare_var_itj(model, index_set, **kwargs):
     decl.declare_var('itj', model=model, index_set=index_set, **kwargs)
 
 
-def declare_var_vf_vt_cos_dva(model, index_set, **kwargs):
-    """
-    Create an auxiliary variable for vf * vt * cos(theta_f - theta_t)
-    """
-    decl.declare_var('vf_vt_cos_dva', model=model, index_set=index_set, **kwargs)
-
-
-def declare_var_vf_vt_sin_dva(model, index_set, **kwargs):
-    """
-    Create an auxiliary variable for vf * vt * sin(theta_f - theta_t)
-    """
-    decl.declare_var('vf_vt_sin_dva', model=model, index_set=index_set, **kwargs)
-
-
-def declare_var_cos_dva(model, index_set, **kwargs):
-    """
-    Create an auxiliary variable for cos(theta_f - theta_t)
-    """
-    decl.declare_var('cos_dva', model=model, index_set=index_set, **kwargs)
-
-
-def declare_var_sin_dva(model, index_set, **kwargs):
-    """
-    Create an auxiliary variable for sin(theta_f - theta_t)
-    """
-    decl.declare_var('sin_dva', model=model, index_set=index_set, **kwargs)
-
-
-def declare_var_vf_vt(model, index_set, **kwargs):
-    """
-    Create an auxiliary variable for vf * vt
-    """
-    decl.declare_var('vf_vt', model=model, index_set=index_set, **kwargs)
-
-
 def declare_eq_branch_dva(model, index_set, branches):
     """
     Create the equality constraints for the angle difference
@@ -190,18 +155,6 @@ def declare_expr_c(model, index_set, coordinate_type=CoordinateType.POLAR):
             m.c[(from_bus,to_bus)] = m.vm[from_bus]*m.vm[to_bus]*pe.cos(m.va[from_bus]-m.va[to_bus])
 
 
-def declare_expr_c_relaxation(model, index_set):
-    """
-    Create an expression named c and relate it to vf_vt_cos_dva
-    """
-    m = model
-    expr_set = decl.declare_set('_expr_c', model, index_set)
-    m.c = pe.Expression(expr_set)
-
-    for from_bus, to_bus in expr_set:
-        m.c[(from_bus, to_bus)] = m.vf_vt_cos_dva[(from_bus, to_bus)]
-
-
 def declare_expr_s(model, index_set, coordinate_type=CoordinateType.POLAR):
     """
     Create expression for the nonlinear, nonconvex term based on cosine
@@ -219,16 +172,58 @@ def declare_expr_s(model, index_set, coordinate_type=CoordinateType.POLAR):
             m.s[(from_bus,to_bus)] = m.vm[from_bus]*m.vm[to_bus]*pe.sin(m.va[from_bus]-m.va[to_bus])
 
 
-def declare_expr_s_relaxation(model, index_set):
+def declare_var_c(model, index_set, **kwargs):
     """
-    Create an expression named c and relate it to vf_vt_sin_dva
+    Create an auxiliary variable for vf * vt * cos(theta_f - theta_t)
+    """
+    decl.declare_var('c', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_s(model, index_set, **kwargs):
+    """
+    Create an auxiliary variable for vf * vt * sin(theta_f - theta_t)
+    """
+    decl.declare_var('s', model=model, index_set=index_set, **kwargs)
+
+
+def declare_eq_c(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create a constraint relating c to the voltages
     """
     m = model
-    expr_set = decl.declare_set('_expr_s', model, index_set)
-    m.s = pe.Expression(expr_set)
+    con_set = decl.declare_set('_con_eq_c', model, index_set)
+    m.eq_c = pe.Constraint(con_set)
 
-    for from_bus, to_bus in expr_set:
-        m.s[(from_bus, to_bus)] = m.vf_vt_sin_dva[(from_bus, to_bus)]
+    if coordinate_type == CoordinateType.POLAR:
+        for from_bus, to_bus in con_set:
+            m.eq_c[(from_bus, to_bus)] = (m.c[(from_bus, to_bus)] ==
+                                          m.vm[from_bus] * m.vm[to_bus] * pe.cos(m.va[from_bus] - m.va[to_bus]))
+    elif coordinate_type == CoordinateType.RECTANGULAR:
+        for from_bus, to_bus in con_set:
+            m.eq_c[(from_bus, to_bus)] = (m.c[(from_bus, to_bus)] ==
+                                          m.vr[from_bus] * m.m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus])
+    else:
+        raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
+
+
+def declare_eq_s(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create a constraint relating s to the voltages
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_s', model, index_set)
+    m.eq_s = pe.Constraint(con_set)
+
+    if coordinate_type == CoordinateType.POLAR:
+        for from_bus, to_bus in con_set:
+            m.eq_s[(from_bus, to_bus)] = (m.s[(from_bus, to_bus)] ==
+                                          m.vm[from_bus] * m.vm[to_bus] * pe.sin(m.va[from_bus] - m.va[to_bus]))
+    elif coordinate_type == CoordinateType.RECTANGULAR:
+        for from_bus, to_bus in con_set:
+            m.eq_s[(from_bus, to_bus)] = (m.s[(from_bus, to_bus)] ==
+                                          m.vj[from_bus] * m.m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
+    else:
+        raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
 
 
 def declare_eq_branch_current(model, index_set, branches, coordinate_type=CoordinateType.RECTANGULAR):

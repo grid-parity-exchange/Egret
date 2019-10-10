@@ -44,13 +44,6 @@ def declare_var_va(model, index_set, **kwargs):
     decl.declare_var('va', model=model, index_set=index_set, **kwargs)
 
 
-def declare_var_vm_sq(model, index_set, **kwargs):
-    """
-    Create auxiliary variable for the voltage magnitude squared at a bus
-    """
-    decl.declare_var('vm_sq', model=model, index_set=index_set, **kwargs)
-
-
 def declare_expr_vmsq(model, index_set, coordinate_type=CoordinateType.POLAR):
     """
     Create an expression for the voltage magnitude squared at a bus
@@ -67,16 +60,29 @@ def declare_expr_vmsq(model, index_set, coordinate_type=CoordinateType.POLAR):
             m.vmsq[bus] = m.vm[bus] ** 2
 
 
-def declare_expr_vmsq_relaxation(model, index_set):
+def declare_var_vmsq(model, index_set, **kwargs):
     """
-    Create an expression for the voltage magnitude squared at a bus
+    Create auxiliary variable for the voltage magnitude squared at a bus
+    """
+    decl.declare_var('vmsq', model=model, index_set=index_set, **kwargs)
+
+
+def declare_eq_vmsq(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create a constraint relating vmsq to the voltages
     """
     m = model
-    expr_set = decl.declare_set('_expr_vmsq', model, index_set)
-    m.vmsq = pe.Expression(expr_set)
+    con_set = decl.declare_set('_con_eq_vmsq', model, index_set)
+    m.eq_vmsq = pe.Constraint(con_set)
 
-    for bus in expr_set:
-        m.vmsq[bus] = m.vm_sq[bus]
+    if coordinate_type == CoordinateType.POLAR:
+        for bus in con_set:
+            m.eq_vmsq = m.vmsq[bus] == m.vm[bus] ** 2
+    elif coordinate_type == CoordinateType.RECTANGULAR:
+        for bus in con_set:
+            m.eq_vmsq = m.vmsq[bus] == m.vr[bus]**2 + m.vj[bus]**2
+    else:
+        raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
 
 
 def declare_var_ir_aggregation_at_bus(model, index_set, **kwargs):
