@@ -5,11 +5,17 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
-
 from egret.model_library.defn import FlowType, CoordinateType
 from egret.data.model_data import map_items, zip_items
 from math import pi, radians
-from wntr.utils.ordered_set import OrderedSet
+from collections import OrderedDict
+from pyomo.core.expr.visitor import polynomial_degree
+from pyomo.contrib.fbbt.fbbt import fbbt
+try:
+    import coramin
+    coramin_available = True
+except ImportError:
+    coramin_available = False
 
 
 def _create_base_relaxation(model_data):
@@ -25,15 +31,13 @@ def _create_base_relaxation(model_data):
     gen_attrs = md.attributes(element_type='generator')
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
-    load_attrs = md.attributes(element_type='load')
-    shunt_attrs = md.attributes(element_type='shunt')
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
-    unique_bus_pairs = list(OrderedSet(val for idx, val in bus_pairs.items()))
+    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()))
 
     model = pe.ConcreteModel()
 
@@ -172,10 +176,78 @@ def _create_base_relaxation(model_data):
     return model, md
 
 
-def create_soc_relaxation(model_data):
+def create_soc_relaxation(model_data, use_linear_relaxation=False):
     model, md = _create_base_relaxation(model_data)
+    if use_linear_relaxation:
+        if not coramin_available:
+            raise ImportError('Cannot create SOC relaxation with outer approximation unless coramin is available.')
+        model = coramin.relaxations.relax(model, in_place=True, use_fbbt=False)
     branch_attrs = md.attributes(element_type='branch')
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
-    unique_bus_pairs = list(OrderedSet(val for idx, val in bus_pairs.items()))
-    libbranch.declare_ineq_soc(model=model, index_set=unique_bus_pairs)
+    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
+    libbranch.declare_ineq_soc(model=model, index_set=unique_bus_pairs,
+                               use_outer_approximation=use_linear_relaxation)
+    return model, md
+
+
+def create_relaxation_of_polar_acopf(model_data, include_soc=True, use_linear_relaxation=False):
+    if not coramin_available:
+        raise ImportError('Cannot create polar relaxation unless coramin is available.')
+
+    model, md = _create_base_relaxation(model_data)
+    branches = dict(md.elements(element_type='branch'))
+    bus_attrs = md.attributes(element_type='bus')
+    branch_attrs = md.attributes(element_type='branch')
+    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
+    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
+
+    # declare the polar voltages
+    libbus.declare_var_vm(model,
+                          bus_attrs['names'],
+                          initialize=bus_attrs['vm'],
+                          bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max']))
+
+    va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
+    libbus.declare_var_va(model,
+                          bus_attrs['names'],
+                          initialize=bus_attrs['va'],
+                          bounds=va_bounds)
+
+    # fix the reference bus
+    ref_bus = md.data['system']['reference_bus']
+    ref_angle = md.data['system']['reference_bus_angle']
+    model.va[ref_bus].fix(radians(ref_angle))
+
+    # relate c, s, and vmsq to vm and va
+    libbus.declare_eq_vmsq(model=model,
+                           index_set=bus_attrs['names'],
+                           coordinate_type=CoordinateType.POLAR)
+    libbranch.declare_eq_c(model=model,
+                           index_set=unique_bus_pairs,
+                           coordinate_type=CoordinateType.POLAR)
+    libbranch.declare_eq_s(model=model,
+                           index_set=unique_bus_pairs,
+                           coordinate_type=CoordinateType.POLAR)
+
+    # declare angle difference limits on interconnected buses
+    libbranch.declare_ineq_angle_diff_branch_lbub(model=model,
+                                                  index_set=branch_attrs['names'],
+                                                  branches=branches,
+                                                  coordinate_type=CoordinateType.POLAR
+                                                  )
+
+    fbbt(model, deactivate_satisfied_constraints=False)
+    model = coramin.relaxations.relax(model, in_place=True, use_fbbt=False)
+    if not use_linear_relaxation:
+        for b in model.component_data_objects(pe.Block, descend_into=True, active=True, sort=True):
+            if isinstance(b, (coramin.relaxations.BaseRelaxation, coramin.relaxations.BaseRelaxationData)):
+                if polynomial_degree(b.get_rhs_expr()) == 2:
+                    if not isinstance(b, (coramin.relaxations.PWMcCormickRelaxation, coramin.relaxations.PWMcCormickRelaxationData)):
+                        b.use_linear_relaxation = False
+                        b.rebuild()
+
+    if include_soc:
+        libbranch.declare_ineq_soc(model=model, index_set=unique_bus_pairs,
+                                   use_outer_approximation=use_linear_relaxation)
+
     return model, md

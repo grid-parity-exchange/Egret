@@ -77,10 +77,10 @@ def declare_eq_vmsq(model, index_set, coordinate_type=CoordinateType.POLAR):
 
     if coordinate_type == CoordinateType.POLAR:
         for bus in con_set:
-            m.eq_vmsq = m.vmsq[bus] == m.vm[bus] ** 2
+            m.eq_vmsq[bus] = m.vmsq[bus] == m.vm[bus] ** 2
     elif coordinate_type == CoordinateType.RECTANGULAR:
         for bus in con_set:
-            m.eq_vmsq = m.vmsq[bus] == m.vr[bus]**2 + m.vj[bus]**2
+            m.eq_vmsq[bus] = m.vmsq[bus] == m.vr[bus]**2 + m.vj[bus]**2
     else:
         raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
 

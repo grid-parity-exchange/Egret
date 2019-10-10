@@ -19,11 +19,12 @@ from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
 from egret.data.model_data import zip_items
 from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
-from wntr.utils.ordered_set import OrderedSet
+from collections import OrderedDict
 try:
     import coramin
+    coramin_available = True
 except ImportError:
-    pass
+    coramin_available = False
 
 
 def declare_var_dva(model, index_set, **kwargs):
@@ -357,16 +358,44 @@ def declare_eq_branch_power(model, index_set, branches):
              g21 * m.c[(from_bus,to_bus)])
 
 
-def declare_ineq_soc(model, index_set):
+def declare_ineq_soc(model, index_set, use_outer_approximation=False):
     """
     create the constraint for the second order cone
     """
     m = model
-
-    con_set = decl.declare_set("_con_ineq_soc", model, index_set)
-    m.ineq_soc = pe.Constraint(con_set)
-    for from_bus, to_bus in con_set:
-        m.ineq_soc[(from_bus, to_bus)] = m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 <= m.vmsq[from_bus] * m.vmsq[to_bus]
+    if not use_outer_approximation:
+        con_set = decl.declare_set("_con_ineq_soc", model, index_set)
+        m.ineq_soc = pe.Constraint(con_set)
+        for from_bus, to_bus in con_set:
+            m.ineq_soc[(from_bus, to_bus)] = m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 <= m.vmsq[from_bus] * m.vmsq[to_bus]
+    else:
+        if not coramin_available:
+            raise ImportError('Cannot create SOC relaxation with outer approximation unless coramin is available.')
+        """
+        in order to use outer approximation, we have to reformulate 
+        
+        c**2 + s**2 <= vmsq[from_bus] * vmsq[to_bus]
+        
+        to
+        
+        (c**2 + s**2 + z1**2) ** 0.5 <= z2
+        z1 = 0.5 * (vmsq[from_bus] - vmsq[to_bus])
+        z2 = 0.5 * (vmsq[from_bus] + vmsq[to_bus]) 
+        """
+        con_set = decl.declare_set("_con_ineq_soc", model, index_set)
+        decl.declare_var('_z1', model=model, index_set=con_set)
+        decl.declare_var('_z2', model=model, index_set=con_set)
+        m._eq_z1 = pe.Constraint(con_set)
+        m._eq_z2 = pe.Constraint(con_set)
+        m.ineq_soc_OA = coramin.relaxations.MultivariateRelaxation(con_set)
+        for from_bus, to_bus in con_set:
+            m._eq_z1[from_bus, to_bus] = m._z1[from_bus, to_bus] == 0.5 * (m.vmsq[from_bus] - m.vmsq[to_bus])
+            m._eq_z2[from_bus, to_bus] = m._z2[from_bus, to_bus] == 0.5 * (m.vmsq[from_bus] + m.vmsq[to_bus])
+            m.ineq_soc_OA[from_bus, to_bus].build(aux_var=m._z2[from_bus, to_bus],
+                                                  shape=coramin.utils.FunctionShape.CONVEX,
+                                                  f_x_expr=(m.c[from_bus, to_bus]**2 +
+                                                            m.s[from_bus, to_bus]**2 +
+                                                            m._z1[from_bus, to_bus]**2)**0.5)
 
 
 def declare_eq_branch_power_btheta_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):
