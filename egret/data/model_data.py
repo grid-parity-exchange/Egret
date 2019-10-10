@@ -287,15 +287,42 @@ class ModelData(object):
         -------
             ModelData
         """
-        # clone the data object, and then replace the time_series as needed
-        gd = self.clone()
+        time_indices = self.data['system']['time_indices']
 
-        # loop over all the elements
-        for e in gd.data['elements'].values():
-            # loop over all the element main-level attributes
-            self._replace_timeseries_with_value(e, timestamp)
+        time_index = time_indices.index(timestamp)
+
+        gd = self.clone_at_timeindex(time_index)
 
         return gd
+
+    def clone_at_timeindex(self, time_index):
+        """
+        Creae a copy of the ModelData object using values from a single time index value.
+
+        Create a copy of this ModelData object, but with the following change. Whenever
+        a time_series is encountered (recognized by "data_type"="time_series"), the
+        attribute containing the time series is replaced with a float value corresponding
+        to the specified time index.
+
+        .. todo::
+           This can actually be made general based on "data_type" and idx instead of specific to time_series
+
+        Parameters
+        ----------
+        time_index : int
+            The index into time series data at which to copy
+
+
+        Returns
+        -------
+            ModelData
+        """
+        mdclone = ModelData(self._recurse_into_timestamp(self.data, time_index))
+
+        ## the new model data has no time
+        del mdclone.data['system']['time_indices']
+
+        return mdclone
 
     def read_from_json(self, filename):
         """
@@ -327,19 +354,22 @@ class ModelData(object):
         with open(filename + '.json','w') as f:
             json.dump(self.data, f)
 
-    def _replace_timeseries_with_value(self, node, timestamp):
-        # loop over the attributes on this dict
-        for key, att in node.items():
-            # ignore if the attribute is not a dict
-            # TODO: Should we recurse through lists (are they allowed in the data_dict)?
+    def _recurse_into_timestamp(self, old_node, time_index):
+        # create a new node for the new dict
+        new_node = dict()
+        # loop of the exisiting attributes
+        for key, att in old_node.items():
+            # ignore if not at dict
             if isinstance(att, dict):
-                if 'data_type' in att and att["data_type"] == "time_series":
-                    # the attribute is itself a dict and is a time_series specification
-                    # so replace the time_series with the appropriate value
-                    node[key] = att["values"][timestamp]
+                if 'data_type' in att and att['data_type'] == 'time_series':
+                    vals = att['values']
+                    new_node[key] = att['values'][time_index]
                 else:
-                    # recurse further down the tree
-                    self._replace_timeseries_with_value(att, timestamp)
+                    new_node[key] = self._recurse_into_timestamp(att,time_index)
+            else:
+                # be paranoid about other attributes (could be list, or other mutable type)
+                new_node[key] = cp.deepcopy(att)
+        return new_node
 
 
 # TODO: These should be moved to a more general "model utilities" module
