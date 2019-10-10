@@ -53,7 +53,7 @@ testdata = {
                         'connected_bus': 'B2',
                         'Pl': {
                             'data_type': 'time_series',
-                            'values': {0.0: 11.0, 1.0: 111.0, 2.0: 111.1}
+                            'values': [11.0, 111.0, 111.1]
                         },
                         'Ql': 11.0
                     }
@@ -62,6 +62,7 @@ testdata = {
     'system': { 
               'reference_bus': 'B1',
               'reference_bus_angle': 0.0,
+              'time_indices' : [0.0, 1.0, 2.0],
               },
 }
 
@@ -109,7 +110,7 @@ testdata = {
                         'connected_bus': 'B2',
                         'Pl': {
                             'data_type': 'time_series',
-                            'values': {0.0: 11.0, 1.0: 111.0, 2.0: 111.1}
+                            'values': [11.0, 111.0, 111.1]
                         },
                         'Ql': 11.0
                     }
@@ -118,6 +119,7 @@ testdata = {
     'system': { 
               'reference_bus': 'B1',
               'reference_bus_angle': 0.0,
+              'time_indices' : [0.0, 1.0, 2.0],
               },
 }
 """
@@ -171,5 +173,6 @@ def test_clone_at_timestamp():
 
     comparison_md = md.clone()
     comparison_md.data['elements']['load']['L1']['Pl'] = 111.1
+    del comparison_md.data['system']['time_indices']
 
     assert cloned_md.data == comparison_md.data

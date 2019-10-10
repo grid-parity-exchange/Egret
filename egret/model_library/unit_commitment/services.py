@@ -11,7 +11,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr, build_uc_time_mapping
+from .uc_utils import add_model_attr, uc_time_helper 
 from .status_vars import _is_relaxed
 
 @add_model_attr('storage_service', requires = {'data_loader': None,
@@ -183,7 +183,7 @@ def ancillary_services(model):
     elements = md.data['elements']
 
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
 
     ## list of possible ancillary services coming
@@ -429,7 +429,7 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     system = md.data['system']
 
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
     def _check_reg(e_dict):
         return ( ('regulation_up_requirement' in e_dict) \
@@ -600,7 +600,7 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
     system = md.data['system']
 
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
     def _check_spin(e_dict):
         return 'spinning_reserve_requirement' in e_dict
@@ -696,7 +696,7 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
     system = md.data['system']
 
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
     def _check_nspin(e_dict):
         return 'non_spinning_reserve_requirement' in e_dict
@@ -796,7 +796,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
     system = md.data['system']
 
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
     def _check_supplemental(e_dict):
         return 'supplemental_reserve_requirement' in e_dict
@@ -931,7 +931,7 @@ def flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_
     system = md.data['system']
 
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
     def _check_flex(e_dict):
         return ( ('flexible_ramp_up_requirement' in e_dict) \
