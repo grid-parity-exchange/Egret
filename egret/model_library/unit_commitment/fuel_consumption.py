@@ -10,7 +10,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr, build_uc_time_mapping
+from .uc_utils import add_model_attr, uc_time_helper 
 from .status_vars import _is_relaxed
 
 @add_model_attr('fuel_consumption', requires = {'data_loader': None,
@@ -36,7 +36,7 @@ def fuel_consumption_model(model):
 
     system = md.data['system']
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
 
     relaxed = _is_relaxed(model)

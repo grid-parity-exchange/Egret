@@ -66,7 +66,7 @@ def create_model_data_dict(pglib_uc_filename):
 
     time_periods = list(range(1, pglib_uc_dict["time_periods"]+1))
 
-    system["reserve_requirement"] = { "data_type" : "time_series", "values" : { t : val for t,val in zip(time_periods, pglib_uc_dict["reserves"]) } }
+    system["reserve_requirement"] = { "data_type" : "time_series", "values" : pglib_uc_dict["reserves"] }
     system["time_indices"] = time_periods
     system["baseMVA"] = 1.
     system["time_period_length_minutes"] = 60
@@ -79,7 +79,7 @@ def create_model_data_dict(pglib_uc_filename):
     
     elements["load"] = {"demand": { "bus" : "copperplate",
                                         "in_service" : True,
-                                        "p_load" : {"data_type" : "time_series", "values" : { t : val for t,val in zip(time_periods, pglib_uc_dict["demand"]) } }
+                                        "p_load" : {"data_type" : "time_series", "values" : pglib_uc_dict["demand"] }
                                       }
                        }
 
@@ -116,8 +116,8 @@ def create_model_data_dict(pglib_uc_filename):
 
     for g,g_dict in pglib_uc_dict["renewable_generators"].items():
         md_g_dict = {"generator_type" : "renewable", "bus" : "copperplate", "fuel" : "W", "in_service" : True}
-        md_g_dict["p_min"] = {"data_type" : "time_series", "values" : { t : val for t,val in zip(time_periods, g_dict["power_output_minimum"]) } }
-        md_g_dict["p_max"] = {"data_type" : "time_series", "values" : { t : val for t,val in zip(time_periods, g_dict["power_output_maximum"]) } }
+        md_g_dict["p_min"] = {"data_type" : "time_series", "values" : g_dict["power_output_minimum"] }
+        md_g_dict["p_max"] = {"data_type" : "time_series", "values" : g_dict["power_output_maximum"] }
 
         ## avoid name conflicts
         generators[g_dict["name"]+"_R"] = md_g_dict
