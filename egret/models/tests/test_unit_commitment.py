@@ -168,6 +168,37 @@ def test_uc_relaxation():
     md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
     assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
 
+def test_uc_lazy_ptdf_thresholding():
+    test_name = 'tiny_uc_tc'
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+
+    tc_sol_fn = test_name + '_relaxed_results.json'
+    ntc_sol_fn = test_name + '_relaxed_unconstrained_results.json'
+
+    tc_cost = json.load(open(os.path.join(current_dir, 'uc_test_instances', tc_sol_fn), 'r'))['system']['total_cost']
+    ntc_cost = json.load(open(os.path.join(current_dir, 'uc_test_instances', ntc_sol_fn), 'r'))['system']['total_cost']
+
+    # NOTE: This test case has one congested branch, one end of which has bus_kv = 300, and
+    #       the other end has bus_kv = 200, so these test cases attempt to capture all the
+    #       logic of the thresholding
+    ptdf_sol_options = [
+                        (tc_cost,  {'branch_kv_threshold':100, 'kv_threshold_type':'one' }),
+                        (tc_cost,  {'branch_kv_threshold':100, 'kv_threshold_type':'both'}),
+                        (tc_cost,  {'branch_kv_threshold':200, 'kv_threshold_type':'one' }),
+                        (tc_cost,  {'branch_kv_threshold':200, 'kv_threshold_type':'both'}),
+                        (tc_cost,  {'branch_kv_threshold':201, 'kv_threshold_type':'one' }), 
+                        (ntc_cost, {'branch_kv_threshold':201, 'kv_threshold_type':'both'}),
+                        (tc_cost,  {'branch_kv_threshold':300, 'kv_threshold_type':'one' }), 
+                        (ntc_cost, {'branch_kv_threshold':300, 'kv_threshold_type':'both'}),
+                        (ntc_cost, {'branch_kv_threshold':301, 'kv_threshold_type':'one' }),
+                        (ntc_cost, {'branch_kv_threshold':301, 'kv_threshold_type':'both'}),
+                       ]
+    for c, ptdf_opt in ptdf_sol_options:
+        md_results = solve_unit_commitment(md_in, solver='cbc', options={'presolve': 'off', 'primalS':''}, relaxed=True, ptdf_options=ptdf_opt)
+        assert math.isclose(c, md_results.data['system']['total_cost'])
+
 def test_uc_ptdf_termination():
     test_name = 'tiny_uc_tc'
     input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')

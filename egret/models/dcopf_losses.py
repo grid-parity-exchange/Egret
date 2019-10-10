@@ -253,7 +253,7 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
     ## We'll assume we have a solution to initialize from
     base_point = BasePointType.SOLUTION
 
-    PTDF = data_utils.PTDFLossesMatrix(branches, buses, reference_bus, base_point)
+    PTDF = data_utils.PTDFLossesMatrix(branches, buses, reference_bus, base_point, ptdf_options)
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
 
