@@ -172,11 +172,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     return model, md
 
 def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None):
-    
-    if ptdf_options is None:
-        ptdf_options = dict()
 
-    lpu.populate_default_ptdf_options(ptdf_options)
+    ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
     baseMVA = model_data.data['system']['baseMVA']
     lpu.check_and_scale_ptdf_options(ptdf_options, baseMVA)

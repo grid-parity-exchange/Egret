@@ -14,6 +14,7 @@ from egret.common.log import logger
 import egret.model_library.transmission.branch as libbranch
 import pyomo.environ as pe
 import numpy as np
+import copy as cp
 
 from enum import Enum
 
@@ -24,6 +25,11 @@ class LazyPTDFTerminationCondition(Enum):
     FLOW_VIOLATION = 3
 
 def populate_default_ptdf_options(ptdf_options):
+    if ptdf_options is None:
+        ptdf_options = dict()
+    else:
+        ## get a copy
+        ptdf_options = cp.deepcopy(ptdf_options)
     if 'rel_ptdf_tol' not in ptdf_options:
         ptdf_options['rel_ptdf_tol'] = 1.e-6
     if 'abs_ptdf_tol' not in ptdf_options:
@@ -50,6 +56,7 @@ def populate_default_ptdf_options(ptdf_options):
         ptdf_options['branch_kv_threshold'] = None
     if 'kv_threshold_type' not in ptdf_options:
         ptdf_options['kv_threshold_type'] = 'one'
+    return ptdf_options
 
 def check_and_scale_ptdf_options(ptdf_options, baseMVA):
     ## scale to base MVA
