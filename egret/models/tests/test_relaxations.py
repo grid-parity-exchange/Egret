@@ -16,10 +16,15 @@ import unittest
 from pyomo.opt import SolverFactory, TerminationCondition
 import pyomo.environ as pe
 from egret.models.acopf import create_psv_acopf_model
-from egret.models.ac_relaxations import create_soc_relaxation
+from egret.models.ac_relaxations import create_soc_relaxation, create_relaxation_of_polar_acopf
 from egret.data.model_data import ModelData
 from parameterized import parameterized
 from egret.parsers.matpower_parser import create_ModelData
+try:
+    import coramin
+    coramin_available = True
+except ImportError:
+    coramin_available = False
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 case_names = ['pglib_opf_case3_lmbd',
@@ -83,10 +88,51 @@ class TestSOC(unittest.TestCase):
         lb = pe.value(rel.obj)
 
         gap = (ub - lb) / ub * 100
-        print(ub, upper_bound_soln, gap, gap_soln)
         comparison = math.isclose(ub, upper_bound_soln, rel_tol=1e-4)
         self.assertTrue(comparison)
         comparison = math.isclose(gap, gap_soln, abs_tol=1e-2)
+        self.assertTrue(comparison)
+
+
+class TestPolarRelaxation(unittest.TestCase):
+    show_output = True
+
+    @classmethod
+    def setUpClass(self):
+        download_dir = os.path.join(current_dir, 'transmission_test_instances')
+        if not os.path.exists(os.path.join(download_dir, 'pglib-opf-master')):
+            from egret.thirdparty.get_pglib_opf import get_pglib_opf
+            get_pglib_opf(download_dir)
+
+    @unittest.skipIf(not coramin_available, "coramin is not available")
+    @parameterized.expand(case_names)
+    def test_polar_relaxation(self, case_name):
+        test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
+        upper_bound_soln = upper_bounds[case_name]
+        md = create_ModelData(test_case)
+        nlp, scaled_md = create_relaxation_of_polar_acopf(md, include_soc=False)
+        for b in nlp.component_data_objects(pe.Block, descend_into=True, active=True, sort=True):
+            if isinstance(b, (coramin.relaxations.BaseRelaxation, coramin.relaxations.BaseRelaxationData)):
+                if isinstance(b, (coramin.relaxations.PWCosRelaxation, coramin.relaxations.PWCosRelaxationData,
+                                  coramin.relaxations.PWSinRelaxation, coramin.relaxations.PWSinRelaxationData)):
+                    v = b.get_rhs_vars()[0]
+                    v.setlb(max(-math.pi / 2, v.lb))
+                    v.setub(min(math.pi / 2, v.ub))
+                b.rebuild(build_nonlinear_constraint=True)
+
+        opt = SolverFactory('ipopt')
+        opt.options['linear_solver'] = 'mumps'
+
+        res = opt.solve(nlp, tee=False)
+        self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
+
+        obj = None
+        for _obj in nlp.component_data_objects(pe.Objective, descend_into=True, active=True, sort=True):
+            self.assertTrue(obj is None)
+            obj = _obj
+        ub = pe.value(obj)
+
+        comparison = math.isclose(ub, upper_bound_soln, rel_tol=1e-4)
         self.assertTrue(comparison)
 
 
