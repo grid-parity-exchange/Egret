@@ -38,6 +38,7 @@ install:
     # - pip install pyomo
     - pip install git+https://github.com/PyUtilib/pyutilib.git
     - pip install git+https://github.com/Pyomo/pyomo.git
+    - pip install git+https://github.com/coramin/coramin.git
     - conda install -c conda-forge ipopt
     - conda install -c conda-forge coincbc
     - python setup.py develop
