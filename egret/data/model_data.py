@@ -154,6 +154,24 @@ class ModelData(object):
         else:
             self.data = ModelData.empty_model_data_dict()
 
+    @classmethod
+    def from_json(cls, filename):
+        """
+        Reads the json file and overwrites the ModelData object dict.
+
+        Parameters
+        ----------
+        filename : *.json filename
+            The full filename including extension and path.
+        """
+        import json
+
+        with open(filename) as f:
+            data = json.load(f)
+
+        return cls(data=data)
+
+
     def elements(self, element_type, **kwargs):
         """
         A python generator that loops over modeling elements of a particular element type
@@ -324,21 +342,6 @@ class ModelData(object):
 
         return mdclone
 
-    def read_from_json(self, filename):
-        """
-        Reads the json file and overwrites the ModelData object dict.
-
-        Parameters
-        ----------
-        filename : *.json filename
-            The full filename including extension and path.
-        """
-        import json
-
-        with open(filename) as f:
-            data = json.load(f)
-
-        self.data = data
 
     def write_to_json(self, filename):
         """
