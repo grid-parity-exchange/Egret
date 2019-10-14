@@ -349,9 +349,9 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
     if isinstance(attr, dict):
         if 'data_type' in attr and attr['data_type'] == 'time_series':
             op = _get_op(normal_op, inverse_op, attr_name)
-            values_dict = attr['values']
-            for time, value in values_dict.items():
-                values_dict[time] = op( value , baseMVA )
+            values_list = attr['values']
+            for time, value in enumerate(values_list):
+                values_list[time] = op( value , baseMVA )
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
             if attr['cost_curve_type'] == 'polynomial':
                 values_dict = attr['values']

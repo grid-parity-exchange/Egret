@@ -10,7 +10,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr, build_uc_time_mapping
+from .uc_utils import add_model_attr, uc_time_helper 
 from .status_vars import _is_relaxed
 
 @add_model_attr('fuel_consumption', requires = {'data_loader': None,
@@ -36,7 +36,7 @@ def fuel_consumption_model(model):
 
     system = md.data['system']
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
 
     relaxed = _is_relaxed(model)
@@ -123,9 +123,9 @@ def fuel_consumption_model(model):
     ## load and verify some parameters
     dual_fuel_attrs = md.attributes(element_type='generator', generator_type='thermal', aux_fuel_capable=True)
 
-    model.UnitSwitchOperating = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('aux_fuel_online_switching'))
+    model.UnitSwitchOperating = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=dual_fuel_attrs.get('aux_fuel_online_switching'))
 
-    model.UnitFuelBlending = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('aux_fuel_blending'))
+    model.UnitFuelBlending = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=dual_fuel_attrs.get('aux_fuel_blending'))
 
     def verify_dual_fuel_consistency(m, g):
         if value(m.UnitFuelBlending[g]) and not value(m.UnitSwitchOperating[g]):
@@ -136,7 +136,7 @@ def fuel_consumption_model(model):
     
     def verify_initial_fuel_defined(m, g):
         if not value(m.UnitSwitchOperating[g]) and value(m.UnitOnT0[g]):
-            if 'aux_fuel_supply_initial' not in thermal_gen_attrs or g not in thermal_gen_attrs['aux_fuel_supply_initial']:
+            if 'aux_fuel_supply_initial' not in dual_fuel_attrs or g not in dual_fuel_attrs['aux_fuel_supply_initial']:
                 print("DATA ERROR: Couldn't find initial fuel for dual fuel generator "+g)
                 assert(False)
     model.VerifyUnitInitialFuelDefined = BuildAction(model.DualFuelGenerators, rule=verify_initial_fuel_defined)

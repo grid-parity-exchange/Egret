@@ -13,7 +13,7 @@ import math
 from egret.data.model_data import map_items, zip_items
 from egret.model_library.transmission import tx_utils
     
-from .uc_utils import add_model_attr, build_uc_time_mapping
+from .uc_utils import add_model_attr, uc_time_helper
 
 component_name = 'data_loader'
 
@@ -83,8 +83,7 @@ def load_params(model, model_data):
     elements = md.data['elements']
 
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
-
+    TimeMapper = uc_time_helper
     
     ## insert potentially missing keys
     if 'branch' not in elements:
@@ -728,12 +727,20 @@ def load_params(model, model_data):
         points = list(m.CostPiecewisePoints[g])
     
         if min_output not in points:
-            raise Exception("Cost piecewise points for generator g="+str(g)+
-                            " must contain the minimum output level="+str(min_output))
+            for pnt in points:
+                if math.isclose(pnt, min_output):
+                    break
+            else:
+                raise Exception("Cost piecewise points for generator g="+str(g)+
+                                " must contain the minimum output level="+str(min_output))
     
         if max_output not in points:
-            raise Exception("Cost piecewise points for generator g="+str(g)+
-                            " must contain the maximum output level="+str(max_output))
+            for pnt in points:
+                if math.isclose(pnt, max_output):
+                    break
+            else:
+                raise Exception("Cost piecewise points for generator g="+str(g)+
+                                " must contain the maximum output level="+str(max_output))
         return True
 
     model.ValidateCostPiecewisePoints = BuildCheck(model.ThermalGenerators, rule=validate_cost_piecewise_points_and_values_rule)
@@ -742,7 +749,7 @@ def load_params(model, model_data):
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
     # back in to the objective if a unit is on
     def minimum_production_cost(m, g):
-        if len(m.CostPiecewisePoints[g]) > 1:
+        if len(m.CostPiecewisePoints[g]) >= 1:
             return m.CostPiecewiseValues[g].first()
         else:
             return (m.ProductionCostA0[g] + \

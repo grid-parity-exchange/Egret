@@ -90,9 +90,7 @@ def _generate_model( model_data,
     ## munge ptdf_options, if necessary
     if _power_balance in ['ptdf_power_flow']:
         import egret.common.lazy_ptdf_utils as lpu
-        if _ptdf_options is None:
-            _ptdf_options = dict()
-        lpu.populate_default_ptdf_options(_ptdf_options)
+        _ptdf_options = lpu.populate_default_ptdf_options(_ptdf_options)
 
         baseMVA = model_data.data['system']['baseMVA']
         lpu.check_and_scale_ptdf_options(_ptdf_options, baseMVA)

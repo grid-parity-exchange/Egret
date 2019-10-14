@@ -114,7 +114,11 @@ def _build_attribute_to_array_func(time_indices):
         if attr is None:
             return None
         if isinstance(attr, dict):
-            return np.array([float(attr['values'][t]) for t in time_indices])
+            if isinstance(attr['values'], dict):
+                # For backwards compatibility
+                return np.array([float(attr['values'][t]) for t in time_indices])
+            else:
+                return np.array(attr['values'])
         else:
             return np.array([float(attr) for t in time_indices])
     return attribute_to_array

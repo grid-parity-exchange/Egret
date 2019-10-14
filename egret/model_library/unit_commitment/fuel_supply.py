@@ -11,7 +11,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr, build_uc_time_mapping
+from .uc_utils import add_model_attr, uc_time_helper 
 from .status_vars import _is_relaxed
 
 ## For now, this function will depend on having one of the production costs with
@@ -28,7 +28,7 @@ def fuel_supply_model(model):
 
     system = md.data['system']
     time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
+    TimeMapper = uc_time_helper
 
     ## instantaneous fuel supply model
     inst_fuel_supply_attrs = md.attributes(element_type='fuel_supply', fuel_supply_type='instantaneous')

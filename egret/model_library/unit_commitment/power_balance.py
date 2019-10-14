@@ -136,7 +136,7 @@ def _ptdf_dcopf_network_model(block,tm):
         
         ## NOTE: For now, just use a flat-start for unit commitment
         if PTDF is None:
-            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, branches_keys=branches_in_service, buses_keys=buses_idx)
+            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, branches_keys=branches_in_service, buses_keys=buses_idx)
 
         m._PTDFs[branches_out_service] = PTDF
 

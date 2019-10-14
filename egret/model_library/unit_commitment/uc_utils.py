@@ -40,34 +40,32 @@ def add_model_attr(attr, requires = {}):
 
 ## provides a view on grid_data attributes that
 ## is handy for building pyomo params
-def build_uc_time_mapping(md_timeperiods):
-    ## Assums the last key is time
-    def uc_time_helper(_data):
-        ## if there is no data,
-        ## we return None to the initializer
-        if _data is None:
+## Assums the last key is time
+def uc_time_helper(_data):
+    ## if there is no data,
+    ## we return None to the initializer
+    if _data is None:
+        return None
+    def init_rule(m, *key):
+        ## last key is time
+        pm_t = key[-1]
+        key = key[:-1]
+        if len(key) == 0:
+            return get_time_attr(_data, pm_t)
+        if len(key) == 1:
+            key = key[0]
+        if key in _data:
+            return get_time_attr(_data[key], pm_t)
+        else:
             return None
-        def init_rule(m, *key):
-            ## last key is time
-            pm_t = key[-1]
-            key = key[:-1]
-            if len(key) == 0:
-                return get_time_attr(_data, pm_t)
-            if len(key) == 1:
-                key = key[0]
-            if key in _data:
-                return get_time_attr(_data[key], pm_t)
-            else:
-                return None
 
-        def get_time_attr(att, pm_t):
-            if isinstance(att, dict):
-                if 'data_type' in att and att['data_type'] == 'time_series':
-                    return att['values'][md_timeperiods[pm_t-1]]
-                else:
-                    raise Exception("Unexpected dictionary {}".format(att))
+    def get_time_attr(att, pm_t):
+        if isinstance(att, dict):
+            if 'data_type' in att and att['data_type'] == 'time_series':
+                return att['values'][pm_t-1]
             else:
-                return att
+                raise Exception("Unexpected dictionary {}".format(att))
+        else:
+            return att
 
-        return init_rule
-    return uc_time_helper
+    return init_rule

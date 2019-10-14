@@ -172,11 +172,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     return model, md
 
 def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None):
-    
-    if ptdf_options is None:
-        ptdf_options = dict()
 
-    lpu.populate_default_ptdf_options(ptdf_options)
+    ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
     baseMVA = model_data.data['system']['baseMVA']
     lpu.check_and_scale_ptdf_options(ptdf_options, baseMVA)
@@ -249,7 +246,8 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
 
     PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_idx, buses_idx)
     if PTDF is None:
-        PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, base_point, branches_keys=branches_idx, buses_keys=buses_idx)
+        PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
+
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
 
@@ -302,23 +300,40 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
 
     return model, md
 
-def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
+def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
+    '''
+    The lazy PTDF DCOPF solver loop. This function iteratively
+    adds violated transmission constraints until either the result is
+    transmission feasible or we're tracking every violated constraint
+    in the model
+
+    Parameters
+    ----------
+    m : pyomo.environ.ConcreteModel
+        An egret DCOPF model with no transmission constraints
+    md : egret.data.ModelData
+        An egret ModelData object
+    solver : pyomo.opt.solver
+        A pyomo solver object
+    solver_tee : bool (optional)
+        For displaying the solver log (default is True)
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels when writing to the solver (default is False)
+    iteration_limit : int (optional)
+        Number of iterations before a hard termination (default is 100000)
+
+    Returns
+    -------
+    egret.common.lazy_ptdf_utils.LazyPTDFTerminationCondition : the termination status
+    pyomo.opt.results.SolverResults : The results object from the pyomo solver
+    int : The number of iterations before termination
+
+    '''
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
     PTDF = m._PTDF
 
     ptdf_options = m._ptdf_options
-
-    rel_flow_tol = ptdf_options['rel_flow_tol']
-    abs_flow_tol = ptdf_options['abs_flow_tol']
-    lazy_flow_tol = ptdf_options['lazy_rel_flow_tol']
-
-    branch_limits = PTDF.branch_limits_array
-
-    ## only enforce the relative and absolute, within tollerance
-    PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
-    ## make sure the lazy limits are a superset of the enforce limits
-    PTDF.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), PTDF.enforced_branch_limits)
 
     persistent_solver = isinstance(solver, PersistentSolver)
 
@@ -417,7 +432,7 @@ def solve_dcopf(model_data,
 
     if dcopf_model_generator == create_ptdf_dcopf_model and m._ptdf_options['lazy']:
         iter_limit = m._ptdf_options['iteration_limit']
-        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
+        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))

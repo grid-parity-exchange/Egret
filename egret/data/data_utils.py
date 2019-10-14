@@ -17,6 +17,7 @@ import numpy as np
 import egret.model_library.transmission.tx_calc as tx_calc
 
 from egret.model_library.defn import BasePointType, ApproximationType
+from egret.common.log import logger
 from math import radians
 
 def get_ptdf_potentially_from_file(ptdf_options, branches_keys, buses_keys):
@@ -39,10 +40,14 @@ def get_ptdf_potentially_from_file(ptdf_options, branches_keys, buses_keys):
             for key, PTDFo in PTDF_pickle.items():
                 if _is_consistent_ptdfm(PTDFo, branches_keys, buses_keys):
                     PTDF = PTDFo
+                    break
         ## could be a single ptdf dict
         else:
             if _is_consistent_ptdfm(PTDF_pickle, branches_keys, buses_keys):
                 PTDF = PTDF_pickle
+
+    if PTDF is not None:
+        PTDF._set_lazy_limits(ptdf_options)
 
     return PTDF
 
@@ -76,7 +81,7 @@ class PTDFMatrix(object):
     This is a helper 
     '''
     def __init__(self, branches, buses, reference_bus, base_point,
-                        branches_keys = None, buses_keys = None):
+                        ptdf_options, branches_keys = None, buses_keys = None):
         '''
         Creates a new _PTDFMaxtrixManager object to provide
         some useful methods for interfacing with Egret pyomo models
@@ -105,9 +110,7 @@ class PTDFMatrix(object):
         self._base_point = base_point
         self._calculate()
 
-        ## for lazy PTDF
-        self.enforced_branch_limits = None
-        self.lazy_branch_limits = None
+        self._set_lazy_limits(ptdf_options)
 
     def _calculate(self):
         self._calculate_ptdf()
@@ -154,6 +157,69 @@ class PTDFMatrix(object):
         ## protect the array using numpy
         self.phase_shift_array.flags.writeable = False
 
+
+    def _get_filtered_lines(self, ptdf_options):
+        if ptdf_options['branch_kv_threshold'] is None:
+            ## Nothing to do
+            self.branch_mask = np.arange(len(self.branch_limits_array))
+            self.branches_keys_masked = self.branches_keys
+            self.PTDFM_masked = self.PTDFM
+            self.phase_shift_array_masked = self.phase_shift_array
+            self.branch_limits_array_masked = self.branch_limits_array
+            return
+
+        branches = self._branches
+        buses = self._buses
+        branch_mask = list()
+        one = (ptdf_options['kv_threshold_type'] == 'one')
+        kv_limit = ptdf_options['branch_kv_threshold']
+
+        for i, bn in enumerate(self.branches_keys):
+            branch = branches[bn]
+            fb = buses[branch['from_bus']]
+
+            fbt = True
+            ## NOTE: this warning will be printed only once if we just check the from_bus
+            if 'base_kv' not in fb:
+                logger.warning("WARNING: did not find 'base_kv' for bus {}, considering it large for the purposes of filtering".format(branch['from_bus']))
+            elif fb['base_kv'] < kv_limit:
+                fbt = False
+
+            if fbt and one:
+                branch_mask.append(i)
+                continue
+
+            tb = buses[branch['to_bus']]
+            tbt = False
+            if ('base_kv' not in tb) or tb['base_kv'] >= kv_limit:
+                tbt = True
+
+            if fbt and tbt:
+                branch_mask.append(i)
+            elif one and tbt:
+                branch_mask.append(i)
+
+        self.branch_mask = np.array(branch_mask)
+        self.branches_keys_masked = tuple(self.branches_keys[i] for i in self.branch_mask)
+        self.PTDFM_masked = self.PTDFM[branch_mask]
+        self.phase_shift_array_masked = self.phase_shift_array[branch_mask]
+        self.branch_limits_array_masked = self.branch_limits_array[branch_mask]
+
+    def _set_lazy_limits(self, ptdf_options):
+        if ptdf_options['lazy']:
+            self._get_filtered_lines(ptdf_options)
+            ## add / reset the relative limits based on the current options
+            branch_limits = self.branch_limits_array_masked
+            rel_flow_tol = ptdf_options['rel_flow_tol']
+            abs_flow_tol = ptdf_options['abs_flow_tol']
+            lazy_flow_tol = ptdf_options['lazy_rel_flow_tol']
+
+            ## only enforce the relative and absolute, within tollerance
+            self.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+            ## make sure the lazy limits are a superset of the enforce limits
+            self.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), self.enforced_branch_limits)
+
+
     def get_branch_ptdf_iterator(self, branch_name):
         row_idx = self._branchname_to_index_map[branch_name]
         ## get the row slice
@@ -180,7 +246,6 @@ class PTDFMatrix(object):
 
     def bus_iterator(self):
         yield from self.buses_keys
-
 
 
 class PTDFLossesMatrix(PTDFMatrix):
