@@ -44,6 +44,7 @@ GENERATION_TYPES = {
     'W': GenerationType('Wind', '#4f94cd'),
     'S': GenerationType('Solar', '#ffb90f'),
     'SC': GenerationType('SynchCond', '#fff68f'),
+    'DF': GenerationType('Dual Fuel', '#b39eb5'),
     'Other': GenerationType('Other', '#886688'),
 }
 
@@ -63,6 +64,7 @@ BUILT_IN_FUEL_CODES = [
     ('Hydro', 'H'),
     ('Sync_Cond', 'SC'),
     ('Biomass', 'B'),
+    ('Dual Fuel', 'DF'),
     # To accomodate data that uses the codes directly
     ('Z', 'Z'),
     ('N', 'N'),
@@ -87,30 +89,15 @@ GENERATION_TYPE_SORT_KEY = {
     'Coal': 1,
     'Hydro': 2,
     'Gas': 3,
-    'Oil': 4,
-    'Sync_Cond': 5,
-    'Wind': 6,
-    'Solar': 7,
-    'Biomass': 8,
-    'Geothermal': 9,
-    'Battery': 10,
+    'Dual Fuel': 4,
+    'Oil': 5,
+    'Sync_Cond': 6,
+    'Wind': 7,
+    'Solar': 8,
+    'Biomass': 9,
+    'Geothermal': 10,
+    'Battery': 11,
     'Other': 999,
-}
-
-GENERATION_TYPE_SORT_KEY = {
-    'Nuclear': 0,
-    'Coal': 1,
-    'Hydro': 2,
-    'Gas': 3,
-    'NG': 3,
-    'Oil': 4,
-    'Sync_Cond': 5,
-    'Wind': 6,
-    'Solar': 7,
-    'PV': 7,
-    'Biomass': 8,
-    'Geothermal': 9,
-    'Battery': 10,
 }
 
 
@@ -127,9 +114,9 @@ def _build_attribute_to_array_func(time_indices):
         if attr is None:
             return None
         if isinstance(attr, dict):
-            return np.array([attr['values'][t] for t in time_indices])
+            return np.array([float(attr['values'][t]) for t in time_indices])
         else:
-            return np.array([attr for t in time_indices])
+            return np.array([float(attr) for t in time_indices])
     return attribute_to_array
 
 def generate_stack_graph(egret_model_data, bar_width=0.9, 
@@ -274,6 +261,10 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     continue
     
                 reported_fuel_type = generator_data['fuel']
+
+                # Check if dual fuel generator and override 'fuel' field with 'Dual Fuel'
+                if generator_data.get('aux_fuel_capable', False):
+                    reported_fuel_type = 'Dual Fuel'
 
                 # Match fuel type to one of pre-determined types or 'other'
                 fuel_type = GENERATION_TYPES[FUEL_TO_CODE[reported_fuel_type]].label
@@ -480,6 +471,10 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
+    # Explicitly set y-axis limits.
+    y_max = max(bottom)
+    ax.set_ylim(0, 1.05*y_max)
+
     ax.set_title(title)
     ax.set_ylabel('Power [MW]')
     ax.set_xlabel('Time')
@@ -494,7 +489,7 @@ def main():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
-    TEST_WITH_RTS_GMLC = True
+    TEST_WITH_RTS_GMLC = False
 
     if TEST_WITH_RTS_GMLC:
         # Test using RTS-GMLC case, if available
@@ -531,30 +526,33 @@ def main():
         ## Test using built-in unit commitment unit test case(s)
         from egret.data.model_data import ModelData
 
-        test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1, 6)]
+        with open(os.path.join(current_dir, 'tests', 'SOL_RTSGMLC-2020-08-10-2020-08-11_ev_A1A2A3_DFcas_A.json'), 'r') as f:
+            solved_md = ModelData(json.load(f))
 
-        for test_case in test_cases:   
-            with open(test_case, 'r') as f:
-                md_dict = json.load(f)
-            md = ModelData(md_dict)
+        # test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1, 6)]
 
-            solved_md = solve_unit_commitment(md,
-                            'cbc',
-                            mipgap = 0.001,
-                            timelimit = None,
-                            solver_tee = True,
-                            symbolic_solver_labels = False,
-                            options = None,
-                            uc_model_generator=create_tight_unit_commitment_model,
-                            relaxed=False,
-                            return_model=False)
+        # for test_case in test_cases:   
+        #     with open(test_case, 'r') as f:
+        #         md_dict = json.load(f)
+        #     md = ModelData(md_dict)
 
-            fig, ax = generate_stack_graph(
-                solved_md, 
-                title=repr(test_case),
-                show_individual_components=False,
-                plot_individual_generators=False,
-            )
+        #     solved_md = solve_unit_commitment(md,
+        #                     'cbc',
+        #                     mipgap = 0.001,
+        #                     timelimit = None,
+        #                     solver_tee = True,
+        #                     symbolic_solver_labels = False,
+        #                     options = None,
+        #                     uc_model_generator=create_tight_unit_commitment_model,
+        #                     relaxed=False,
+        #                     return_model=False)
+
+        fig, ax = generate_stack_graph(
+            solved_md, 
+            title='test',
+            show_individual_components=False,
+            plot_individual_generators=False,
+        )
     
     plt.show()
 
