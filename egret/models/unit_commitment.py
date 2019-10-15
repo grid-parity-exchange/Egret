@@ -28,8 +28,6 @@ import numpy as np
 
 def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
     formulation = UCFormulation(*formulation_list)
-    md = model_data.clone_in_service()
-    scale_ModelData_to_pu(md, inplace=True)
     return generate_model(md, formulation, relax_binaries, **kwargs)
 
 def create_tight_unit_commitment_model(model_data,

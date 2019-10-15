@@ -79,6 +79,8 @@ def _generate_model( model_data,
                     _ptdf_options = None,
                     ):
 
+    md = model_data.clone_in_service()
+    scale_ModelData_to_pu(md, inplace=True)
     
     model = pe.ConcreteModel()
 
