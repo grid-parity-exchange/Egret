@@ -56,6 +56,8 @@ def populate_default_ptdf_options(ptdf_options):
         ptdf_options['branch_kv_threshold'] = None
     if 'kv_threshold_type' not in ptdf_options:
         ptdf_options['kv_threshold_type'] = 'one'
+    if 'pre_lp_phase' not in ptdf_options:
+        ptdf_options['pre_lp_phase'] = True
     return ptdf_options
 
 def check_and_scale_ptdf_options(ptdf_options, baseMVA):
@@ -103,14 +105,51 @@ def add_monitored_branch_tracker(mb):
     mb._lt_idx_monitored = list()
     mb._gt_idx_monitored = list()
 
-## violation checker
-def check_violations(mb, md, PTDF, max_viol_add, time=None):
-
+def calculate_PFV(mb, PTDF):
     NWV = np.fromiter((pe.value(mb.p_nw[b]) for b in PTDF.bus_iterator()), float, count=len(PTDF.buses_keys))
     NWV += PTDF.phi_adjust_array
 
     PFV  = PTDF.PTDFM_masked.dot(NWV)
     PFV += PTDF.phase_shift_array_masked
+
+    return PFV
+
+
+def copy_active_to_next_time(m, b_next, PTDF_next, slacks_ub, slacks_lb):
+    ##TODO: option-drive this, now
+    ##      1 MW
+    active_slack_tol = 0
+
+    ## TODO: this is just for reporting here,
+    ##       so this is potentially a bit wasteful
+    PFV = calculate_PFV(b_next, PTDF_next)
+
+    branchname_index_map= PTDF_next.branchname_to_index_masked_map
+
+    lt_viol_lazy = list()
+    gt_viol_lazy = list()
+
+    for (bn, constr), slack in slacks_lb.items():
+        if slack <= active_slack_tol:
+            ## in case the topology has changed
+            if bn in branchname_index_map:
+                lt_viol_lazy.append(branchname_index_map[bn])
+    for (bn, constr), slack in slacks_ub.items():
+        if slack <= active_slack_tol:
+            ## in case the topology has changed
+            if bn in branchname_index_map:
+                gt_viol_lazy.append(branchname_index_map[bn])
+
+    lt_viol_lazy = set(lt_viol_lazy)
+    gt_viol_lazy = set(gt_viol_lazy)
+
+    return PFV, gt_viol_lazy, lt_viol_lazy
+
+
+## violation checker
+def check_violations(mb, md, PTDF, max_viol_add, time=None):
+
+    PFV = calculate_PFV(mb, PTDF)
 
     ## calculate the lazy violations
     gt_viol_lazy_array = PFV - PTDF.lazy_branch_limits

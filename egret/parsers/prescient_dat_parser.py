@@ -62,7 +62,7 @@ def create_model_data_dict(dat_file):
             system['reference_bus'] = b
             system['reference_bus_angle'] = 0.0
             set_reference = False
-        bus_dict[b] = {}
+        bus_dict[b] = {'base_kv' : params.BusKV[b]}
         for g in params.ThermalGeneratorsAtBus[b]:
             gen_bus_dict[g] = b
         for n in params.NondispatchableGeneratorsAtBus[b]:
@@ -272,6 +272,8 @@ def load_basic_data(model):
         else:
             return 0.0
     model.LoadFactor = Param(model.Buses, initialize=load_factors_per_bus, within=NonNegativeReals)
+
+    model.BusKV = Param(model.Buses, default=1000.)
     
     ################################
     
