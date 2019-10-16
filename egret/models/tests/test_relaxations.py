@@ -29,32 +29,26 @@ except ImportError:
 current_dir = os.path.dirname(os.path.abspath(__file__))
 case_names = ['pglib_opf_case3_lmbd',
               'pglib_opf_case5_pjm',
+              'pglib_opf_case14_ieee',
               'pglib_opf_case30_fsr',
               'pglib_opf_case30_ieee',
               'pglib_opf_case39_epri',
-              'pglib_opf_case162_ieee_dtc',
-              'pglib_opf_case179_goc',
-              'pglib_opf_case240_pserc',
-              'pglib_opf_case300_ieee']
+              'pglib_opf_case57_ieee']
 test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
 upper_bounds = {'pglib_opf_case3_lmbd': 5812.6,
                 'pglib_opf_case5_pjm': 1.7552e+04,
+                'pglib_opf_case14_ieee': 2.1781e03,
                 'pglib_opf_case30_fsr': 5.7577e+02,
                 'pglib_opf_case30_ieee': 8.2085e+03,
                 'pglib_opf_case39_epri': 1.3842e+05,
-                'pglib_opf_case162_ieee_dtc': 1.0808e+05,
-                'pglib_opf_case179_goc': 7.5427e+05,
-                'pglib_opf_case240_pserc': 3.3297e+06,
-                'pglib_opf_case300_ieee': 5.6522e+05}
+                'pglib_opf_case57_ieee': 3.7589e04}
 gaps = {'pglib_opf_case3_lmbd': 1.32,
         'pglib_opf_case5_pjm': 14.55,
+        'pglib_opf_case14_ieee': 0.11,
         'pglib_opf_case30_fsr': 0.39,
         'pglib_opf_case30_ieee': 18.84,
         'pglib_opf_case39_epri': 0.56,
-        'pglib_opf_case162_ieee_dtc': 5.95,
-        'pglib_opf_case179_goc': 0.16,
-        'pglib_opf_case240_pserc': 2.78,
-        'pglib_opf_case300_ieee': 2.63}
+        'pglib_opf_case57_ieee': 0.16}
 
 
 class TestSOC(unittest.TestCase):
