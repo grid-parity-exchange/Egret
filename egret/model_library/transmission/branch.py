@@ -19,6 +19,13 @@ from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
 from egret.data.model_data import zip_items
 from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
+from collections import OrderedDict
+try:
+    import coramin
+    coramin_available = True
+except ImportError:
+    coramin_available = False
+
 
 def declare_var_dva(model, index_set, **kwargs):
     """
@@ -42,12 +49,14 @@ def declare_var_pf(model, index_set, **kwargs):
     """
     decl.declare_var('pf', model=model, index_set=index_set, **kwargs)
 
+
 def declare_expr_pf(model, index_set, **kwargs):
     """
     Create expression for the real part of the power flow in the "from"
     end of the transmission line
     """
     decl.declare_expr('pf', model=model, index_set=index_set, **kwargs)
+
 
 def declare_var_qf(model, index_set, **kwargs):
     """
@@ -164,6 +173,60 @@ def declare_expr_s(model, index_set, coordinate_type=CoordinateType.POLAR):
             m.s[(from_bus,to_bus)] = m.vm[from_bus]*m.vm[to_bus]*pe.sin(m.va[from_bus]-m.va[to_bus])
 
 
+def declare_var_c(model, index_set, **kwargs):
+    """
+    Create an auxiliary variable for vf * vt * cos(theta_f - theta_t)
+    """
+    decl.declare_var('c', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_s(model, index_set, **kwargs):
+    """
+    Create an auxiliary variable for vf * vt * sin(theta_f - theta_t)
+    """
+    decl.declare_var('s', model=model, index_set=index_set, **kwargs)
+
+
+def declare_eq_c(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create a constraint relating c to the voltages
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_c', model, index_set)
+    m.eq_c = pe.Constraint(con_set)
+
+    if coordinate_type == CoordinateType.POLAR:
+        for from_bus, to_bus in con_set:
+            m.eq_c[(from_bus, to_bus)] = (m.c[(from_bus, to_bus)] ==
+                                          m.vm[from_bus] * m.vm[to_bus] * pe.cos(m.va[from_bus] - m.va[to_bus]))
+    elif coordinate_type == CoordinateType.RECTANGULAR:
+        for from_bus, to_bus in con_set:
+            m.eq_c[(from_bus, to_bus)] = (m.c[(from_bus, to_bus)] ==
+                                          m.vr[from_bus] * m.m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus])
+    else:
+        raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
+
+
+def declare_eq_s(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create a constraint relating s to the voltages
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_s', model, index_set)
+    m.eq_s = pe.Constraint(con_set)
+
+    if coordinate_type == CoordinateType.POLAR:
+        for from_bus, to_bus in con_set:
+            m.eq_s[(from_bus, to_bus)] = (m.s[(from_bus, to_bus)] ==
+                                          m.vm[from_bus] * m.vm[to_bus] * pe.sin(m.va[from_bus] - m.va[to_bus]))
+    elif coordinate_type == CoordinateType.RECTANGULAR:
+        for from_bus, to_bus in con_set:
+            m.eq_s[(from_bus, to_bus)] = (m.s[(from_bus, to_bus)] ==
+                                          m.vj[from_bus] * m.m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
+    else:
+        raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
+
+
 def declare_eq_branch_current(model, index_set, branches, coordinate_type=CoordinateType.RECTANGULAR):
     """
     Create the equality constraints for the real and imaginary current
@@ -222,18 +285,12 @@ def declare_eq_branch_current(model, index_set, branches, coordinate_type=Coordi
             -(g21 * m.vj[from_bus] - g22 * m.vj[to_bus] + (b21 * m.vr[from_bus] - b22 * m.vr[to_bus]))
 
 
-def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate_type=CoordinateType.POLAR):
+def declare_eq_branch_power(model, index_set, branches):
     """
     Create the equality constraints for the real and reactive power
     in the branch
     """
     m = model
-
-    bus_pairs = zip_items(branch_attrs['from_bus'],branch_attrs['to_bus'])
-    unique_bus_pairs = list(set([val for idx,val in bus_pairs.items()]))
-    declare_expr_c(model,unique_bus_pairs,coordinate_type)
-    declare_expr_s(model,unique_bus_pairs,coordinate_type)
-
     con_set = decl.declare_set("_con_eq_branch_power_set", model, index_set)
 
     m.eq_pf_branch = pe.Constraint(con_set)
@@ -245,13 +302,8 @@ def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate
 
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
-
-        if coordinate_type == CoordinateType.POLAR:
-            vmsq_from_bus = m.vm[from_bus]**2
-            vmsq_to_bus = m.vm[to_bus] ** 2
-        elif coordinate_type == CoordinateType.RECTANGULAR:
-            vmsq_from_bus = m.vr[from_bus]**2 + m.vj[from_bus]**2
-            vmsq_to_bus = m.vr[to_bus] ** 2 + m.vj[to_bus] ** 2
+        vmsq_from_bus = m.vmsq[from_bus]
+        vmsq_to_bus = m.vmsq[to_bus]
 
         g = tx_calc.calculate_conductance(branch)
         b = tx_calc.calculate_susceptance(branch)
@@ -304,6 +356,46 @@ def declare_eq_branch_power(model, index_set, branches, branch_attrs, coordinate
              b21 * m.s[(from_bus,to_bus)] +
              g12 * m.s[(from_bus,to_bus)] -
              g21 * m.c[(from_bus,to_bus)])
+
+
+def declare_ineq_soc(model, index_set, use_outer_approximation=False):
+    """
+    create the constraint for the second order cone
+    """
+    m = model
+    if not use_outer_approximation:
+        con_set = decl.declare_set("_con_ineq_soc", model, index_set)
+        m.ineq_soc = pe.Constraint(con_set)
+        for from_bus, to_bus in con_set:
+            m.ineq_soc[(from_bus, to_bus)] = m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 <= m.vmsq[from_bus] * m.vmsq[to_bus]
+    else:
+        if not coramin_available:
+            raise ImportError('Cannot create SOC relaxation with outer approximation unless coramin is available.')
+        """
+        in order to use outer approximation, we have to reformulate 
+        
+        c**2 + s**2 <= vmsq[from_bus] * vmsq[to_bus]
+        
+        to
+        
+        (c**2 + s**2 + z1**2) ** 0.5 <= z2
+        z1 = 0.5 * (vmsq[from_bus] - vmsq[to_bus])
+        z2 = 0.5 * (vmsq[from_bus] + vmsq[to_bus]) 
+        """
+        con_set = decl.declare_set("_con_ineq_soc", model, index_set)
+        decl.declare_var('_z1', model=model, index_set=con_set)
+        decl.declare_var('_z2', model=model, index_set=con_set)
+        m._eq_z1 = pe.Constraint(con_set)
+        m._eq_z2 = pe.Constraint(con_set)
+        m.ineq_soc_OA = coramin.relaxations.MultivariateRelaxation(con_set)
+        for from_bus, to_bus in con_set:
+            m._eq_z1[from_bus, to_bus] = m._z1[from_bus, to_bus] == 0.5 * (m.vmsq[from_bus] - m.vmsq[to_bus])
+            m._eq_z2[from_bus, to_bus] = m._z2[from_bus, to_bus] == 0.5 * (m.vmsq[from_bus] + m.vmsq[to_bus])
+            m.ineq_soc_OA[from_bus, to_bus].build(aux_var=m._z2[from_bus, to_bus],
+                                                  shape=coramin.utils.FunctionShape.CONVEX,
+                                                  f_x_expr=(m.c[from_bus, to_bus]**2 +
+                                                            m.s[from_bus, to_bus]**2 +
+                                                            m._z1[from_bus, to_bus]**2)**0.5)
 
 
 def declare_eq_branch_power_btheta_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):
@@ -493,6 +585,7 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None
                 m.pfl[branch_name] == expr
         else:
             m.pfl[branch_name] = expr
+
 
 def declare_ineq_s_branch_thermal_limit(model, index_set,
                                         branches, s_thermal_limits,
