@@ -344,7 +344,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     # Assign a hatching symbol to indicate the generation was on auxiliary fuel. This gets augmented for quickstart generators, if applicable.
                     hatch_symbol = {}
                     hatch_symbol['primary'] = ''
-                    hatch_symbol['aux'] = '/..'
+                    hatch_symbol['aux'] = '-..'
 
                     for operation_type in ['primary', 'aux']:
                         _, l = ax.get_legend_handles_labels()
