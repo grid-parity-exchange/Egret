@@ -23,6 +23,14 @@ font = {'family' : 'sans-serif',
         }
 mpl.rc('font', **font)
 
+HATCH_SYMBOL = {}
+'''Look-up dictionary for which hatching symbols to use for each generator output type.
+'''
+HATCH_SYMBOL['primary'] = ''
+HATCH_SYMBOL['aux'] = '..'
+HATCH_SYMBOL['quickstart'] = '//'
+HATCH_SYMBOL['not quickstart'] = ''
+
 
 GenerationType = namedtuple('GenerationType',
                             [
@@ -199,6 +207,10 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
 
                 reported_fuel_type = generator_data['fuel']
 
+                # Check if dual fuel generator and override 'fuel' field with 'Dual Fuel'
+                if generator_data.get('aux_fuel_capable', False):
+                    reported_fuel_type = 'Dual Fuel'
+
                 # Match fuel type to one of pre-determined types or 'other'
                 fuel_type = GENERATION_TYPES[FUEL_TO_CODE[reported_fuel_type]].label
 
@@ -208,12 +220,27 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     quickstart_label = 'quickstart'
                 else:
                     quickstart_label = 'not quickstart'
-        
-                try:
-                    generator_generation_by_fuel_type[fuel_type].append((pg_array, quickstart_label))
-                except KeyError:
-                    generator_generation_by_fuel_type[fuel_type] = []
-                    generator_generation_by_fuel_type[fuel_type].append((pg_array, quickstart_label))
+                
+                if reported_fuel_type == 'Dual Fuel':
+                    aux_fuel_consumed = attribute_to_array(generator_data['aux_fuel_consumed'])
+
+                    aux_pg_array = np.array([pg if aux_fuel_consumed[ix] > 0 else 0 for ix, pg in enumerate(pg_array)])
+
+                    primary_pg_array = np.array([pg if np.isclose(aux_fuel_consumed[ix],  0) else 0 for ix, pg in enumerate(pg_array)])
+
+                    try:
+                        generator_generation_by_fuel_type[fuel_type].append((primary_pg_array, 'primary', quickstart_label))
+                        generator_generation_by_fuel_type[fuel_type].append((aux_pg_array, 'aux', quickstart_label))
+                    except KeyError:
+                        generator_generation_by_fuel_type[fuel_type] = []
+                        generator_generation_by_fuel_type[fuel_type].append((primary_pg_array, 'primary', quickstart_label))
+                        generator_generation_by_fuel_type[fuel_type].append((aux_pg_array, 'aux', quickstart_label))
+                else:
+                    try:
+                        generator_generation_by_fuel_type[fuel_type].append((pg_array, quickstart_label))
+                    except KeyError:
+                        generator_generation_by_fuel_type[fuel_type] = []
+                        generator_generation_by_fuel_type[fuel_type].append((pg_array, quickstart_label))
             
             sorted_total_generation_by_fuel_type = sorted(generator_generation_by_fuel_type.items(), key=lambda x: GENERATION_TYPE_SORT_KEY.get(x[0], 1e3))
 
@@ -233,28 +260,44 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 else:
                     sorted_generator_output_levels = sorted(generator_output_levels, key=lambda x: x[-1] == 'quickstart')
 
-                    for ix, output_level_tuple in enumerate(sorted_generator_output_levels, start=0):
-                        output_level_array = output_level_tuple[0]
-                        is_quickstart = True if output_level_tuple[-1] == 'quickstart' else False
+                    if not (generation_type == 'Dual Fuel'):
+                        for output_level_tuple in sorted_generator_output_levels:
+                            output_level_array = output_level_tuple[0]
+                            quickstart_label = output_level_tuple[-1]
 
-                        if is_quickstart:
-                            if ix == 0:
-                                ax.bar(indices, output_level_array, bar_width, bottom=bottom, color=component_color, label=component_label,
-                                    hatch='//',
-                                    edgecolor='#FFFFFF', linewidth=0.5)
-                            else:
-                                ax.bar(indices, output_level_array, bar_width, bottom=bottom, color=component_color,
-                                    hatch='//',
-                                    edgecolor='#FFFFFF', linewidth=0.5)
-                        else:
-                            if ix == 0:
-                                ax.bar(indices, output_level_array, bar_width, bottom=bottom, color=component_color, label=component_label,
-                                    edgecolor='#FFFFFF', linewidth=0.5)
-                            else:
-                                ax.bar(indices, output_level_array, bar_width, bottom=bottom, color=component_color,
-                                    edgecolor='#FFFFFF', linewidth=0.5)
+                            _, l = ax.get_legend_handles_labels()
+                            if component_label in l:
+                                component_label = ''
 
-                        bottom += output_level_array
+                            ax.bar(indices, output_level_array, bar_width, bottom=bottom, 
+                                color=component_color, 
+                                label=component_label,
+                                hatch=HATCH_SYMBOL[quickstart_label],
+                                edgecolor='#FFFFFF', linewidth=0.5
+                            )
+
+                            bottom += output_level_array
+                    else:
+                        # Dual Fuel
+                        aux_fuel_status_sorted_levels = sorted(sorted_generator_output_levels, key=lambda x: x[-2] == 'aux')
+
+                        for output_level_tuple in aux_fuel_status_sorted_levels:
+                            output_level_array = output_level_tuple[0]
+                            quickstart_label = output_level_tuple[-1]
+                            operation_type = output_level_tuple[-2]
+
+                            _, l = ax.get_legend_handles_labels()
+                            if component_label in l:
+                                component_label = ''
+
+                            ax.bar(indices, output_level_array, bar_width, bottom=bottom, 
+                                color=component_color, 
+                                label=component_label,
+                                hatch=HATCH_SYMBOL[operation_type] + HATCH_SYMBOL[quickstart_label],
+                                edgecolor='#FFFFFF', linewidth=0.5
+                            )
+
+                            bottom += output_level_array                        
         else:    
             total_generation_by_fuel_type = {}
 
@@ -318,65 +361,39 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     component_color = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].color
                 
                 if not (generation_type == 'Dual Fuel'):
-                    # Non-quickstart.
-                    try:
-                        component_values = total_generation_array['not quickstart']
-                    except KeyError:
-                        pass
-                    else:
-                        ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, label=component_label,
-                            linewidth=0)
-                        bottom += component_values
-
-                    # Quickstart.
-                    try:
-                        component_values = total_generation_array['quickstart']
-                    except KeyError:
-                        pass
-                    else:
-                        ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, label=component_label,
-                            hatch='/',
-                            linewidth=0)
-                        bottom += component_values
+                    for quickstart_label in ['not quickstart', 'quickstart']:
+                        try:
+                            component_values = total_generation_array[quickstart_label]
+                        except KeyError:
+                            continue
+                        else:
+                            ax.bar(indices, component_values, bar_width, bottom=bottom,
+                                color=component_color, 
+                                label=component_label,
+                                hatch=HATCH_SYMBOL[quickstart_label],
+                                linewidth=0
+                            )
+                            bottom += component_values
                 else:
                     # Plot the share of dual fuel generation on primary fuel, then the share that is on any portion of auxiliary fuel.
-
-                    # Assign a hatching symbol to indicate the generation was on auxiliary fuel. This gets augmented for quickstart generators, if applicable.
-                    hatch_symbol = {}
-                    hatch_symbol['primary'] = ''
-                    hatch_symbol['aux'] = '-..'
-
                     for operation_type in ['primary', 'aux']:
                         _, l = ax.get_legend_handles_labels()
                         if component_label in l:
                             component_label = ''
-
-                        # Non-quickstart.
-                        try:
-                            component_values = total_generation_array['not quickstart'][operation_type]
-                        except KeyError:
-                            pass
-                        else:
-                            ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, 
-                            label=component_label,
-                            hatch=hatch_symbol[operation_type],
-                            linewidth=0
-                            )
-                            bottom += component_values
-
-                        # Quickstart.
-                        try:
-                            component_values = total_generation_array['quickstart'][operation_type]
-                        except KeyError:
-                            pass
-                        else:
-                            ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, 
-                            label=component_label,
-                            hatch='/'+hatch_symbol[operation_type],
-                            linewidth=0
-                            )
-                            bottom += component_values
-        
+                        
+                        for quickstart_label in ['not quickstart', 'quickstart']:
+                            try:
+                                component_values = total_generation_array[quickstart_label][operation_type]
+                            except KeyError:
+                                continue
+                            else:
+                                ax.bar(indices, component_values, bar_width, bottom=bottom,
+                                    color=component_color, 
+                                    label=component_label,
+                                    hatch=HATCH_SYMBOL[quickstart_label] + HATCH_SYMBOL[operation_type],
+                                    linewidth=0
+                                )
+                                bottom += component_values        
         return bottom
 
     fig, ax = plt.subplots(figsize=(16, 8))
@@ -607,7 +624,7 @@ def main():
             fig, ax = generate_stack_graph(
                 solved_md, 
                 title=test_case,
-                show_individual_components=False,
+                show_individual_components=True,
                 plot_individual_generators=False,
                 x_tick_frequency=4,
             )
