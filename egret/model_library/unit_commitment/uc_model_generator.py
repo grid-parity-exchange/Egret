@@ -18,7 +18,7 @@ from egret.model_library.unit_commitment import \
         uptime_downtime, startup_costs, \
         services, power_balance, reserve_requirement, \
         objective, fuel_supply, fuel_consumption
-
+from egret.model_library.transmission.tx_utils import scale_ModelData_to_pu
 from collections import namedtuple
 import pyomo.environ as pe
 
@@ -60,7 +60,9 @@ def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_optio
                                       from model_data
     """
 
-    return _generate_model( model_data, *_get_formulation_from_UCFormulation( uc_formulation ), relax_binaries , ptdf_options )
+    md = model_data.clone_in_service()
+    scale_ModelData_to_pu(md, inplace=True)
+    return _generate_model( md, *_get_formulation_from_UCFormulation( uc_formulation ), relax_binaries , ptdf_options )
 
 def _generate_model( model_data,
                     _status_vars,
@@ -78,7 +80,6 @@ def _generate_model( model_data,
                     _relax_binaries = False,
                     _ptdf_options = None,
                     ):
-
     
     model = pe.ConcreteModel()
 

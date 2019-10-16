@@ -17,8 +17,7 @@ unit commitment formulations
 from egret.model_library.unit_commitment.uc_model_generator \
         import UCFormulation, generate_model 
 from egret.common.log import logger
-from egret.model_library.transmission.tx_utils import \
-        scale_ModelData_to_pu, unscale_ModelData_to_pu
+from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 
 import egret.common.lazy_ptdf_utils as lpu
@@ -28,9 +27,7 @@ import numpy as np
 
 def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
     formulation = UCFormulation(*formulation_list)
-    md = model_data.clone_in_service()
-    scale_ModelData_to_pu(md, inplace=True)
-    return generate_model(md, formulation, relax_binaries, **kwargs)
+    return generate_model(model_data, formulation, relax_binaries, **kwargs)
 
 def create_tight_unit_commitment_model(model_data,
                                        network_constraints='ptdf_power_flow',
