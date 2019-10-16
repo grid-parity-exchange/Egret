@@ -44,6 +44,7 @@ GENERATION_TYPES = {
     'W': GenerationType('Wind', '#4f94cd'),
     'S': GenerationType('Solar', '#ffb90f'),
     'SC': GenerationType('SynchCond', '#fff68f'),
+    'DF': GenerationType('Dual Fuel', '#b39eb5'),
     'Other': GenerationType('Other', '#886688'),
 }
 
@@ -63,6 +64,7 @@ BUILT_IN_FUEL_CODES = [
     ('Hydro', 'H'),
     ('Sync_Cond', 'SC'),
     ('Biomass', 'B'),
+    ('Dual Fuel', 'DF'),
     # To accomodate data that uses the codes directly
     ('Z', 'Z'),
     ('N', 'N'),
@@ -87,13 +89,14 @@ GENERATION_TYPE_SORT_KEY = {
     'Coal': 1,
     'Hydro': 2,
     'Gas': 3,
-    'Oil': 4,
-    'Sync_Cond': 5,
-    'Wind': 6,
-    'Solar': 7,
-    'Biomass': 8,
-    'Geothermal': 9,
-    'Battery': 10,
+    'Dual Fuel': 4,
+    'Oil': 5,
+    'Sync_Cond': 6,
+    'Wind': 7,
+    'Solar': 8,
+    'Biomass': 9,
+    'Geothermal': 10,
+    'Battery': 11,
     'Other': 999,
 }
 
@@ -111,9 +114,13 @@ def _build_attribute_to_array_func(time_indices):
         if attr is None:
             return None
         if isinstance(attr, dict):
-            return np.array(attr['values'])
+            if isinstance(attr['values'], dict):
+                # For backwards compatibility
+                return np.array([float(attr['values'][t]) for t in time_indices])
+            else:
+                return np.array(attr['values'])
         else:
-            return np.array([attr for t in time_indices])
+            return np.array([float(attr) for t in time_indices])
     return attribute_to_array
 
 def generate_stack_graph(egret_model_data, bar_width=0.9, 
@@ -259,6 +266,10 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     
                 reported_fuel_type = generator_data['fuel']
 
+                # Check if dual fuel generator and override 'fuel' field with 'Dual Fuel'
+                if generator_data.get('aux_fuel_capable', False):
+                    reported_fuel_type = 'Dual Fuel'
+
                 # Match fuel type to one of pre-determined types or 'other'
                 fuel_type = GENERATION_TYPES[FUEL_TO_CODE[reported_fuel_type]].label
 
@@ -269,11 +280,28 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 else:
                     quickstart_label = 'not quickstart'
         
-                try:
-                    total_generation_by_fuel_type[fuel_type][quickstart_label] += pg_array
-                except KeyError:
-                    total_generation_by_fuel_type[fuel_type] = {}
-                    total_generation_by_fuel_type[fuel_type][quickstart_label] = pg_array
+                if reported_fuel_type == 'Dual Fuel':
+                    aux_fuel_consumed = attribute_to_array(generator_data['aux_fuel_consumed'])
+
+                    aux_pg_array = np.array([pg if aux_fuel_consumed[ix] > 0 else 0 for ix, pg in enumerate(pg_array)])
+
+                    primary_pg_array = np.array([pg if np.isclose(aux_fuel_consumed[ix],  0) else 0 for ix, pg in enumerate(pg_array)])
+
+                    try:
+                        # total_generation_by_fuel_type[fuel_type][quickstart_label] += primary_pg_array
+                        total_generation_by_fuel_type[fuel_type][quickstart_label]['primary'] += primary_pg_array
+                        total_generation_by_fuel_type[fuel_type][quickstart_label]['aux'] += aux_pg_array
+                    except KeyError:
+                        total_generation_by_fuel_type[fuel_type] = {}
+                        total_generation_by_fuel_type[fuel_type][quickstart_label] = {}
+                        total_generation_by_fuel_type[fuel_type][quickstart_label]['primary'] = primary_pg_array
+                        total_generation_by_fuel_type[fuel_type][quickstart_label]['aux'] = aux_pg_array
+                else:
+                    try:
+                        total_generation_by_fuel_type[fuel_type][quickstart_label] += pg_array
+                    except KeyError:
+                        total_generation_by_fuel_type[fuel_type] = {}
+                        total_generation_by_fuel_type[fuel_type][quickstart_label] = pg_array
 
             # Plot each bar stack component.
             sorted_total_generation_by_fuel_type = sorted(total_generation_by_fuel_type.items(), key=lambda x: GENERATION_TYPE_SORT_KEY.get(x[0], 1e3))
@@ -288,27 +316,66 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     component_color = GENERATION_TYPES[generation_type].color
                 except KeyError:
                     component_color = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].color
+                
+                if not (generation_type == 'Dual Fuel'):
+                    # Non-quickstart.
+                    try:
+                        component_values = total_generation_array['not quickstart']
+                    except KeyError:
+                        pass
+                    else:
+                        ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, label=component_label,
+                            linewidth=0)
+                        bottom += component_values
 
-                # Non-quickstart.
-                try:
-                    component_values = total_generation_array['not quickstart']
-                except KeyError:
-                    pass
+                    # Quickstart.
+                    try:
+                        component_values = total_generation_array['quickstart']
+                    except KeyError:
+                        pass
+                    else:
+                        ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, label=component_label,
+                            hatch='/',
+                            linewidth=0)
+                        bottom += component_values
                 else:
-                    ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, label=component_label,
-                        linewidth=0)
-                    bottom += component_values
+                    # Plot the share of dual fuel generation on primary fuel, then the share that is on any portion of auxiliary fuel.
 
-                # Quickstart.
-                try:
-                    component_values = total_generation_array['quickstart']
-                except KeyError:
-                    pass
-                else:
-                    ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, label=component_label,
-                        hatch='//',
-                        linewidth=0)
-                    bottom += component_values
+                    # Assign a hatching symbol to indicate the generation was on auxiliary fuel. This gets augmented for quickstart generators, if applicable.
+                    hatch_symbol = {}
+                    hatch_symbol['primary'] = ''
+                    hatch_symbol['aux'] = '/..'
+
+                    for operation_type in ['primary', 'aux']:
+                        _, l = ax.get_legend_handles_labels()
+                        if component_label in l:
+                            component_label = ''
+
+                        # Non-quickstart.
+                        try:
+                            component_values = total_generation_array['not quickstart'][operation_type]
+                        except KeyError:
+                            pass
+                        else:
+                            ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, 
+                            label=component_label,
+                            hatch=hatch_symbol[operation_type],
+                            linewidth=0
+                            )
+                            bottom += component_values
+
+                        # Quickstart.
+                        try:
+                            component_values = total_generation_array['quickstart'][operation_type]
+                        except KeyError:
+                            pass
+                        else:
+                            ax.bar(indices, component_values, bar_width, bottom=bottom, color=component_color, 
+                            label=component_label,
+                            hatch='/'+hatch_symbol[operation_type],
+                            linewidth=0
+                            )
+                            bottom += component_values
         
         return bottom
 
@@ -464,6 +531,10 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
+    # Explicitly set y-axis limits.
+    y_max = max(bottom)
+    ax.set_ylim(0, 1.05*y_max)
+
     ax.set_title(title)
     ax.set_ylabel('Power [MW]')
     ax.set_xlabel('Time')
@@ -478,7 +549,7 @@ def main():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
-    TEST_WITH_RTS_GMLC = True
+    TEST_WITH_RTS_GMLC = False
 
     if TEST_WITH_RTS_GMLC:
         # Test using RTS-GMLC case, if available
@@ -515,7 +586,7 @@ def main():
         ## Test using built-in unit commitment unit test case(s)
         from egret.data.model_data import ModelData
 
-        test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1, 6)]
+        test_cases = [os.path.join(current_dir, '..', 'models', 'tests', 'uc_test_instances', 'tiny_uc_{}.json'.format(i)) for i in range(1, 7)]
 
         for test_case in test_cases:   
             with open(test_case, 'r') as f:
@@ -523,7 +594,7 @@ def main():
             md = ModelData(md_dict)
 
             solved_md = solve_unit_commitment(md,
-                            'cbc',
+                            'gurobi',
                             mipgap = 0.001,
                             timelimit = None,
                             solver_tee = True,
@@ -535,9 +606,10 @@ def main():
 
             fig, ax = generate_stack_graph(
                 solved_md, 
-                title=repr(test_case),
+                title=test_case,
                 show_individual_components=False,
                 plot_individual_generators=False,
+                x_tick_frequency=4,
             )
     
     plt.show()
