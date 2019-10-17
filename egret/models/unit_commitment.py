@@ -551,173 +551,54 @@ def create_CA_unit_commitment_model(model_data,
                        ]
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
-def _lazy_ptdf_uc_solve_loop_warmstart(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, vars_to_load_t_subset=None, vars_to_load=None, t_subset=None):
-    '''
 
-    Parameters
-    ----------
-    m : pyomo.environ.ConcreteModel
-        An egret unit commitment model
-    md : egret.data.ModelData
-        An egret ModelData object
-    solver : pyomo.opt.solver
-        A pyomo solver object
-    solver_tee : bool (optional)
-        For displaying the solver log (default is True)
-    symbolic_solver_labels : bool (optional)
-        Use symbolic solver labels when writing to the solver (default is False)
-    iteration_limit : int (optional)
-        Number of iterations before a hard termination (default is 100000)
-    var_to_load : None, list (optional)
-        Applies only to persistent solvers. If None, every primal variable is loaded.
-        If a list, then should be a list of pyomo Vars to be loaded into the pyomo model
-        at termination. Default is None.
-
-    Returns
-    -------
-    egret.common.lazy_ptdf_utils.LazyPTDFTerminationCondition : the termination status
-    pyomo.opt.results.SolverResults : The results object from the pyomo solver
-    int : The number of iterations before termination
-
-    '''
-    persistent_solver = isinstance(solver, PersistentSolver)
-    duals = hasattr(m, 'dual')
-
-    results = None 
-
-    ptdf_options = m._ptdf_options
-
-    time_period_list = list(m.TimePeriods)
-
+def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, prepend_str):
+    slacks_ub = None
     PVF = dict()
-    viol_num = dict()
-    mon_viol_num = dict()
     gt_viol_lazy = dict()
     lt_viol_lazy = dict()
+    total_flow_constr_added = 0
+    for t_o in m.TimePeriods:
+        if t_o in t_subset:
+            continue
 
-    if t_subset is None:
-        t_subset = [max(m.TotalDemand, key=m.TotalDemand.__getitem__), min(m.TotalDemand, key=m.TotalDemand.__getitem__)]
+        if slacks_ub is None:
+            slacks_lb = dict()
+            slacks_ub = dict()
+            for t in t_subset:
+                b_ = m.TransmissionBlock[t]
 
+                ## only load the slacks once
+                for bn, constr in b_.ineq_pf_branch_thermal_lb.items():
+                    slacks_lb[bn, constr] = constr.slack()
+                for bn, constr in b_.ineq_pf_branch_thermal_ub.items():
+                    slacks_ub[bn, constr] = constr.slack()
 
-    for i in range(iteration_limit):
-        for t in t_subset:
-            b = m.TransmissionBlock[t]
+        b_other = m.TransmissionBlock[t_o]
+        PTDF_other = b_other._PTDF
 
-            PTDF = b._PTDF
+        PVF[t_o], gt_viol_lazy[t_o], lt_viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks_ub, slacks_lb)
 
-            PVF[t], viol_num[t], mon_viol_num[t], gt_viol_lazy[t], lt_viol_lazy[t] = \
-                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t)
+        logger.debug(prepend_str+"adding {0} flow constraints at time {1}".format(len(gt_viol_lazy[t_o])+len(lt_viol_lazy[t_o]),t_o))
+        lpu.add_violations(gt_viol_lazy[t_o], lt_viol_lazy[t_o], PVF[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str)
+        total_flow_constr_added += len(gt_viol_lazy[t_o]) + len(lt_viol_lazy[t_o])
+    logger.info(prepend_str+"added {0} flow constraint(s)".format(total_flow_constr_added))
 
-        total_viol_num = sum(viol_num.values())
-        total_mon_viol_num = sum(mon_viol_num.values())
-
-        ## this flag is for if we found violations **and** every violation is in the model
-        all_viol_in_model = (total_viol_num > 0) and (total_viol_num == total_mon_viol_num)
-
-        ## this flag is for if we're going to terminate this iteration,
-        ## either because there are no violations in this solution
-        ## **or** because every violation is already in the model
-        terminate_this_iter = (total_viol_num == 0) or all_viol_in_model
-
-        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,total_viol_num)
-        if total_mon_viol_num:
-            iter_status_str += ", {} of which are already monitored".format(total_mon_viol_num)
-
-        logger.info(iter_status_str)
-        total_flow_constr_added = 0
-
-        if terminate_this_iter:
-            from pyutilib.misc.timing import TicTocTimer
-            timer = TicTocTimer()
-            ### add the binding constraints to every other time period
-            timer.tic('beginning constraint copying')
-            slacks_ub = None
-            for t_o in m.TimePeriods:
-                if t_o in t_subset:
-                    continue
-
-                timer.tic('getting slacks')
-                if persistent_solver and slacks_ub is None:
-                    slacks_lb = dict()
-                    slacks_ub = dict()
-                    for t in t_subset:
-                        b_ = m.TransmissionBlock[t]
-
-                        slacks_to_load = list(b_.ineq_pf_branch_thermal_lb.values())
-                        slacks_to_load.extend(b_.ineq_pf_branch_thermal_ub.values())
-                        solver.load_slacks(slacks_to_load)
-
-                        ## only load the slacks once
-                        for bn, constr in b_.ineq_pf_branch_thermal_lb.items():
-                            slacks_lb[bn, constr] = m.slack[constr]
-                        for bn, constr in b_.ineq_pf_branch_thermal_ub.items():
-                            slacks_ub[bn, constr] = m.slack[constr]
-                timer.toc('loaded slacks')
-
-                timer.tic('beginning copying for time {}'.format(t_o))
-                b_other = m.TransmissionBlock[t_o]
-                PTDF_other = b._PTDF
-
-                timer.tic('\tgetting active constraints')
-                PVF[t_o], gt_viol_lazy[t_o], lt_viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks_ub, slacks_lb)
-                timer.toc('\tdone')
-            
-                logger.info("iteration {0}, time {2}, copying {1} flow constraints forward".format(i,len(gt_viol_lazy[t_o])+len(lt_viol_lazy[t_o]),t_o))
-                timer.tic('\tadding active constraints')
-                lpu.add_violations(gt_viol_lazy[t_o], lt_viol_lazy[t_o], PVF[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o)
-                timer.toc('\tdone')
-                total_flow_constr_added += len(gt_viol_lazy[t_o]) + len(lt_viol_lazy[t_o])
-
-                logger.info( "iteration {0}, time slice {2}, added {1} flow constraint(s)".format(i,total_flow_constr_added,t_o))
-
-                timer.toc('finished constraint copying for time {}'.format(t_o))
-
-            ### load all the vars this time
-            if persistent_solver:
-                if isinstance(solver, GurobiPersistent):
-                    solver._solver_model.reset()
-                results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
-                solver.load_vars(vars_to_load)
-            else:
-                results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
-                m.solutions.load_from(results)
-
-            if persistent_solver and duals and (results is not None) and (vars_to_load_t_subset is None):
-                solver.load_duals()
-            if all_viol_in_model:
-                logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
-                return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
-            return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
-
-
-
-        for t in t_subset:
-            b = m.TransmissionBlock[t]
-
-            PTDF = b._PTDF
-
-            lpu.add_violations(gt_viol_lazy[t], lt_viol_lazy[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t)
-            total_flow_constr_added += len(gt_viol_lazy[t]) + len(lt_viol_lazy[t])
-
-        logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
-
-        if persistent_solver:
-            results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
-            solver.load_vars(vars_to_load_t_subset)
-        else:
-            results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
-            m.solutions.load_from(results)
-
-
+def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load):
+    if persistent_solver:
+        results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+        solver.load_vars(vars_to_load)
     else:
-        ### TODO: NEED TO ADD EXIT LOGIC HERE TOO
-        logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
-        if persistent_solver and duals and (results is not None) and (vars_to_load_t_subset is None):
-            solver.load_duals()
-        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
+        results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
+        m.solutions.load_from(results)
 
+def _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str):
+    if all_viol_in_model:
+        logger.warning(prepend_str+'WARNING: Terminating with monitored violations! Result is not transmission feasible.')
+        return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
+    return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
 
-def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, vars_to_load=None, add_all_lazy_violations=False):
+def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, vars_to_load=None, add_all_lazy_violations=False, warmstart_loop=False, t_subset=None, vars_to_load_t_subset=None, prepend_str=""):
     '''
     The lazy PTDF unit commitment solver loop. This function iteratively
     adds violated transmission constraints until either the result is
@@ -746,6 +627,14 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         If True, on the termination iteration, additional violations or near violations
         will be added to the model before returning (and before re-solving). Used
         for the last lazy iteration on an LP relaxation of unit commitment
+    warmstart_loop : bool (optional)
+        If True, excutes a warmstart loop bease on the time periods in t_subset
+    t_subset : None, list (optional)
+        Subset of TimePeriods to use for the warmstart loop
+    vars_to_load_t_subset : None, list (optional)
+        Subset of vars_to_load which are just from t_subset
+    prepend_str : str (optional)
+        String to prepend to all messages from the solve loop
 
     Returns
     -------
@@ -768,14 +657,28 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
     gt_viol_lazy = dict()
     lt_viol_lazy = dict()
 
+    if warmstart_loop:
+        if t_subset is None:
+            t_subset = [max(m.TotalDemand, key=m.TotalDemand.__getitem__)]
+        time_periods = t_subset
+        if vars_to_load_t_subset is None:
+            vars_to_load_t_subset = vars_to_load
+        vars_to_load_time_periods = vars_to_load_t_subset
+        ## it doesn't make sense for both of these to be true
+        assert add_all_lazy_violations is False
+    else:
+        time_periods = m.TimePeriods
+        vars_to_load_time_periods = vars_to_load
+
+
     for i in range(iteration_limit):
-        for t in m.TimePeriods:
+        for t in time_periods:
             b = m.TransmissionBlock[t]
 
             PTDF = b._PTDF
 
             PVF[t], viol_num[t], mon_viol_num[t], gt_viol_lazy[t], lt_viol_lazy[t] = \
-                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t)
+                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t, prepend_str=prepend_str)
 
         total_viol_num = sum(viol_num.values())
         total_mon_viol_num = sum(mon_viol_num.values())
@@ -788,48 +691,43 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         ## **or** because every violation is already in the model
         terminate_this_iter = (total_viol_num == 0) or all_viol_in_model
 
-        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,total_viol_num)
+        iter_status_str = prepend_str+"iteration {0}, found {1} violation(s)".format(i,total_viol_num)
         if total_mon_viol_num:
             iter_status_str += ", {} of which are already monitored".format(total_mon_viol_num)
 
         logger.info(iter_status_str)
 
         if terminate_this_iter and not add_all_lazy_violations:
+            if warmstart_loop:
+                _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options, prepend_str)
+                results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load)
             if persistent_solver and duals and (results is not None) and (vars_to_load is None):
                 solver.load_duals()
-            if all_viol_in_model:
-                logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
-                return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
-            return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
+            return _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str)
 
         total_flow_constr_added = 0
-        for t in m.TimePeriods:
+        for t in time_periods:
             b = m.TransmissionBlock[t]
 
             PTDF = b._PTDF
 
-            lpu.add_violations(gt_viol_lazy[t], lt_viol_lazy[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t)
+            lpu.add_violations(gt_viol_lazy[t], lt_viol_lazy[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t, prepend_str=prepend_str)
             total_flow_constr_added += len(gt_viol_lazy[t]) + len(lt_viol_lazy[t])
 
-        logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
+        logger.info(prepend_str+"iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
         ## NOTE: Here we should not load additional variables as
         ##       we've added more constraints to the model
         if terminate_this_iter and add_all_lazy_violations:
-            if all_viol_in_model:
-                logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
-                return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
-            return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
+            return _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str)
 
-        if persistent_solver:
-            results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
-            solver.load_vars(vars_to_load)
-        else:
-            results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
-            m.solutions.load_from(results)
+        results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load_time_periods)
 
     else:
-        logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
+        logger.warning(prepend_str+'WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
+        if warmstart_loop:
+            _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options)
+            results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load)
         if persistent_solver and duals and (results is not None) and (vars_to_load is None):
             solver.load_duals()
         return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
@@ -846,12 +744,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     ## cache here the variables that need to be 
     ## loaded to check transimission feasbility
     ## for a persistent solver
-    #avg_demand = sum(m.TotalDemand.values())/len(m.TotalDemand)
-    #abs_deviation = { t : abs(m.TotalDemand[t] - avg_demand) for t in m.TotalDemand}
-    #avg_demand_time = min(abs_deviation, key=abs_deviation.__getitem__)
     max_demand_time = max(m.TotalDemand, key=m.TotalDemand.__getitem__)
-    #min_demand_time = min(m.TotalDemand, key=m.TotalDemand.__getitem__)
-    #t_subset = [min_demand_time]
     t_subset = [max_demand_time, ]
     if isinstance(solver, PersistentSolver) or (isinstance(solver,str) and 'persistent' in solver):
         vars_to_load = list()
@@ -862,10 +755,6 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
                 vars_to_load.extend(b.p_nw.values())
                 if t == max_demand_time:
                     vars_to_load_t_subset.extend(b.p_nw.values())
-                #if t == min_demand_time:
-                #    vars_to_load_t_subset.extend(b.p_nw.values())
-                #if t == avg_demand_time:
-                #    vars_to_load_t_subset.extend(b.p_nw.values())
             else:
                 vars_to_load = None
                 vars_to_load_t_subset = None
@@ -875,7 +764,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
         vars_to_load_t_subset = None
 
     lp_iter_limit = m._ptdf_options['lp_iteration_limit']
-    lp_warmstart = m._ptdf_options['pre_lp_phase']
+    lp_warmstart_iter_limit = m._ptdf_options['pre_lp_iteration_limit']
     model_data = m.model_data
 
     ## if this is a MIP, iterate though a few times with just the LP relaxation
@@ -883,12 +772,14 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 
         lpu.uc_instance_binary_relaxer(m, None)
         m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load = vars_to_load)
-        if lp_warmstart:
-            lp_termination_cond, results, lp_iterations = \
-                _lazy_ptdf_uc_solve_loop_warmstart(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset)
+        if lp_warmstart_iter_limit > 0:
+            lp_warmstart_termination_cond, results, lp_warmstart_iterations = \
+                    _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_warmstart_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[LP warstart phase] ")
+            egret_metasolver_status['lp_warmstart_termination_cond'] = lp_warmstart_termination_cond
+            egret_metasolver_status['lp_warmstart_iterations'] = lp_warmstart_iterations
 
         lp_termination_cond, results, lp_iterations = \
-                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, vars_to_load = vars_to_load, add_all_lazy_violations=True)
+                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, vars_to_load = vars_to_load, add_all_lazy_violations=True, prepend_str="[LP phase] ")
         ## if the initial solve was transmission feasible, then
         ## we never re-solved the problem
         if results is None:
@@ -896,6 +787,12 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 
         egret_metasolver_status['lp_termination_cond'] = lp_termination_cond
         egret_metasolver_status['lp_iterations'] = lp_iterations
+
+        if m._ptdf_options['lp_cleanup_phase']:
+            tot_removed = 0
+            for t,b in m.TransmissionBlock.items():
+                tot_removed += lpu.remove_inactive(b, solver, t, prepend_str="[LP cleanup phase] ")
+            logger.info("[LP cleanup phase] removed {0} inactive flow constraint(s)".format(tot_removed))
 
         lpu.uc_instance_binary_enforcer(m, solver)
 
@@ -914,8 +811,8 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     
     if relaxed and lp_warmstart:
         lp_termination_cond, results, lp_iterations = \
-                _lazy_ptdf_uc_solve_loop_warmstart(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset)
-    termination_cond, results, iterations = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, vars_to_load=vars_to_load)
+                _lazy_ptdf_uc_solve_loop_warmstart(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[P warmstart phase] ")
+    termination_cond, results, iterations = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, vars_to_load=vars_to_load, prepend_str=("[LP phase] " if relaxed else "[MIP phase] "))
     ## if the initial solve was transmission feasible, then
     ## we never re-solved the problem
     if results is None:
@@ -1002,7 +899,6 @@ def solve_unit_commitment(model_data,
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
-        m.slack = pe.Suffix(direction=pe.Suffix.IMPORT)
         m, results, solver = _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed )
     else:
         m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
