@@ -396,22 +396,19 @@ def copy_active_to_next_time(m, b_next, PTDF_next, slacks_ub, slacks_lb):
 
     branchname_index_map= PTDF_next.branchname_to_index_masked_map
 
-    lt_viol_lazy = list()
-    gt_viol_lazy = list()
+    lt_viol_lazy = set()
+    gt_viol_lazy = set()
 
     for (bn, constr), slack in slacks_lb.items():
         if abs(slack) <= active_slack_tol:
             ## in case the topology has changed
             if bn in branchname_index_map:
-                lt_viol_lazy.append(branchname_index_map[bn])
+                lt_viol_lazy.add(branchname_index_map[bn])
     for (bn, constr), slack in slacks_ub.items():
         if abs(slack) <= active_slack_tol:
             ## in case the topology has changed
             if bn in branchname_index_map:
-                gt_viol_lazy.append(branchname_index_map[bn])
-
-    lt_viol_lazy = set(lt_viol_lazy)
-    gt_viol_lazy = set(gt_viol_lazy)
+                gt_viol_lazy.add(branchname_index_map[bn])
 
     return None, gt_viol_lazy, lt_viol_lazy
 

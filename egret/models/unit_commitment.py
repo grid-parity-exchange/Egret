@@ -628,7 +628,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         will be added to the model before returning (and before re-solving). Used
         for the last lazy iteration on an LP relaxation of unit commitment
     warmstart_loop : bool (optional)
-        If True, excutes a warmstart loop bease on the time periods in t_subset
+        If True, excutes a warmstart loop based on the time periods in t_subset
     t_subset : None, list (optional)
         Subset of TimePeriods to use for the warmstart loop
     vars_to_load_t_subset : None, list (optional)
@@ -809,9 +809,9 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 
     iter_limit = m._ptdf_options['iteration_limit']
     
-    if relaxed and lp_warmstart:
+    if relaxed and lp_warmstart_iter_limit > 0:
         lp_termination_cond, results, lp_iterations = \
-                _lazy_ptdf_uc_solve_loop_warmstart(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[P warmstart phase] ")
+                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_warmstart_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[LP warmstart phase] ")
     termination_cond, results, iterations = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, vars_to_load=vars_to_load, prepend_str=("[LP phase] " if relaxed else "[MIP phase] "))
     ## if the initial solve was transmission feasible, then
     ## we never re-solved the problem
