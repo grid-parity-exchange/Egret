@@ -753,7 +753,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
             b = m.TransmissionBlock[t]
             if isinstance(b.p_nw, pe.Var):
                 vars_to_load.extend(b.p_nw.values())
-                if t == max_demand_time:
+                if t in t_subset:
                     vars_to_load_t_subset.extend(b.p_nw.values())
             else:
                 vars_to_load = None
