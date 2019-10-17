@@ -163,6 +163,7 @@ class PTDFMatrix(object):
             ## Nothing to do
             self.branch_mask = np.arange(len(self.branch_limits_array))
             self.branches_keys_masked = self.branches_keys
+            self.branchname_to_index_masked_map = self._branchname_to_index_map
             self.PTDFM_masked = self.PTDFM
             self.phase_shift_array_masked = self.phase_shift_array
             self.branch_limits_array_masked = self.branch_limits_array
@@ -201,6 +202,7 @@ class PTDFMatrix(object):
 
         self.branch_mask = np.array(branch_mask)
         self.branches_keys_masked = tuple(self.branches_keys[i] for i in self.branch_mask)
+        self.branchname_to_index_masked_map = { bn : i for i,bn in enumerate(self.branches_keys_masked) }
         self.PTDFM_masked = self.PTDFM[branch_mask]
         self.phase_shift_array_masked = self.phase_shift_array[branch_mask]
         self.branch_limits_array_masked = self.branch_limits_array[branch_mask]
