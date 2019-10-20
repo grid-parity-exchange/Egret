@@ -771,7 +771,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
         m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load = vars_to_load)
         if lp_warmstart_iter_limit > 0:
             lp_warmstart_termination_cond, results, lp_warmstart_iterations = \
-                    _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_warmstart_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[LP warstart phase] ")
+                    _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_warmstart_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[LP warmstart phase] ")
             egret_metasolver_status['lp_warmstart_termination_cond'] = lp_warmstart_termination_cond
             egret_metasolver_status['lp_warmstart_iterations'] = lp_warmstart_iterations
 
