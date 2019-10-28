@@ -198,8 +198,6 @@ def load_params(model, model_data):
                                     initialize=TimeMapper(branch_attrs.get('planned_outage')))
 
     ## Interfaces
-    ## NOTE: Lines in iterfaces should be all go "from" the
-    ##       other network "to" the modeled network
     model.Interfaces = Set(initialize=interface_attrs['names'])
 
     model.InterfaceLines = Set(model.Interfaces, within=model.TransmissionLines, initialize=interface_attrs.get('lines'), ordered=True)
@@ -226,16 +224,16 @@ def load_params(model, model_data):
 
     model.InterfaceLineOrientation = Param(model.InterfaceLinePairs, initialize=_interface_line_orientation_dict, within=set([-1,0,1]))
 
-    _inteface_penalties = dict()
+    _interface_penalties = dict()
     _md_violation_penalties = interface_attrs.get('violation_penalty')
     if _md_violation_penalties is not None:
         for i, val in _md_violation_penalties.items():
             if val is not None:
-                _inteface_penalties[i] = val
+                _interface_penalties[i] = val
 
-    model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_inteface_penalties.keys())
+    model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_interface_penalties.keys())
 
-    model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack, within=NonNegativeReals, initialize=_inteface_penalties)
+    model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack, within=NonNegativeReals, initialize=_interface_penalties)
   
     
     ##########################################################
