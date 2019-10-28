@@ -202,9 +202,41 @@ def load_params(model, model_data):
     ##       other network "to" the modeled network
     model.Interfaces = Set(initialize=interface_attrs['names'])
 
-    model.InterfaceLines = Set(model.Interfaces, within=model.TransmissionLines, initialize=interface_attrs.get('lines'))
-    model.InterfaceFromLimit = Param(model.Interfaces, within=NonNegativeReals, initialize=interface_attrs.get('interface_from_limit'))
-    model.InterfaceToLimit = Param(model.Interfaces, within=NonNegativeReals, initialize=interface_attrs.get('interface_to_limit'))
+    model.InterfaceLines = Set(model.Interfaces, within=model.TransmissionLines, initialize=interface_attrs.get('lines'), ordered=True)
+    model.InterfaceMinFlow = Param(model.Interfaces, within=NonNegativeReals, initialize=interface_attrs.get('minimum_limit'))
+    model.InterfaceMaxFlow = Param(model.Interfaces, within=NonNegativeReals, initialize=interface_attrs.get('maximum_limit'))
+
+    def check_min_less_max_interface_flow_limits(m):
+        for i in m.Interfaces:
+            if value(m.InterfaceMinFlow[i]) > value(m.InterfaceMaxFlow[i]):
+                raise Exception("Interface {} has a minimum_limit which is greater than the maximum_limit".format(i))
+
+    model.CheckInterfaceFlowLimits = BuildAction(rule=check_min_less_max_interface_flow_limits)
+
+    def get_interface_line_pairs(m):
+        for i in m.Interfaces:
+            for l in m.InterfaceLines[i]:
+                yield i,l
+    model.InterfaceLinePairs = Set(initialize=get_interface_line_pairs, dimen=2)
+
+    _interface_line_orientation_dict = dict()
+    for i in interface_attrs['names']:
+        for l, sign in zip(interface_attrs['lines'][i],interface_attrs['line_orientation'][i]):
+            _interface_line_orientation_dict[i,l] = sign
+
+    model.InterfaceLineOrientation = Param(model.InterfaceLinePairs, initialize=_interface_line_orientation_dict, within=set([-1,0,1]))
+
+    _inteface_penalties = dict()
+    _md_violation_penalties = interface_attrs.get('violation_penalty')
+    if _md_violation_penalties is not None:
+        for i, val in _md_violation_penalties.items():
+            if val is not None:
+                _inteface_penalties[i] = val
+
+    model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_inteface_penalties.keys())
+
+    model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack, within=NonNegativeReals, initialize=_inteface_penalties)
+  
     
     ##########################################################
     # string indentifiers for the set of thermal generators. #
