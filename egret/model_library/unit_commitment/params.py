@@ -12,6 +12,7 @@ from pyomo.environ import *
 import math
 from egret.data.model_data import map_items, zip_items
 from egret.model_library.transmission import tx_utils
+from egret.common.log import logger
     
 from .uc_utils import add_model_attr, uc_time_helper
 
@@ -201,8 +202,8 @@ def load_params(model, model_data):
     model.Interfaces = Set(initialize=interface_attrs['names'])
 
     model.InterfaceLines = Set(model.Interfaces, within=model.TransmissionLines, initialize=interface_attrs.get('lines'), ordered=True)
-    model.InterfaceMinFlow = Param(model.Interfaces, within=NonNegativeReals, initialize=interface_attrs.get('minimum_limit'))
-    model.InterfaceMaxFlow = Param(model.Interfaces, within=NonNegativeReals, initialize=interface_attrs.get('maximum_limit'))
+    model.InterfaceMinFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('minimum_limit'))
+    model.InterfaceMaxFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('maximum_limit'))
 
     def check_min_less_max_interface_flow_limits(m):
         for i in m.Interfaces:
@@ -230,6 +231,8 @@ def load_params(model, model_data):
         for i, val in _md_violation_penalties.items():
             if val is not None:
                 _interface_penalties[i] = val
+                if val <= 0:
+                    logger.warning("Interface {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i,val))
 
     model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_interface_penalties.keys())
 
@@ -306,7 +309,7 @@ def load_params(model, model_data):
     def warn_about_negative_demand_rule(m, b, t):
        this_demand = value(m.Demand[b,t])
        if this_demand < 0.0:
-          print("***WARNING: The demand at bus="+str(b)+" for time period="+str(t)+" is negative - value="+str(this_demand)+"; model="+str(m.name)+".")
+          logger.warning("***WARNING: The demand at bus="+str(b)+" for time period="+str(t)+" is negative - value="+str(this_demand)+"; model="+str(m.name)+".")
     
     if warn_neg_load:
         model.WarnAboutNegativeDemand = BuildAction(model.Buses, model.TimePeriods, rule=warn_about_negative_demand_rule)
@@ -516,7 +519,7 @@ def load_params(model, model_data):
        status = (v <= (value(m.MaximumPowerOutput[g]) * value(m.UnitOnT0[g]))  and v >= (value(m.MinimumPowerOutput[g]) * value(m.UnitOnT0[g])))
        if status == False:
           print("Failed to validate PowerGeneratedT0 value for g="+g+"; new value="+str(v)+", UnitOnT0="+str(value(m.UnitOnT0[g])))
-       return v <= (value(m.MaximumPowerOutput[g]) * value(m.UnitOnT0[g]))  and v >= (value(m.MinimumPowerOutput[g]) * value(m.UnitOnT0[g]))
+       return status
     model.PowerGeneratedT0 = Param(model.ThermalGenerators, 
                                     within=NonNegativeReals, 
                                     validate=between_limits_validator, 
@@ -535,7 +538,7 @@ def load_params(model, model_data):
         startup_cost = thermal_gens[g].get('startup_cost')
         startup_fuel = thermal_gens[g].get('startup_fuel')
         if startup_cost is not None and startup_fuel is not None:
-            print("WARNING: found startup_fuel for generator {}, ignoring startup_cost".format(g))
+            logger.warning("WARNING: found startup_fuel for generator {}, ignoring startup_cost".format(g))
         if startup_fuel is None and startup_cost is None:
             return [value(m.MinimumDownTime[g])] 
         elif startup_cost is None:
@@ -692,7 +695,7 @@ def load_params(model, model_data):
         if fixed_no_load is None or (tuple_index == 0): ## don't add for cost piecewise points
             fixed_no_load = 0.
         if cost is not None and fuel is not None:
-            print("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
+            logger.warning("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
         if fuel is None:
             if cost['data_type'] != 'cost_curve':
                 raise Exception("p_cost must be of data_type cost_curve.")
@@ -909,10 +912,10 @@ def load_params(model, model_data):
 
     def fuel_supply_gens_init(m):
         if 'fuel_supply' not in elements and ('fuel_supply' in thermal_gen_attrs or 'aux_fuel_supply' in thermal_gen_attrs):
-            print('WARNING: Some generators have \'fuel_supply\' marked, but no fuel supply was found on ModelData.data[\'system\']')
+            logger.warning('WARNING: Some generators have \'fuel_supply\' marked, but no fuel supply was found on ModelData.data[\'system\']')
             return iter(())
         if 'fuel_supply' in elements and ('fuel_supply' not in thermal_gen_attrs and 'aux_fuel_supply' not in thermal_gen_attrs):
-            print('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
+            logger.warning('WARNING: fuel_supply in ModelData.data["elements"], but no generators are attached to any fuel supply')
             return iter(())
         if 'fuel_supply' not in thermal_gen_attrs:
             thermal_gen_attrs['fuel_supply'] = dict()

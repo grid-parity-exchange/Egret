@@ -907,6 +907,7 @@ def solve_unit_commitment(model_data,
     renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
+    interfaces = dict(md.elements(element_type='interface'))
     storage = dict(md.elements(element_type='storage'))
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
@@ -1193,6 +1194,18 @@ def solve_unit_commitment(model_data,
                 for dt, mt in enumerate(m.TimePeriods):
                     lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+        for i,i_dict in interfaces.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.InterfaceFlow[i,mt])
+            i_dict['pf'] = _time_series_dict(pf_dict)
+            if i in m.InterfacesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.InterfaceSlackPos[i,mt] - m.InterfaceSlackNeg[i,mt])
+                i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
     elif m.power_balance in ['copperplate_power_flow', 'copperplate_relaxed_power_flow']:
         sys_dict = md.data['system']
         p_viol_dict = _preallocated_list(data_time_periods)

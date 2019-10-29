@@ -303,6 +303,7 @@ scaled_attributes = {
                                                          'pt',
                                                          'qt',
                                                          'violation_penalty',
+                                                         'pf_violation',
                                                        ],
                        ('element_type', 'bus') : [ 
                                                     'p_balance_violation',
