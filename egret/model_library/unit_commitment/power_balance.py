@@ -564,14 +564,33 @@ def power_balance_constraints(model, slacks=True):
         else:
             return m.LinePower[l,t] == (m.Angle[m.BusFrom[l], t] - m.Angle[m.BusTo[l], t]) / m.Impedence[l]
     model.CalculateLinePower = Constraint(model.TransmissionLines, model.TimePeriods, rule=line_power_rule)
-    
-    def interface_from_limit_rule(m,i,t):
-        return sum(m.LinePower[l,t] for l in m.InterfaceLines[i]) <= m.InterfaceFromLimit[i]
-    model.InterfaceFromLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_from_limit_rule)
 
-    def interface_to_limit_rule(m,i,t):
-        return sum(m.LinePower[l,t] for l in m.InterfaceLines[i]) >= -m.InterfaceToLimit[i]
-    model.InterfaceToLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_to_limit_rule)
+    ## interface variables, expressions, and constraints
+    model.InterfaceSlackPos = Var(model.InterfacesWithSlack, model.TimePeriods, within=NonNegativeReals)
+    model.InterfaceSlackNeg = Var(model.InterfacesWithSlack, model.TimePeriods, within=NonNegativeReals)
+
+    def interface_flow_rule(m, i, t):
+        return sum(m.InterfaceLineOrientation[i,l]*m.LinePower[l,t] for l in m.InterfaceLines[i])
+    model.InterfaceFlow = Expression(model.Interfaces, model.TimePeriods, rule=interface_flow_rule)
+    
+    def interface_max_limit_rule(m,i,t):
+        expr = m.InterfaceFlow[i,t]
+        if i in m.InterfacesWithSlack:
+            expr -= m.InterfaceSlackPos[i,t]
+        return expr <= m.InterfaceMaxFlow[i]
+    model.InterfaceMaxLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_max_limit_rule)
+
+    def interface_min_limit_rule(m,i,t):
+        expr = m.InterfaceFlow[i,t]
+        if i in m.InterfacesWithSlack:
+            expr += m.InterfaceSlackNeg[i,t]
+        return expr >= m.InterfaceMinFlow[i]
+    model.InterfaceMinLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_min_limit_rule)
+
+    def interface_violation_cost_rule(m,t):
+        return sum(m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i]*(m.InterfaceSlackPos[i,t]+m.InterfaceSlackNeg[i,t]) \
+                    for i in m.InterfacesWithSlack)
+    model.InterfaceViolationCost = Expression(model.TimePeriods, rule=interface_violation_cost_rule)
     
     if slacks:
         _add_load_mismatch(model)
