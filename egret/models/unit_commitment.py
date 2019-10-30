@@ -1144,8 +1144,13 @@ def solve_unit_commitment(model_data,
 
             branches_idx = PTDF.branches_keys
             PTDFM = PTDF.PTDFM
+
             NWV = np.array([value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
+            NWV += PTDF.phi_adjust_array
+
             PFV = np.dot(PTDFM, NWV)
+            PFV += PTDF.phase_shift_array
+
             flows_dict[mt] = dict()
             for i,bn in enumerate(branches_idx):
                 flows_dict[mt][bn] = PFV[i]
@@ -1153,6 +1158,8 @@ def solve_unit_commitment(model_data,
             interface_idx = PTDF.interface_keys
             PTDFM_I = PTDF.PTDFM_I
             PFIV = np.dot(PTDFM_I, NWV)
+            PFIV += PTDF.PTDFM_I_const
+
             interface_flows_dict[mt] = dict()
             for i, i_n in enumerate(interface_idx):
                 interface_flows_dict[mt][i_n] = PFIV[i]
