@@ -846,7 +846,7 @@ def declare_ineq_p_interface_lbub(model, index_set, interfaces):
         if interface['maximum_limit'] is not None:
             expr_upper = m.pfi[interface_name]
             if slacks_pos and interface_name in m.pfi_slack_pos:
-                expr_upper -= m.pfi_slack_neg[interface_name]
+                expr_upper -= m.pfi_slack_pos[interface_name]
 
             m.ineq_pf_interface_ub[interface_name] = \
                 expr_upper <= interface['maximum_limit']
