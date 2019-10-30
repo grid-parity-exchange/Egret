@@ -82,6 +82,24 @@ def _setup_egret_network_topology(m,tm):
     return buses, branches, branches_in_service, branches_out_service, interfaces
 
 
+def _setup_interface_slacks(m,block,tm):
+    ### declare the interface slack variables
+    libbranch.declare_var_pfi_slack_pos(model=block,
+                                        index_set=m.InterfacesWithSlack,
+                                        bounds=(0, None),
+                                        )
+    libbranch.declare_var_pfi_slack_neg(model=block,
+                                        index_set=m.InterfacesWithSlack,
+                                        bounds=(0, None),
+                                        )
+
+    ### add the interface slack cost to the main model
+    m.InterfaceViolationCost[tm] = \
+            sum(m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i]*( \
+                 block.pfi_slack_pos[i] + block.pfi_slack_neg[i] )
+                for i in m.InterfacesWithSlack)
+
+
 def _ptdf_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
             _setup_egret_network_model(block, tm)
@@ -114,17 +132,24 @@ def _ptdf_dcopf_network_model(block,tm):
                              index_set=branches_in_service,
                              )
 
+    ### interface setup
+    libbranch.declare_expr_pfi(model=block,
+                               index_set=interfaces.keys()
+                               )
+
+    _setup_interface_slacks(m,block,tm)
+
     ### Get the PTDF matrix from cache, from file, or create a new one
     if branches_out_service not in m._PTDFs:
         buses_idx = tuple(buses.keys())
 
         reference_bus = value(m.ReferenceBus)
 
-        PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx)
+        PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx, interfaces=interfaces)
         
         ## NOTE: For now, just use a flat-start for unit commitment
         if PTDF is None:
-            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, branches_keys=branches_in_service, buses_keys=buses_idx)
+            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, branches_keys=branches_in_service, buses_keys=buses_idx, interfaces=interfaces)
 
         m._PTDFs[branches_out_service] = PTDF
 
@@ -133,6 +158,8 @@ def _ptdf_dcopf_network_model(block,tm):
 
     ### attach the current PTDF object to this block
     block._PTDF = PTDF
+    rel_ptdf_tol = m._ptdf_options['rel_ptdf_tol']
+    abs_ptdf_tol = m._ptdf_options['abs_ptdf_tol']
 
     if ptdf_options['lazy']:
         ### add "blank" real power flow limits
@@ -146,9 +173,6 @@ def _ptdf_dcopf_network_model(block,tm):
         lpu.add_monitored_branch_tracker(block)
         
     else: ### add all the dense constraints
-        rel_ptdf_tol = m._ptdf_options['rel_ptdf_tol']
-        abs_ptdf_tol = m._ptdf_options['abs_ptdf_tol']
-
         p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
 
         ### declare the branch power flow approximation constraints
@@ -166,6 +190,21 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      approximation_type=ApproximationType.PTDF
                                                      )
 
+    ## for now, just add all the interface constraints
+    ## TODO: incorporate into lazy logic
+    ### declare the branch power flow approximation constraints
+    libbranch.declare_eq_interface_power_ptdf_approx(model=block,
+                                                     index_set=interfaces.keys(),
+                                                     PTDF=PTDF,
+                                                     abs_ptdf_tol=abs_ptdf_tol,
+                                                     rel_ptdf_tol=rel_ptdf_tol
+                                                     )
+
+    ### declare the interface flow limits
+    libbranch.declare_ineq_p_interface_lbub(model=block,
+                                            index_set=interfaces.keys(),
+                                            interfaces=interfaces,
+                                            )
 
 def _btheta_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
@@ -244,15 +283,8 @@ def _btheta_dcopf_network_model(block,tm):
     libbranch.declare_var_pfi(model=block,
                               index_set=interfaces.keys(),
                               )
-    ### declare the interface slack variables
-    libbranch.declare_var_pfi_slack_pos(model=block,
-                                        index_set=m.InterfacesWithSlack,
-                                        bounds=(0, None),
-                                        )
-    libbranch.declare_var_pfi_slack_neg(model=block,
-                                        index_set=m.InterfacesWithSlack,
-                                        bounds=(0, None),
-                                        )
+
+    _setup_interface_slacks(m,block,tm)
 
     ### declare the interface flow equality constraint
     libbranch.declare_eq_interface_power_btheta_approx(model=block,
@@ -265,12 +297,6 @@ def _btheta_dcopf_network_model(block,tm):
                                             index_set=interfaces.keys(),
                                             interfaces=interfaces,
                                             )
-
-    ### add the interface slack cost to the main model
-    m.InterfaceViolationCost[tm] = \
-            sum(m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i]*( \
-                 block.pfi_slack_pos[i] + block.pfi_slack_neg[i] )
-                for i in m.InterfacesWithSlack)
 
     return block
 

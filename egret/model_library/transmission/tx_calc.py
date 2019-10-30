@@ -735,6 +735,55 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     return PTDF, LDF, LDF_constant
 
 
+def calculate_interface_sensitivities(interfaces,index_set_interface,PTDFM,phase_shift_array,phi_adjust_array,mapping_branch_to_idx):
+    """
+    Calculates the sensitivity of interface flows to real power injections from a PTDF matrix
+    Parameters
+    ----------
+    interfaces: dict{}
+        The dictionary of interfaces for the test case
+    index_set_interface : tuple
+        The tuple of keys for interfaces for the test case
+    PTDFM : numpy.array
+        The PTDF matrix
+    phase_shift_array : numpy.array
+        The array of phase shifts per branch
+    phi_adjust_array : numpy.array
+        The array of phi adjusts per bus
+    mapping_branch_to_idx: dict
+        A map from branch names to indices for the PTDF matrix. If None,
+        will be inferred from index_set_branch.
+    """
+
+    ## pre-allocate a matrix for the interface sensitivities
+    ## size is number of interfaces (rows) by number of buses (cols)
+    PTDF_I = np.zeros((len(index_set_interface),PTDFM.shape[1]))
+    PTDF_I_const = np.zeros(len(index_set_interface))
+
+    for idx, i_n in enumerate(index_set_interface):
+        interface = interfaces[i_n]
+        PTDF_I_row = PTDF_I[idx]
+        const = 0
+        for l, val in zip(interface['lines'], interface['line_orientation']):
+            if val == 0:
+                continue
+            else:
+                branch_idx = mapping_branch_to_idx[l]
+                PTDF_row = PTDFM[branch_idx]
+                PTDF_row_const = phase_shift_array[branch_idx] + PTDF_row.dot(phi_adjust_array)
+                if val == 1:
+                    PTDF_I_row += PTDF_row
+                    const += PTDF_row_const
+                elif val == -1:
+                    PTDF_I_row -= PTDF_row
+                    const -= PTDF_row_const
+                else:
+                    raise Exception("Interface {} has line {} with line_orientation {} "
+                            "not in [-1,0,1].".format(i_n, l, val))
+        PTDF_I_const[idx] = const
+
+    return PTDF_I, PTDF_I_const
+
 
 def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):
     """

@@ -645,6 +645,69 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None
             m.pfl[branch_name] = expr
 
 
+def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create a pyomo power flow expression from PTDF matrix for an interface
+    """
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
+    const = PTDF.get_interface_const(interface_name)
+    max_coef = PTDF.get_interface_ptdf_abs_max(interface_name)
+
+    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
+
+    m_p_nw = model.p_nw
+
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_p_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name):
+            if abs(coef) >= ptdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_p_nw[bus_name])
+
+        lin_expr_list = [const] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+
+    return expr
+
+
+def declare_eq_interface_power_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create equality constraints or expressions for power (from PTDF
+    approximation) across the interface
+    """
+
+    m = model
+    con_set = decl.declare_set("_con_eq_interface_power_ptdf_approx_set", model, index_set)
+
+    pfi_is_var = isinstance(m.pfi, pe.Var)
+
+    if pfi_is_var:
+        m.eq_pf_interface = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.pfi, pe.Expression):
+            raise Exception("Unrecognized type for m.pfi", m.pfi.pprint())
+
+    for interface_name in con_set:
+        expr = \
+            get_power_flow_interface_expr_ptdf(m, interface_name, PTDF,
+                    rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
+
+        if pfi_is_var:
+            m.eq_pf_interface[interface_name] = \
+                    m.pfi[interface_name] == expr
+        else:
+            m.pfi[interface_name] = expr
+
+
 def declare_ineq_s_branch_thermal_limit(model, index_set,
                                         branches, s_thermal_limits,
                                         flow_type=FlowType.POWER):
