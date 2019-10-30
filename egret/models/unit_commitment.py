@@ -1122,6 +1122,17 @@ def solve_unit_commitment(model_data,
                     lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
+        for i,i_dict in interfaces.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.TransmissionBlock[mt].pfi[i])
+            i_dict['pf'] = _time_series_dict(pf_dict)
+            if i in m.InterfacesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pfi_slack_pos[i] - m.TransmissionBlock[mt].pfi_slack_neg[i])
+                i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
     elif m.power_balance == 'ptdf_power_flow':
         flows_dict = dict()
         if relaxed:

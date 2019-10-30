@@ -102,6 +102,7 @@ def load_params(model, model_data):
     buses = dict(md.elements(element_type='bus'))
     shunts = dict(md.elements(element_type='shunt'))
     branches = dict(md.elements(element_type='branch'))
+    interfaces = dict(md.elements(element_type='interface'))
     storage = dict(md.elements(element_type='storage'))
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
@@ -128,7 +129,7 @@ def load_params(model, model_data):
     model._branches = branches
     model._shunts = shunts
     model._bus_gs_fixed_shunts = bus_gs_fixed_shunts
-    #model._bus_bs_fixed_shunts = bus_bs_fixed_shunts
+    model._interfaces = interfaces
     #model._TimeMapper = TimeMapper
 
     #
@@ -219,8 +220,8 @@ def load_params(model, model_data):
     model.InterfaceLinePairs = Set(initialize=get_interface_line_pairs, dimen=2)
 
     _interface_line_orientation_dict = dict()
-    for i in interface_attrs['names']:
-        for l, sign in zip(interface_attrs['lines'][i],interface_attrs['line_orientation'][i]):
+    for i, interface in interfaces.items():
+        for l, sign in zip(interface['lines'],interface['line_orientation']):
             _interface_line_orientation_dict[i,l] = sign
 
     model.InterfaceLineOrientation = Param(model.InterfaceLinePairs, initialize=_interface_line_orientation_dict, within=set([-1,0,1]))
