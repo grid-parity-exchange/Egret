@@ -58,6 +58,36 @@ def declare_expr_pf(model, index_set, **kwargs):
     decl.declare_expr('pf', model=model, index_set=index_set, **kwargs)
 
 
+def declare_var_pfi(model, index_set, **kwargs):
+    """
+    Create variable for the real part of the power flow through an interface
+    """
+    decl.declare_var('pfi', model=model, index_set=index_set, **kwargs)
+
+
+def declare_expr_pfi(model, index_set, **kwargs):
+    """
+    Create expression for the real part of the power flow through an interface
+    """
+    decl.declare_expr('pfi', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_pfi_slack_pos(model, index_set, **kwargs):
+    """
+    Create the positive slack variable for the real part of power flow
+    throught an interface
+    """
+    decl.declare_var('pfi_slack_pos', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_pfi_slack_neg(model, index_set, **kwargs):
+    """
+    Create the negative slack variable for the real part of power flow
+    throught an interface
+    """
+    decl.declare_var('pfi_slack_neg', model=model, index_set=index_set, **kwargs)
+
+
 def declare_var_qf(model, index_set, **kwargs):
     """
     Create variable for the imaginary part of the power flow in the "from"
@@ -459,6 +489,34 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
                 g * (m.dva[branch_name])**2
 
 
+def declare_eq_interface_power_btheta_approx(model, index_set, interfaces):
+    """
+    Create the equality constraints for interface real power flow
+    """
+    m = model
+    con_set = decl.declare_set("_con_eq_interface_power_btheta_approx", model, index_set)
+
+    m.eq_pf_interface = pe.Constraint(con_set)
+    for interface_name in con_set:
+        interface = interfaces[interface_name]
+
+        expr = 0.
+        for line, orientation in zip(interface['lines'], interface['line_orientation']):
+            ### the later case could happen
+            ### if the line is out of service
+            if orientation == 0 or line not in m.pf:
+                continue
+            elif orientation == 1:
+                expr += m.pf[line]
+            elif orientation == -1:
+                expr -= m.pf[line]
+            else:
+                raise Exception("line_orientation must be in [-1,0,1], found "\
+                        "line_orientation {} for line {} in interface {}".format(
+                            orientation, line, interface_name))
+        m.eq_pf_interface[interface_name] = m.pfi[interface_name] == expr
+
+
 def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
     """
     Create a pyomo power flow expression from PTDF matrix
@@ -587,6 +645,69 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None
             m.pfl[branch_name] = expr
 
 
+def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create a pyomo power flow expression from PTDF matrix for an interface
+    """
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
+    const = PTDF.get_interface_const(interface_name)
+    max_coef = PTDF.get_interface_ptdf_abs_max(interface_name)
+
+    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
+
+    m_p_nw = model.p_nw
+
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_p_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name):
+            if abs(coef) >= ptdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_p_nw[bus_name])
+
+        lin_expr_list = [const] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+
+    return expr
+
+
+def declare_eq_interface_power_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create equality constraints or expressions for power (from PTDF
+    approximation) across the interface
+    """
+
+    m = model
+    con_set = decl.declare_set("_con_eq_interface_power_ptdf_approx_set", model, index_set)
+
+    pfi_is_var = isinstance(m.pfi, pe.Var)
+
+    if pfi_is_var:
+        m.eq_pf_interface = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.pfi, pe.Expression):
+            raise Exception("Unrecognized type for m.pfi", m.pfi.pprint())
+
+    for interface_name in con_set:
+        expr = \
+            get_power_flow_interface_expr_ptdf(m, interface_name, PTDF,
+                    rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
+
+        if pfi_is_var:
+            m.eq_pf_interface[interface_name] = \
+                    m.pfi[interface_name] == expr
+        else:
+            m.pfi[interface_name] = expr
+
+
 def declare_ineq_s_branch_thermal_limit(model, index_set,
                                         branches, s_thermal_limits,
                                         flow_type=FlowType.POWER):
@@ -642,8 +763,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
     m.ineq_pf_branch_thermal_ub = pe.Constraint(con_set)
 
     if approximation_type == ApproximationType.BTHETA or \
-            (approximation_type == ApproximationType.PTDF and \
-            isinstance(m.pf, pe.Expression)):
+            approximation_type == ApproximationType.PTDF:
         for branch_name in con_set:
             if p_thermal_limits[branch_name] is None:
                 continue
@@ -689,3 +809,44 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
             m.ineq_angle_diff_branch_ub[branch_name] = \
                 pe.atan(m.vj[from_bus] / m.vr[from_bus]) \
                 - pe.atan(m.vj[to_bus] / m.vr[to_bus]) <= math.radians(branches[branch_name]['angle_diff_max'])
+
+
+def declare_ineq_p_interface_lbub(model, index_set, interfaces):
+    """
+    Create the inequality constraints for the interface limits
+    based on the power variables or expressions.
+
+    p_interface_limits should be (lower, upper) tuple
+    """
+    m = model
+    con_set = decl.declare_set('_con_ineq_p_interface_lbub',
+                               model=model, index_set=index_set)
+
+    m.ineq_pf_interface_lb = pe.Constraint(con_set)
+    m.ineq_pf_interface_ub = pe.Constraint(con_set)
+
+    slacks_pos = hasattr(m, 'pfi_slack_pos')
+    slacks_neg = hasattr(m, 'pfi_slack_neg')
+    if slacks_pos != slacks_neg:
+        raise Exception("Both positive and negative interface slacks "\
+                "should be added to the transmission model")
+
+    for interface_name in con_set:
+        interface = interfaces[interface_name]
+
+        if interface['minimum_limit'] is not None:
+            expr_lower = m.pfi[interface_name]
+            if slacks_neg and interface_name in m.pfi_slack_neg:
+                expr_lower += m.pfi_slack_neg[interface_name]
+
+            m.ineq_pf_interface_lb[interface_name] = \
+                interface['minimum_limit'] <= expr_lower
+
+
+        if interface['maximum_limit'] is not None:
+            expr_upper = m.pfi[interface_name]
+            if slacks_pos and interface_name in m.pfi_slack_pos:
+                expr_upper -= m.pfi_slack_pos[interface_name]
+
+            m.ineq_pf_interface_ub[interface_name] = \
+                expr_upper <= interface['maximum_limit']

@@ -138,8 +138,9 @@ def basic_objective(model):
                  sum(m.DualFuelProductionCost[g,t] for g in m.DualFuelGenerators)
                 for t in m.GenerationTimeInStage[st]) + \
               sum(m.LoadMismatchCost[t] for t in m.GenerationTimeInStage[st]) + \
-              sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st])
-        cc += sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
+              sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st]) + \
+              sum(m.InterfaceViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
+              sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
         if m.reactive_power:
             cc += sum(m.LoadMismatchCostReactive[t] for t in m.GenerationTimeInStage[st])
         if regulation:

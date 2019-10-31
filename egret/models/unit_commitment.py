@@ -907,6 +907,7 @@ def solve_unit_commitment(model_data,
     renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
+    interfaces = dict(md.elements(element_type='interface'))
     storage = dict(md.elements(element_type='storage'))
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
@@ -1121,20 +1122,48 @@ def solve_unit_commitment(model_data,
                     lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
+        for i,i_dict in interfaces.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.TransmissionBlock[mt].pfi[i])
+            i_dict['pf'] = _time_series_dict(pf_dict)
+            if i in m.InterfacesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pfi_slack_pos[i] - m.TransmissionBlock[mt].pfi_slack_neg[i])
+                i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
     elif m.power_balance == 'ptdf_power_flow':
         flows_dict = dict()
+        interface_flows_dict = dict()
         if relaxed:
             lmps_dict = dict()
         for mt in m.TimePeriods:
             b = m.TransmissionBlock[mt]
-            flows_dict[mt] = dict()
             PTDF = b._PTDF
-            PTDFM = PTDF.PTDFM
+
             branches_idx = PTDF.branches_keys
+            PTDFM = PTDF.PTDFM
+
             NWV = np.array([value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
+            NWV += PTDF.phi_adjust_array
+
             PFV = np.dot(PTDFM, NWV)
+            PFV += PTDF.phase_shift_array
+
+            flows_dict[mt] = dict()
             for i,bn in enumerate(branches_idx):
                 flows_dict[mt][bn] = PFV[i]
+
+            interface_idx = PTDF.interface_keys
+            PTDFM_I = PTDF.PTDFM_I
+            PFIV = np.dot(PTDFM_I, NWV)
+            PFIV += PTDF.PTDFM_I_const
+
+            interface_flows_dict[mt] = dict()
+            for i, i_n in enumerate(interface_idx):
+                interface_flows_dict[mt][i_n] = PFIV[i]
+
             if relaxed:
                 PFD = np.zeros(len(branches_idx))
                 for i,bn in enumerate(branches_idx):
@@ -1142,14 +1171,34 @@ def solve_unit_commitment(model_data,
                         PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_lb[bn]])
                     if bn in b.ineq_pf_branch_thermal_ub:
                         PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_ub[bn]])
+                ## interface constributions to LMP
+                PFID = np.zeros(len(interface_idx))
+                for i,i_n in enumerate(interface_idx):
+                    for i_n in b.ineq_pf_interface_lb:
+                        PFID[i] += value(m.dual[b.ineq_pf_interface_lb[i_n]])
+                    for i_n in b.ineq_pf_interface_ub:
+                        PFID[i] += value(m.dual[b.ineq_pf_interface_ub[i_n]])
+
                 ## TODO: PFD is likely to be sparse, implying we just need a few
                 ##       rows of the PTDF matrix (or columns in its transpose).
                 LMPC = np.dot(-PTDFM.T, PFD)
+                LMPI = np.dot(-PTDFM_I.T, PFID)
                 LMPE = value(m.dual[b.eq_p_balance])
                 buses_idx = PTDF.buses_keys
                 lmps_dict[mt] = dict()
                 for i,bn in enumerate(buses_idx):
-                    lmps_dict[mt][bn] = LMPE + LMPC[i]
+                    lmps_dict[mt][bn] = LMPE + LMPC[i] + LMPI[i]
+
+        for i,i_dict in interfaces.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = interface_flows_dict[mt][i]
+            i_dict['pf'] = _time_series_dict(pf_dict)
+            if i in m.InterfacesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pfi_slack_pos[i] - m.TransmissionBlock[mt].pfi_slack_neg[i])
+                i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for l,l_dict in branches.items():
             pf_dict = _preallocated_list(data_time_periods)
@@ -1193,6 +1242,18 @@ def solve_unit_commitment(model_data,
                 for dt, mt in enumerate(m.TimePeriods):
                     lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+        for i,i_dict in interfaces.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.InterfaceFlow[i,mt])
+            i_dict['pf'] = _time_series_dict(pf_dict)
+            if i in m.InterfacesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.InterfaceSlackPos[i,mt] - m.InterfaceSlackNeg[i,mt])
+                i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
     elif m.power_balance in ['copperplate_power_flow', 'copperplate_relaxed_power_flow']:
         sys_dict = md.data['system']
         p_viol_dict = _preallocated_list(data_time_periods)

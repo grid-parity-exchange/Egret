@@ -452,7 +452,11 @@ def solve_dcopf(model_data,
         branches_idx = PTDF.branches_keys
 
         NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
+        NWV += PTDF.phi_adjust_array
+
         PFV  = PTDFM.dot(NWV)
+        PFV += PTDF.phase_shift_array
+
         PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
             branches[bn]['pf'] = PFV[i]

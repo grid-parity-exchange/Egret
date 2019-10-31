@@ -138,17 +138,18 @@ def test_uc_transmission_models():
     ## the network tests can optionally specify some kwargs so we can pass them into solve_unit_commitment
     tc_networks = {'btheta_power_flow': [dict()], 'ptdf_power_flow':[{'ptdf_options': {'lazy':False}}, dict()], 'power_balance_constraints':[dict()],}
     no_network = 'copperplate_power_flow'
-    test_name = 'tiny_uc_tc' ## based on tiny_uc_1
-    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+    test_names = ['tiny_uc_tc', 'tiny_uc_tc_2'] ## based on tiny_uc_1, tiny_uc_tc_2 has an interface
 
-    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
-    for tc in tc_networks:
-        for kwargs in tc_networks[tc]:
+    for test_name in test_names:
+        input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+        md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+        for tc in tc_networks:
+            for kwargs in tc_networks[tc]:
 
-            md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(tc), **kwargs)
-            reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
-            md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-            assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+                md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(tc), **kwargs)
+                reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
+                md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+                assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
 
     ## test copperplate
     test_name = 'tiny_uc_1'
