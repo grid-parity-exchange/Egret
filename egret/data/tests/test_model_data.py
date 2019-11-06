@@ -176,3 +176,19 @@ def test_clone_at_timestamp():
     del comparison_md.data['system']['time_indices']
 
     assert cloned_md.data == comparison_md.data
+
+def test_json_read_write():
+    md = ModelData(testdata)
+    md.write('testdata.json')
+
+    md_read = ModelData.read('testdata.json')
+
+    assert md.data == md_read.data
+
+def test_json_gz_read_write():
+    md = ModelData(testdata)
+    md.write('testdata.json.gz')
+
+    md_read = ModelData.read('testdata.json.gz')
+
+    assert md.data == md_read.data
