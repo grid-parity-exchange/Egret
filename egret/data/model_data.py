@@ -126,8 +126,6 @@ import copy as cp
 import logging
 logger = logging.getLogger('egret.model_data')
 
-
-
 class ModelData(object):
     @staticmethod
     def empty_model_data_dict():
