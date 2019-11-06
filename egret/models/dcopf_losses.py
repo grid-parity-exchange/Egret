@@ -186,10 +186,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
 
 
 def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options=None):
-    if ptdf_options is None:
-        ptdf_options = dict()
 
-    lpu.populate_default_ptdf_options(ptdf_options)
+    ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
     baseMVA = model_data.data['system']['baseMVA']
     lpu.check_and_scale_ptdf_options(ptdf_options, baseMVA)

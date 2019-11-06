@@ -23,6 +23,7 @@ import egret.model_library.transmission.gen as libgen
 from egret.model_library.defn import FlowType, CoordinateType
 from egret.data.model_data import map_items, zip_items
 from math import pi, radians
+from collections import OrderedDict
 
 
 def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads, penalty=1000):
@@ -91,6 +92,8 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'],
                           bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
+
+    libbus.declare_expr_vmsq(model=model, index_set=bus_attrs['names'], coordinate_type=CoordinateType.POLAR)
 
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
     libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
@@ -176,11 +179,13 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
                              )
 
     ### declare the branch power flow constraints
+    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
+    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
+    libbranch.declare_expr_c(model=model, index_set=unique_bus_pairs, coordinate_type=CoordinateType.POLAR)
+    libbranch.declare_expr_s(model=model, index_set=unique_bus_pairs, coordinate_type=CoordinateType.POLAR)
     libbranch.declare_eq_branch_power(model=model,
                                       index_set=branch_attrs['names'],
-                                      branches=branches,
-                                      branch_attrs=branch_attrs,
-                                      coordinate_type=CoordinateType.POLAR
+                                      branches=branches
                                       )
 
     ### declare the pq balances
@@ -191,7 +196,6 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
                                 bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.POLAR,
                                 **p_rhs_kwargs
                                 )
 
@@ -202,7 +206,6 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
                                 bus_bs_fixed_shunts=bus_bs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.POLAR,
                                 **q_rhs_kwargs
                                 )
 
@@ -291,6 +294,8 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
 
+    libbus.declare_expr_vmsq(model=model, index_set=bus_attrs['names'], coordinate_type=CoordinateType.RECTANGULAR)
+
     ### include the feasibility slack for the bus balances
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
@@ -372,11 +377,13 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
                              )
 
     ### declare the branch power flow constraints
+    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
+    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
+    libbranch.declare_expr_c(model=model, index_set=unique_bus_pairs, coordinate_type=CoordinateType.RECTANGULAR)
+    libbranch.declare_expr_s(model=model, index_set=unique_bus_pairs, coordinate_type=CoordinateType.RECTANGULAR)
     libbranch.declare_eq_branch_power(model=model,
                                       index_set=branch_attrs['names'],
-                                      branches=branches,
-                                      branch_attrs=branch_attrs,
-                                      coordinate_type=CoordinateType.RECTANGULAR
+                                      branches=branches
                                       )
 
     ### declare the pq balances
@@ -387,7 +394,6 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
                                 bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.RECTANGULAR,
                                 **p_rhs_kwargs
                                 )
 
@@ -398,7 +404,6 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
                                 bus_bs_fixed_shunts=bus_bs_fixed_shunts,
                                 inlet_branches_by_bus=inlet_branches_by_bus,
                                 outlet_branches_by_bus=outlet_branches_by_bus,
-                                coordinate_type=CoordinateType.RECTANGULAR,
                                 **q_rhs_kwargs
                                 )
 

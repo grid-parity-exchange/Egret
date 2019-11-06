@@ -44,6 +44,47 @@ def declare_var_va(model, index_set, **kwargs):
     decl.declare_var('va', model=model, index_set=index_set, **kwargs)
 
 
+def declare_expr_vmsq(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create an expression for the voltage magnitude squared at a bus
+    """
+    m = model
+    expr_set = decl.declare_set('_expr_vmsq', model, index_set)
+    m.vmsq = pe.Expression(expr_set)
+
+    if coordinate_type == CoordinateType.RECTANGULAR:
+        for bus in expr_set:
+            m.vmsq[bus] = m.vr[bus] ** 2 + m.vj[bus] ** 2
+    elif coordinate_type == CoordinateType.POLAR:
+        for bus in expr_set:
+            m.vmsq[bus] = m.vm[bus] ** 2
+
+
+def declare_var_vmsq(model, index_set, **kwargs):
+    """
+    Create auxiliary variable for the voltage magnitude squared at a bus
+    """
+    decl.declare_var('vmsq', model=model, index_set=index_set, **kwargs)
+
+
+def declare_eq_vmsq(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create a constraint relating vmsq to the voltages
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_vmsq', model, index_set)
+    m.eq_vmsq = pe.Constraint(con_set)
+
+    if coordinate_type == CoordinateType.POLAR:
+        for bus in con_set:
+            m.eq_vmsq[bus] = m.vmsq[bus] == m.vm[bus] ** 2
+    elif coordinate_type == CoordinateType.RECTANGULAR:
+        for bus in con_set:
+            m.eq_vmsq[bus] = m.vmsq[bus] == m.vr[bus]**2 + m.vj[bus]**2
+    else:
+        raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
+
+
 def declare_var_ir_aggregation_at_bus(model, index_set, **kwargs):
     """
     Create a variable for the aggregated real current at a bus
@@ -253,7 +294,6 @@ def declare_eq_p_balance(model, index_set,
                          gens_by_bus,
                          bus_gs_fixed_shunts,
                          inlet_branches_by_bus, outlet_branches_by_bus,
-                         coordinate_type=CoordinateType.RECTANGULAR,
                          **rhs_kwargs):
     """
     Create the equality constraints for the real power balance
@@ -272,10 +312,7 @@ def declare_eq_p_balance(model, index_set,
         p_expr -= sum([m.pt[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
-            if coordinate_type == CoordinateType.RECTANGULAR:
-                vmsq = m.vr[bus_name] ** 2 + m.vj[bus_name] ** 2
-            elif coordinate_type == CoordinateType.POLAR:
-                vmsq = m.vm[bus_name] ** 2
+            vmsq = m.vmsq[bus_name]
             p_expr -= bus_gs_fixed_shunts[bus_name] * vmsq
 
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
@@ -336,7 +373,6 @@ def declare_eq_q_balance(model, index_set,
                          gens_by_bus,
                          bus_bs_fixed_shunts,
                          inlet_branches_by_bus, outlet_branches_by_bus,
-                         coordinate_type=CoordinateType.POLAR,
                          **rhs_kwargs):
     """
     Create the equality constraints for the reactive power balance
@@ -354,10 +390,7 @@ def declare_eq_q_balance(model, index_set,
         q_expr -= sum([m.qt[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_bs_fixed_shunts[bus_name] != 0.0:
-            if coordinate_type == CoordinateType.RECTANGULAR:
-                vmsq = m.vr[bus_name] ** 2 + m.vj[bus_name] ** 2
-            elif coordinate_type == CoordinateType.POLAR:
-                vmsq = m.vm[bus_name] ** 2
+            vmsq = m.vmsq[bus_name]
             q_expr += bus_bs_fixed_shunts[bus_name] * vmsq
 
         if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error

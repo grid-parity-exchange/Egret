@@ -296,12 +296,14 @@ scaled_attributes = {
                                                       ] + \
                                                   ancillary_service_stack,
                        ('element_type', 'interface') : [ 
-                                                         'interface_from_limit',
-                                                         'interface_to_limit',
+                                                         'minimum_limit',
+                                                         'maximum_limit',
                                                          'pf',
                                                          'qf',
                                                          'pt',
                                                          'qt',
+                                                         'violation_penalty',
+                                                         'pf_violation',
                                                        ],
                        ('element_type', 'bus') : [ 
                                                     'p_balance_violation',
@@ -339,7 +341,7 @@ def _div(a,b):
     return a/b
 
 def _get_op(normal_op, inverse_op, attr_name):
-    if ('cost' in attr_name) or ('price' in attr_name) or ('lmp' in attr_name):
+    if ('cost' in attr_name) or ('price' in attr_name) or ('lmp' in attr_name) or ('penalty' in attr_name):
         return inverse_op 
     return normal_op
 

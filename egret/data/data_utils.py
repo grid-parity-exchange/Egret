@@ -20,7 +20,8 @@ from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
 from math import radians
 
-def get_ptdf_potentially_from_file(ptdf_options, branches_keys, buses_keys):
+def get_ptdf_potentially_from_file(ptdf_options, branches_keys,
+                                   buses_keys, interfaces=None):
     '''
     small loop to get a PTDF matrix previously pickled, 
     returns None if not found
@@ -48,6 +49,12 @@ def get_ptdf_potentially_from_file(ptdf_options, branches_keys, buses_keys):
 
     if PTDF is not None:
         PTDF._set_lazy_limits(ptdf_options)
+
+        ## since it's simple, recalculate the
+        ## interfaces from scratch each time
+        if interfaces is None:
+            interfaces = dict()
+        PTDF._calculate_ptdf_interface(interfaces)
 
     return PTDF
 
@@ -81,7 +88,8 @@ class PTDFMatrix(object):
     This is a helper 
     '''
     def __init__(self, branches, buses, reference_bus, base_point,
-                        ptdf_options, branches_keys = None, buses_keys = None):
+                        ptdf_options, branches_keys = None, buses_keys = None,
+                        interfaces = None):
         '''
         Creates a new _PTDFMaxtrixManager object to provide
         some useful methods for interfacing with Egret pyomo models
@@ -112,6 +120,10 @@ class PTDFMatrix(object):
 
         self._set_lazy_limits(ptdf_options)
 
+        if interfaces is None:
+            interfaces = dict()
+        self._calculate_ptdf_interface(interfaces)
+
     def _calculate(self):
         self._calculate_ptdf()
         self._calculate_phi_adjust()
@@ -129,6 +141,24 @@ class PTDFMatrix(object):
 
         ## protect the array using numpy
         self.PTDFM.flags.writeable = False
+
+    def _calculate_ptdf_interface(self, interfaces):
+        self.interface_keys = tuple(interfaces.keys())
+
+        self.PTDFM_I, self.PTDFM_I_const \
+                = tx_calc.calculate_interface_sensitivities(interfaces,
+                                            self.interface_keys,
+                                            self.PTDFM,
+                                            self.phase_shift_array,
+                                            self.phi_adjust_array,
+                                            self._branchname_to_index_map)
+
+        ## protect the array using numpy
+        self.PTDFM_I.flags.writeable = False
+        self.PTDFM_I_const.flags.writeable = False
+
+        self._interfacename_to_index_map = \
+                { i_n: idx for idx, i_n in enumerate(self.interface_keys) }
 
     def _calculate_phi_from_phi_to(self):
         return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF, mapping_bus_to_idx=self._busname_to_index_map)
@@ -163,6 +193,7 @@ class PTDFMatrix(object):
             ## Nothing to do
             self.branch_mask = np.arange(len(self.branch_limits_array))
             self.branches_keys_masked = self.branches_keys
+            self.branchname_to_index_masked_map = self._branchname_to_index_map
             self.PTDFM_masked = self.PTDFM
             self.phase_shift_array_masked = self.phase_shift_array
             self.branch_limits_array_masked = self.branch_limits_array
@@ -201,6 +232,7 @@ class PTDFMatrix(object):
 
         self.branch_mask = np.array(branch_mask)
         self.branches_keys_masked = tuple(self.branches_keys[i] for i in self.branch_mask)
+        self.branchname_to_index_masked_map = { bn : i for i,bn in enumerate(self.branches_keys_masked) }
         self.PTDFM_masked = self.PTDFM[branch_mask]
         self.phase_shift_array_masked = self.phase_shift_array[branch_mask]
         self.branch_limits_array_masked = self.branch_limits_array[branch_mask]
@@ -246,6 +278,21 @@ class PTDFMatrix(object):
 
     def bus_iterator(self):
         yield from self.buses_keys
+
+    def get_interface_const(self, interface_name):
+        return self.PTDFM_I_const[self._interfacename_to_index_map[interface_name]]
+
+    def get_interface_ptdf_abs_max(self, interface_name):
+        row_idx = self._interfacename_to_index_map[interface_name]
+        ## get the row slice
+        PTDF_I_row = self.PTDFM_I[row_idx]
+        return np.abs(PTDF_I_row).max()
+
+    def get_interface_ptdf_iterator(self, interface_name):
+        row_idx = self._interfacename_to_index_map[interface_name]
+        ## get the row slice
+        PTDF_I_row = self.PTDFM_I[row_idx]
+        yield from zip(self.buses_keys, PTDF_I_row)
 
 
 class PTDFLossesMatrix(PTDFMatrix):

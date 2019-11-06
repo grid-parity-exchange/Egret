@@ -29,10 +29,11 @@ from math import pi
 
 component_name = 'power_balance'
 
-def _copperplate_relax_network_model(block,tm):
+def _setup_egret_network_model(block, tm):
     m = block.model()
 
     ## this is not the "real" gens by bus, but the
+    ## index of net injections from the UC model
     gens_by_bus = block.gens_by_bus
 
     ### declare (and fix) the loads at the buses
@@ -44,66 +45,71 @@ def _copperplate_relax_network_model(block,tm):
 
     bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
+    return m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts
+
+def _copperplate_network_model(block, tm, relax_balance=None):
+
+    m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
+            _setup_egret_network_model(block, tm)
+
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=block,
                                    index_set=m.Buses,
                                    bus_p_loads=bus_p_loads,
                                    gens_by_bus=gens_by_bus,
                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                   relax_balance = True,
+                                   relax_balance = relax_balance,
                                    )
 
+
+def _copperplate_relax_network_model(block,tm):
+    _copperplate_network_model(block, tm, relax_balance=True)
 
 def _copperplate_approx_network_model(block,tm):
-    m = block.model()
+    _copperplate_network_model(block, tm, relax_balance=False)
 
-    ## this is not the "real" gens by bus, but the
-    gens_by_bus = block.gens_by_bus
-
-    ### declare (and fix) the loads at the buses
-    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
-
-    ## index of net injections from the UC model
-    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
-    block.pl.fix()
-
-    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
-
-    ### declare the p balance
-    libbus.declare_eq_p_balance_ed(model=block,
-                                   index_set=m.Buses,
-                                   bus_p_loads=bus_p_loads,
-                                   gens_by_bus=gens_by_bus,
-                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                   )
-
-def _ptdf_dcopf_network_model(block,tm):
-    m = block.model()
-
+def _setup_egret_network_topology(m,tm):
     buses = m._buses
     branches = m._branches
-    ptdf_options = m._ptdf_options
-
+    interfaces = m._interfaces
     branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
+
     ## this will serve as a key into our dict of PTDF matricies,
     ## so that we can avoid recalculating them each time step
     ## with the same network topology
     branches_out_service = tuple(l for l in m.TransmissionLines if value(m.LineOutOfService[l,tm]))
 
-    gens_by_bus = block.gens_by_bus
+    return buses, branches, branches_in_service, branches_out_service, interfaces
 
-    ### declare (and fix) the loads at the buses
-    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
 
-    ## this is not the "real" gens by bus, but the
-    ## index of net injections from the UC model
-    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
-    block.pl.fix()
+def _setup_interface_slacks(m,block,tm):
+    ### declare the interface slack variables
+    libbranch.declare_var_pfi_slack_pos(model=block,
+                                        index_set=m.InterfacesWithSlack,
+                                        bounds=(0, None),
+                                        )
+    libbranch.declare_var_pfi_slack_neg(model=block,
+                                        index_set=m.InterfacesWithSlack,
+                                        bounds=(0, None),
+                                        )
+
+    ### add the interface slack cost to the main model
+    m.InterfaceViolationCost[tm] = \
+            sum(m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i]*( \
+                 block.pfi_slack_pos[i] + block.pfi_slack_neg[i] )
+                for i in m.InterfacesWithSlack)
+
+
+def _ptdf_dcopf_network_model(block,tm):
+    m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
+            _setup_egret_network_model(block, tm)
+
+    buses, branches, branches_in_service, branches_out_service, interfaces = \
+            _setup_egret_network_topology(m, tm)
+
+    ptdf_options = m._ptdf_options
 
     libbus.declare_var_p_nw(block, m.Buses)
-
-    ### get the fixed shunts at the buses
-    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
     ### declare net withdraw expression for use in PTDF power flows
     libbus.declare_eq_p_net_withdraw_at_bus(model=block,
@@ -126,17 +132,24 @@ def _ptdf_dcopf_network_model(block,tm):
                              index_set=branches_in_service,
                              )
 
+    ### interface setup
+    libbranch.declare_expr_pfi(model=block,
+                               index_set=interfaces.keys()
+                               )
+
+    _setup_interface_slacks(m,block,tm)
+
     ### Get the PTDF matrix from cache, from file, or create a new one
     if branches_out_service not in m._PTDFs:
         buses_idx = tuple(buses.keys())
 
         reference_bus = value(m.ReferenceBus)
 
-        PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx)
+        PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx, interfaces=interfaces)
         
         ## NOTE: For now, just use a flat-start for unit commitment
         if PTDF is None:
-            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, branches_keys=branches_in_service, buses_keys=buses_idx)
+            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, branches_keys=branches_in_service, buses_keys=buses_idx, interfaces=interfaces)
 
         m._PTDFs[branches_out_service] = PTDF
 
@@ -145,6 +158,8 @@ def _ptdf_dcopf_network_model(block,tm):
 
     ### attach the current PTDF object to this block
     block._PTDF = PTDF
+    rel_ptdf_tol = m._ptdf_options['rel_ptdf_tol']
+    abs_ptdf_tol = m._ptdf_options['abs_ptdf_tol']
 
     if ptdf_options['lazy']:
         ### add "blank" real power flow limits
@@ -158,9 +173,6 @@ def _ptdf_dcopf_network_model(block,tm):
         lpu.add_monitored_branch_tracker(block)
         
     else: ### add all the dense constraints
-        rel_ptdf_tol = m._ptdf_options['rel_ptdf_tol']
-        abs_ptdf_tol = m._ptdf_options['abs_ptdf_tol']
-
         p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
 
         ### declare the branch power flow approximation constraints
@@ -178,18 +190,28 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      approximation_type=ApproximationType.PTDF
                                                      )
 
+    ## for now, just add all the interface constraints
+    ## TODO: incorporate into lazy logic
+    ### declare the branch power flow approximation constraints
+    libbranch.declare_eq_interface_power_ptdf_approx(model=block,
+                                                     index_set=interfaces.keys(),
+                                                     PTDF=PTDF,
+                                                     abs_ptdf_tol=abs_ptdf_tol,
+                                                     rel_ptdf_tol=rel_ptdf_tol
+                                                     )
+
+    ### declare the interface flow limits
+    libbranch.declare_ineq_p_interface_lbub(model=block,
+                                            index_set=interfaces.keys(),
+                                            interfaces=interfaces,
+                                            )
 
 def _btheta_dcopf_network_model(block,tm):
-    m = block.model()
+    m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
+            _setup_egret_network_model(block, tm)
 
-    buses = m._buses
-    branches = m._branches
-
-    branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
-    ## this will serve as a key into our dict of PTDF matricies,
-    ## so that we can avoid recalculating them each time step
-    ## with the same network topology
-    branches_out_service = tuple(l for l in m.TransmissionLines if value(m.LineOutOfService[l,tm]))
+    buses, branches, branches_in_service, branches_out_service, interfaces = \
+            _setup_egret_network_topology(m, tm)
 
     ## need the inlet/outlet relationship given some lines may be out
     inlet_branches_by_bus = dict()
@@ -204,20 +226,6 @@ def _btheta_dcopf_network_model(block,tm):
             if l not in branches_out_service:
                 outlet_branches_by_bus[b].append(l)
 
-    ## this is not the "real" gens by bus, but the
-    ## index of net injections from the UC model
-    gens_by_bus = block.gens_by_bus
-
-    ### declare (and fix) the loads at the buses
-    bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
-
-    libbus.declare_var_pl(block, buses.keys(), initialize=bus_p_loads)
-    block.pl.fix()
-
-    ### get the fixed shunts at the buses
-    bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
-
-    ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in buses.keys()}
     libbus.declare_var_va(block, buses.keys(), initialize=None,
                           bounds=va_bounds
@@ -269,6 +277,26 @@ def _btheta_dcopf_network_model(block,tm):
                                                   branches=branches,
                                                   coordinate_type=CoordinateType.POLAR
                                                   )
+
+    ### interface model
+    ### declare the interface variables
+    libbranch.declare_var_pfi(model=block,
+                              index_set=interfaces.keys(),
+                              )
+
+    _setup_interface_slacks(m,block,tm)
+
+    ### declare the interface flow equality constraint
+    libbranch.declare_eq_interface_power_btheta_approx(model=block,
+                                                       index_set=interfaces.keys(),
+                                                       interfaces=interfaces,
+                                                       )
+
+    ### declare the interface flow limits
+    libbranch.declare_ineq_p_interface_lbub(model=block,
+                                            index_set=interfaces.keys(),
+                                            interfaces=interfaces,
+                                            )
 
     return block
 
@@ -462,7 +490,11 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
     ## save flag for objective
     model.reactive_power = reactive_power
 
-    system_load_mismatch = (network_model_builder == _copperplate_approx_network_model)
+    system_load_mismatch = (network_model_builder in \
+                            [_copperplate_approx_network_model, \
+                             _copperplate_relax_network_model, \
+                            ]
+                           )
 
     if slacks:
         if system_load_mismatch:
@@ -487,6 +519,9 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
 
     # for transmission network
     model.TransmissionBlock = Block(model.TimePeriods, concrete=True)
+
+    # for interface violation costs at a time step
+    model.InterfaceViolationCost = Expression(model.TimePeriods, rule=lambda m,t:0.)
 
     for tm in model.TimePeriods:
         b = model.TransmissionBlock[tm]
@@ -564,14 +599,33 @@ def power_balance_constraints(model, slacks=True):
         else:
             return m.LinePower[l,t] == (m.Angle[m.BusFrom[l], t] - m.Angle[m.BusTo[l], t]) / m.Impedence[l]
     model.CalculateLinePower = Constraint(model.TransmissionLines, model.TimePeriods, rule=line_power_rule)
-    
-    def interface_from_limit_rule(m,i,t):
-        return sum(m.LinePower[l,t] for l in m.InterfaceLines[i]) <= m.InterfaceFromLimit[i]
-    model.InterfaceFromLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_from_limit_rule)
 
-    def interface_to_limit_rule(m,i,t):
-        return sum(m.LinePower[l,t] for l in m.InterfaceLines[i]) >= -m.InterfaceToLimit[i]
-    model.InterfaceToLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_to_limit_rule)
+    ## interface variables, expressions, and constraints
+    model.InterfaceSlackPos = Var(model.InterfacesWithSlack, model.TimePeriods, within=NonNegativeReals)
+    model.InterfaceSlackNeg = Var(model.InterfacesWithSlack, model.TimePeriods, within=NonNegativeReals)
+
+    def interface_flow_rule(m, i, t):
+        return sum(m.InterfaceLineOrientation[i,l]*m.LinePower[l,t] for l in m.InterfaceLines[i])
+    model.InterfaceFlow = Expression(model.Interfaces, model.TimePeriods, rule=interface_flow_rule)
+    
+    def interface_max_limit_rule(m,i,t):
+        expr = m.InterfaceFlow[i,t]
+        if i in m.InterfacesWithSlack:
+            expr -= m.InterfaceSlackPos[i,t]
+        return expr <= m.InterfaceMaxFlow[i]
+    model.InterfaceMaxLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_max_limit_rule)
+
+    def interface_min_limit_rule(m,i,t):
+        expr = m.InterfaceFlow[i,t]
+        if i in m.InterfacesWithSlack:
+            expr += m.InterfaceSlackNeg[i,t]
+        return expr >= m.InterfaceMinFlow[i]
+    model.InterfaceMinLimitConstr = Constraint(model.Interfaces, model.TimePeriods, rule=interface_min_limit_rule)
+
+    def interface_violation_cost_rule(m,t):
+        return sum(m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i]*(m.InterfaceSlackPos[i,t]+m.InterfaceSlackNeg[i,t]) \
+                    for i in m.InterfacesWithSlack)
+    model.InterfaceViolationCost = Expression(model.TimePeriods, rule=interface_violation_cost_rule)
     
     if slacks:
         _add_load_mismatch(model)
