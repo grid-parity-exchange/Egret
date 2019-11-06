@@ -36,8 +36,7 @@ class TestCopperPlateDispatch(unittest.TestCase):
 
     @parameterized.expand(zip(test_cases, soln_cases))
     def test_copperplate_dispatch_model(self, test_case, soln_case, include_kwargs=False):
-        md_soln = ModelData()
-        md_soln.read_from_json(soln_case)
+        md_soln = ModelData.read(soln_case)
 
         md_dict = create_ModelData(test_case)
 
