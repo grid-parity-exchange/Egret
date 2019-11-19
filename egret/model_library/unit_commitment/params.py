@@ -145,7 +145,7 @@ def load_params(model, model_data):
     if 'reference_bus' in system and system['reference_bus'] in model.Buses:
         reference_bus = system['reference_bus']
     else:
-        reference_bus = list(sorted(m.Buses))[0]
+        reference_bus = list(sorted(model.Buses))[0]
 
     model.ReferenceBus = Param(within=model.Buses, initialize=reference_bus)
 
@@ -297,9 +297,8 @@ def load_params(model, model_data):
     for lname, load in loads.items():
         bus = load['bus']
         load_time = TimeMapper(load['p_load'])
-        load_in_service = TimeMapper(load['in_service'])
         for t in model.TimePeriods:
-            bus_loads[bus, t] += load_in_service(None,t)*load_time(None,t)
+            bus_loads[bus, t] += load_time(None,t)
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
