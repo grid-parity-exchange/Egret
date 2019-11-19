@@ -39,8 +39,7 @@ class TestBThetaDCOPF(unittest.TestCase):
     def test_btheta_losses_dcopf_model(self, test_case, soln_case, include_kwargs=False):
         dcopf_losses_model = create_btheta_losses_dcopf_model
 
-        md_soln = ModelData()
-        md_soln.read_from_json(soln_case)
+        md_soln = ModelData.read(soln_case)
 
         md_dict = create_ModelData(test_case)
 
@@ -58,8 +57,7 @@ class TestBThetaDCOPF(unittest.TestCase):
     def test_ptdf_losses_dcopf_model(self, test_case, soln_case, include_kwargs=False):
         dcopf_losses_model = create_ptdf_losses_dcopf_model
 
-        md_soln = ModelData()
-        md_soln.read_from_json(soln_case)
+        md_soln = ModelData.read(soln_case)
 
         md_dict = create_ModelData(test_case)
 

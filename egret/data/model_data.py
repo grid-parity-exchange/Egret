@@ -154,6 +154,60 @@ class ModelData(object):
         else:
             self.data = ModelData.empty_model_data_dict()
 
+    @classmethod
+    def read(cls, filename, file_type=None):
+        """
+        Reads data from a file into a new ModelData object
+
+        Parameters
+        ----------
+        filename : str
+            The path to the file
+        file_type : None,str (optional)
+            The specification of the file_type. Valid values are 'json', 'json.gz' for json-ed
+            EGRET ModelData objects, 'm' for MATPOWER files, 'dat' for Prescient data files, and
+            'pglib-uc' for json files from pglib-uc. If None, the file type is inferred from the
+            extension.
+        """
+        valid_file_types = ['json', 'json.gz', 'm', 'dat', 'pglib-uc']
+        if file_type is not None and file_type not in valid_file_types:
+            raise Exception("Unrecognized file_type {}. Valid file types are {}".format(file_type, valid_file_types))
+        elif file_type is None:
+            ## identify the file type
+            if filename[-5:] == '.json':
+                file_type = 'json'
+            elif filename[-8:] == '.json.gz':
+                file_type = 'json.gz'
+            elif filename[-2:] == '.m':
+                file_type = 'm'
+            elif filename[-4:] == '.dat':
+                file_type = 'dat'
+            else:
+                raise Exception("Could not infer type of file {} from its extension!".format(filename))
+
+        if file_type == 'json':
+            import json
+            with open(filename) as f:
+                data = json.load(f)
+        elif file_type == 'json.gz':
+            import json
+            import gzip
+            with gzip.open(filename, 'rt') as f:
+                data = json.load(f)
+        elif file_type == 'm':
+            from egret.parsers.matpower_parser import create_model_data_dict
+            data = create_model_data_dict(filename)
+        elif file_type == 'dat':
+            from egret.parsers.prescient_dat_parser import create_model_data_dict
+            data = create_model_data_dict(filename)
+        elif file_type == 'pglib-uc':
+            from egret.parsers.pglib_uc_parser import create_model_data_dict
+            data = create_model_data_dict(filename)
+
+        logger.debug("ModelData read from {}".format(filename))
+
+        return cls(data=data)
+
     def elements(self, element_type, **kwargs):
         """
         A python generator that loops over modeling elements of a particular element type
@@ -264,7 +318,6 @@ class ModelData(object):
         """
         return ModelData(_copy_only_in_service(self.data))
 
-
     def clone_at_timestamp(self, timestamp):
         """
         Creae a copy of the ModelData object using values from a single timestamp.
@@ -324,35 +377,41 @@ class ModelData(object):
 
         return mdclone
 
-    def read_from_json(self, filename):
+    def write(self, filename, file_type=None):
         """
-        Reads the json file and overwrites the ModelData object dict.
+        Dumps the ModelData object dict to the specified file.
+        Optionally, the file_type can be specified if not inferred.
 
         Parameters
         ----------
-        filename : *.json filename
+        filename : str
             The full filename including extension and path.
+        file_type : None
+            If specified, the encoding used when writing the file.
+            If None, it will be inferred from the file extension.
         """
-        import json
+        valid_file_types = ['json', 'json.gz']
+        if file_type is not None and file_type not in valid_file_types:
+            raise Exception("Unrecognized file_type {}. Valid file types are {}".format(file_type, valid_file_types))
+        elif file_type is None:
+            if filename[-5:] == '.json':
+                file_type = 'json'
+            elif filename[-8:] == '.json.gz':
+                file_type = 'json.gz'
+            else:
+                logger.warning("Unrecognized file_type for file {} in ModelData.write, using 'json'".format(filename))
+                file_type = 'json'
 
-        with open(filename) as f:
-            data = json.load(f)
-
-        self.data = data
-
-    def write_to_json(self, filename):
-        """
-        Dumps the ModelData object dict to a json file.
-
-        Parameters
-        ----------
-        filename : *.json filename
-            The full filename including extension and path.
-        """
-        import json
-
-        with open(filename + '.json','w') as f:
-            json.dump(self.data, f)
+        if file_type == 'json':
+            import json
+            with open(filename,'w') as f:
+                json.dump(self.data, f)
+        elif file_type == 'json.gz':
+            import json
+            import gzip
+            with gzip.open(filename, 'wt') as f:
+                json.dump(self.data, f)
+        logger.debug("ModelData written to {}".format(filename))
 
     def _recurse_into_timestamp(self, old_node, time_index):
         # create a new node for the new dict
