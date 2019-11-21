@@ -10,7 +10,7 @@
 ## loads and validates input unit commitment data
 from pyomo.environ import *
 import math
-from egret.data.model_data import map_items, zip_items
+from egret.data.data_utils import map_items, zip_items
 from egret.model_library.transmission import tx_utils
 from egret.common.log import logger
     

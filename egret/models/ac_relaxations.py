@@ -6,7 +6,7 @@ import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 from egret.model_library.defn import FlowType, CoordinateType
-from egret.data.model_data import map_items, zip_items
+from egret.data.data_utils import map_items, zip_items
 from math import pi, radians
 from collections import OrderedDict
 from pyomo.core.expr.visitor import polynomial_degree
