@@ -8,7 +8,7 @@
 #  ___________________________________________________________________________
 
 """
-This module defines some utilities for handling time series
+This module defines some utilities for handling ModelData dictionaries
 """
 import copy as cp
 
