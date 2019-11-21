@@ -358,19 +358,18 @@ class ModelData(object):
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
         attribute containing the time series is replaced with the values corresponding 
-        to the times only in times_list. The values in times_list should be a subset 
+        to the times only in times_list. The values in times_keys should be a subset
         of those in self.data['system']['time_keys']
 
         Parameters
         ----------
-        times_list : list 
+        times_list : list of elements from self.data['system']['time_keys']
            A list of times to slice out
 
         Returns
         -------
             ModelData
         """
-
         all_times = self.data['system']['time_keys']
         time_indices = du._get_sub_list_indicies(all_times, time_keys)
 
@@ -384,8 +383,8 @@ class ModelData(object):
 
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
-        attribute containing the time series is replaced with a float value corresponding
-        to the time self.data['system']['time_keys'][time_index].
+        the attribute containing the time series is replaced by the value found in
+        attribute["values"][time_index].
 
         Parameters
         ----------
@@ -409,8 +408,9 @@ class ModelData(object):
 
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
-        time series data is sliced with time_keys, i.e., the times associated with
-        the time_keys of 
+        attribute containing the time series data is sliced with time_indices, i.e.,
+        [attribute["values"][i] for i in time_indices]. The list
+        self.data['system']['time_keys'] is updated accordingly.
 
         Parameters
         ----------
