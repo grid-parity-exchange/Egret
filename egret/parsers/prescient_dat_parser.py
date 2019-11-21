@@ -43,7 +43,7 @@ def create_model_data_dict(dat_file):
     elements = md_dict['elements']
     system = md_dict['system']
 
-    system['time_indices'] = list(str(t) for t in params.TimePeriods)
+    system['time_keys'] = list(str(t) for t in params.TimePeriods)
     system['time_period_length_minutes'] = value(params.TimePeriodLengthMinutes)
 
     system['load_mismatch_cost'] = value(params.LoadMismatchPenalty)

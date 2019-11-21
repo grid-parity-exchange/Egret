@@ -48,7 +48,7 @@ def _recurse_into_time_index(old_node, time_index):
                 vals = att['values']
                 new_node[key] = att['values'][time_index]
             else:
-                new_node[key] = self._recurse_into_timestamp(att,time_index)
+                new_node[key] = _recurse_into_time_index(att,time_index)
         else:
             # be paranoid about other attributes (could be list, or other mutable type)
             new_node[key] = cp.deepcopy(att)

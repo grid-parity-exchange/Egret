@@ -16,7 +16,7 @@ import pyomo.environ as pe
 import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.decl as decl
 from egret.model_library.defn import FlowType, CoordinateType, ApproximationType, RelaxationType
-from egret.data.model_data import zip_items
+from egret.data.data_utils import zip_items
 from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
 from collections import OrderedDict

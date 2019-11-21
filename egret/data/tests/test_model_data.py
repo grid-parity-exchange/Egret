@@ -62,7 +62,7 @@ testdata = {
     'system': { 
               'reference_bus': 'B1',
               'reference_bus_angle': 0.0,
-              'time_indices' : [0.0, 1.0, 2.0],
+              'time_keys' : [0.0, 1.0, 2.0],
               },
 }
 
@@ -119,7 +119,7 @@ testdata = {
     'system': { 
               'reference_bus': 'B1',
               'reference_bus_angle': 0.0,
-              'time_indices' : [0.0, 1.0, 2.0],
+              'time_keys' : [0.0, 1.0, 2.0],
               },
 }
 """
@@ -167,13 +167,47 @@ def test_clone():
 
     assert md.data == cmd.data
 
-def test_clone_at_timestamp():
+def test_clone_at_time():
     md = ModelData(testdata)
-    cloned_md = md.clone_at_timestamp(2.0)
+    cloned_md = md.clone_at_time(2.0)
 
     comparison_md = md.clone()
     comparison_md.data['elements']['load']['L1']['Pl'] = 111.1
-    del comparison_md.data['system']['time_indices']
+    del comparison_md.data['system']['time_keys']
+
+    assert cloned_md.data == comparison_md.data
+
+def test_clone_at_time_index():
+    md = ModelData(testdata)
+    cloned_md = md.clone_at_time_index(2)
+
+    comparison_md = md.clone()
+    comparison_md.data['elements']['load']['L1']['Pl'] = 111.1
+    del comparison_md.data['system']['time_keys']
+
+    assert cloned_md.data == comparison_md.data
+
+def test_clone_at_time_keys():
+    md = ModelData(testdata)
+    cloned_md = md.clone_at_time_keys([1.0,2.0])
+
+    comparison_md = md.clone()
+    comparison_md.data['elements']['load']['L1']['Pl'] = \
+            {'data_type':'time_series', 'values': [111.0, 111.1]}
+
+    comparison_md.data['system']['time_keys'] = [1.0, 2.0]
+
+    assert cloned_md.data == comparison_md.data
+
+def test_clone_at_time_indices():
+    md = ModelData(testdata)
+    cloned_md = md.clone_at_time_keys([1,2])
+
+    comparison_md = md.clone()
+    comparison_md.data['elements']['load']['L1']['Pl'] = \
+            {'data_type':'time_series', 'values': [111.0, 111.1]}
+
+    comparison_md.data['system']['time_keys'] = [1.0, 2.0]
 
     assert cloned_md.data == comparison_md.data
 

@@ -912,7 +912,7 @@ def solve_unit_commitment(model_data,
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
 
-    data_time_periods = md.data['system']['time_indices']
+    data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
 
     regulation = False

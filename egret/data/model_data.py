@@ -123,6 +123,7 @@ nested dictionary structure.
 
 """
 import logging
+import copy as cp
 import egret.data.data_utils as du
 logger = logging.getLogger('egret.model_data')
 
@@ -325,7 +326,7 @@ class ModelData(object):
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
         attribute containing the time series is replaced with a float value corresponding
-        to the specified time, which must be a member of self.data['system']['time_indices'].
+        to the specified time, which must be a member of self.data['system']['time_keys'].
 
         .. todo::
            This can actually be made general based on "data_type" and idx instead of specific to time_series
@@ -339,14 +340,14 @@ class ModelData(object):
         -------
             ModelData
         """
-        time_indices = self.data['system']['time_indices']
+        time_keys = self.data['system']['time_keys']
 
         try:
-            time_index = time_indices.index(time)
+            time_index = time_keys.index(time)
         except ValueError:
-            raise ValueError("time {} not found in time_indices'")
+            raise ValueError("time {} not found in time_keys'")
 
-        gd = self.clone_at_timeindex(time_index)
+        gd = self.clone_at_time_index(time_index)
 
         return gd
 
@@ -358,7 +359,7 @@ class ModelData(object):
         a time_series is encountered (recognized by "data_type"="time_series"), the
         attribute containing the time series is replaced with the values corresponding 
         to the times only in times_list. The values in times_list should be a subset 
-        of those in self.data['system']['time_indices']
+        of those in self.data['system']['time_keys']
 
         Parameters
         ----------
@@ -370,10 +371,10 @@ class ModelData(object):
             ModelData
         """
 
-        all_times = self.data['system']['time_indices']
-        time_indices = du._get_sub_list_indicies(all_times, time_slice)
+        all_times = self.data['system']['time_keys']
+        time_indices = du._get_sub_list_indicies(all_times, time_keys)
 
-        gd = self.clone_at_timeindices(time_indices)
+        gd = self.clone_at_time_indices(time_indices)
 
         return gd
 
@@ -384,7 +385,7 @@ class ModelData(object):
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
         attribute containing the time series is replaced with a float value corresponding
-        to the time self.data['system']['time_indices'][time_index].
+        to the time self.data['system']['time_keys'][time_index].
 
         Parameters
         ----------
@@ -398,7 +399,7 @@ class ModelData(object):
         mdclone = ModelData(du._recurse_into_time_index(self.data, time_index))
 
         ## the new model data has no time
-        del mdclone.data['system']['time_indices']
+        del mdclone.data['system']['time_keys']
 
         return mdclone
 
@@ -408,12 +409,12 @@ class ModelData(object):
 
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
-        time series data is sliced with time_indices, i.e., the times associated with
-        the time_indices of 
+        time series data is sliced with time_keys, i.e., the times associated with
+        the time_keys of 
 
         Parameters
         ----------
-        time_indices : list of ints
+        time_keys : list of ints
             The index into time series data at which to copy
 
         Returns
@@ -422,9 +423,9 @@ class ModelData(object):
         """
         mdclone = ModelData(du._recurse_into_time_indices(self.data, time_indices))
 
-        old_times = self.data['system']['time_indices']
+        old_times = self.data['system']['time_keys']
 
-        mdclone.data['system']['time_indices'] = [old_times[i] for i in time_indices]
+        mdclone.data['system']['time_keys'] = [old_times[i] for i in time_indices]
 
         return mdclone
 

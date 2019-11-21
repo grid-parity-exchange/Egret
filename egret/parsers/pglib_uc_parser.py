@@ -67,7 +67,7 @@ def create_model_data_dict(pglib_uc_filename):
     time_periods = list(range(1, pglib_uc_dict["time_periods"]+1))
 
     system["reserve_requirement"] = { "data_type" : "time_series", "values" : pglib_uc_dict["reserves"] }
-    system["time_indices"] = time_periods
+    system["time_keys"] = time_periods
     system["baseMVA"] = 1.
     system["time_period_length_minutes"] = 60
     system["load_mismatch_cost"] = 10000
