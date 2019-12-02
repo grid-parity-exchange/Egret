@@ -20,7 +20,7 @@ import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 
 from egret.model_library.defn import ApproximationType
-from egret.data.model_data import map_items, zip_items
+from egret.data.data_utils import map_items, zip_items
 from math import pi
 
 

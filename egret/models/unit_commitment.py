@@ -22,7 +22,7 @@ from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 from pyomo.solvers.plugins.solvers.gurobi_persistent import GurobiPersistent 
 
 import egret.common.lazy_ptdf_utils as lpu
-import egret.data.data_utils as data_utils
+import egret.data.ptdf_utils as ptdf_utils
 import pyomo.environ as pe
 import numpy as np
 
@@ -829,7 +829,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     results.egret_metasolver = egret_metasolver_status
 
     ## write the PTDF matrix, if told to
-    data_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
+    ptdf_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
 
     return m, results, solver
 
@@ -912,7 +912,7 @@ def solve_unit_commitment(model_data,
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
 
-    data_time_periods = md.data['system']['time_indices']
+    data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
 
     regulation = False

@@ -182,7 +182,7 @@ def ancillary_services(model):
     system = md.data['system']
     elements = md.data['elements']
 
-    time_keys = system['time_indices']
+    time_keys = system['time_keys']
     TimeMapper = uc_time_helper
 
 
@@ -428,7 +428,7 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
 
     system = md.data['system']
 
-    time_keys = system['time_indices']
+    time_keys = system['time_keys']
     TimeMapper = uc_time_helper
 
     def _check_reg(e_dict):
@@ -599,7 +599,7 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
 
     system = md.data['system']
 
-    time_keys = system['time_indices']
+    time_keys = system['time_keys']
     TimeMapper = uc_time_helper
 
     def _check_spin(e_dict):
@@ -695,7 +695,7 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
 
     system = md.data['system']
 
-    time_keys = system['time_indices']
+    time_keys = system['time_keys']
     TimeMapper = uc_time_helper
 
     def _check_nspin(e_dict):
@@ -795,7 +795,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
 
     system = md.data['system']
 
-    time_keys = system['time_indices']
+    time_keys = system['time_keys']
     TimeMapper = uc_time_helper
 
     def _check_supplemental(e_dict):
@@ -930,7 +930,7 @@ def flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_
 
     system = md.data['system']
 
-    time_keys = system['time_indices']
+    time_keys = system['time_keys']
     TimeMapper = uc_time_helper
 
     def _check_flex(e_dict):

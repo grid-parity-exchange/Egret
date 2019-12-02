@@ -122,8 +122,9 @@ nested dictionary structure.
     * Document the data-types for attributes
 
 """
-import copy as cp
 import logging
+import copy as cp
+import egret.data.data_utils as du
 logger = logging.getLogger('egret.model_data')
 
 class ModelData(object):
@@ -316,64 +317,115 @@ class ModelData(object):
         -------
             ModelData
         """
-        return ModelData(_copy_only_in_service(self.data))
+        return ModelData(du._copy_only_in_service(self.data))
 
-    def clone_at_timestamp(self, timestamp):
+    def clone_at_time(self, time):
         """
-        Creae a copy of the ModelData object using values from a single timestamp.
+        Create a copy of the ModelData object using values from a single time.
 
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
         attribute containing the time series is replaced with a float value corresponding
-        to the specified timestamp.
+        to the specified time, which must be a member of self.data['system']['time_keys'].
 
         .. todo::
            This can actually be made general based on "data_type" and idx instead of specific to time_series
 
         Parameters
         ----------
-        timestamp : str, int, or TimeStamp
-           The desired timestamp to use when collapsing the representation.
-
+        time : str, int,
+           The desired time to use when collapsing the representation.
 
         Returns
         -------
             ModelData
         """
-        time_indices = self.data['system']['time_indices']
+        time_keys = self.data['system']['time_keys']
 
-        time_index = time_indices.index(timestamp)
+        try:
+            time_index = time_keys.index(time)
+        except ValueError:
+            raise ValueError("time {} not found in time_keys'")
 
-        gd = self.clone_at_timeindex(time_index)
+        gd = self.clone_at_time_index(time_index)
 
         return gd
 
-    def clone_at_timeindex(self, time_index):
+    def clone_at_time_keys(self, time_keys):
+        """
+        Creae a copy of the ModelData object using values from a subset of times.
+
+        Create a copy of this ModelData object, but with the following change. Whenever
+        a time_series is encountered (recognized by "data_type"="time_series"), the
+        attribute containing the time series is replaced with the values corresponding 
+        to the times only in times_list. The values in times_keys should be a subset
+        of those in self.data['system']['time_keys']
+
+        Parameters
+        ----------
+        times_list : list of elements from self.data['system']['time_keys']
+           A list of times to slice out
+
+        Returns
+        -------
+            ModelData
+        """
+        all_times = self.data['system']['time_keys']
+        time_indices = du._get_sub_list_indicies(all_times, time_keys)
+
+        gd = self.clone_at_time_indices(time_indices)
+
+        return gd
+
+    def clone_at_time_index(self, time_index):
         """
         Creae a copy of the ModelData object using values from a single time index value.
 
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
-        attribute containing the time series is replaced with a float value corresponding
-        to the specified time index.
-
-        .. todo::
-           This can actually be made general based on "data_type" and idx instead of specific to time_series
+        the attribute containing the time series is replaced by the value found in
+        attribute["values"][time_index].
 
         Parameters
         ----------
         time_index : int
             The index into time series data at which to copy
 
+        Returns
+        -------
+            ModelData
+        """
+        mdclone = ModelData(du._recurse_into_time_index(self.data, time_index))
+
+        ## the new model data has no time
+        del mdclone.data['system']['time_keys']
+
+        return mdclone
+
+    def clone_at_time_indices(self, time_indices):
+        """
+        Creae a copy of the ModelData object using values from a single time index value.
+
+        Create a copy of this ModelData object, but with the following change. Whenever
+        a time_series is encountered (recognized by "data_type"="time_series"), the
+        attribute containing the time series data is sliced with time_indices, i.e.,
+        [attribute["values"][i] for i in time_indices]. The list
+        self.data['system']['time_keys'] is updated accordingly.
+
+        Parameters
+        ----------
+        time_keys : list of ints
+            The index into time series data at which to copy
 
         Returns
         -------
             ModelData
         """
-        mdclone = ModelData(self._recurse_into_timestamp(self.data, time_index))
+        mdclone = ModelData(du._recurse_into_time_indices(self.data, time_indices))
 
-        ## the new model data has no time
-        del mdclone.data['system']['time_indices']
+        old_times = self.data['system']['time_keys']
+
+        mdclone.data['system']['time_keys'] = [old_times[i] for i in time_indices]
 
         return mdclone
 
@@ -412,49 +464,3 @@ class ModelData(object):
             with gzip.open(filename, 'wt') as f:
                 json.dump(self.data, f)
         logger.debug("ModelData written to {}".format(filename))
-
-    def _recurse_into_timestamp(self, old_node, time_index):
-        # create a new node for the new dict
-        new_node = dict()
-        # loop of the exisiting attributes
-        for key, att in old_node.items():
-            # ignore if not at dict
-            if isinstance(att, dict):
-                if 'data_type' in att and att['data_type'] == 'time_series':
-                    vals = att['values']
-                    new_node[key] = att['values'][time_index]
-                else:
-                    new_node[key] = self._recurse_into_timestamp(att,time_index)
-            else:
-                # be paranoid about other attributes (could be list, or other mutable type)
-                new_node[key] = cp.deepcopy(att)
-        return new_node
-
-
-# TODO: These should be moved to a more general "model utilities" module
-def map_items(func, d):
-    return {k: func(v) for k, v in d.items()}
-
-
-def zip_items(dict_lb, dict_ub):
-    return {k: (dict_lb[k], dict_ub[k]) for k in dict_lb.keys()}
-
-def _copy_only_in_service(data_dict):
-    new_dd = dict()
-    for key, value in data_dict.items():
-        if key == 'elements':
-            ## value is the elements dictionary
-            new_dd[key] = dict()
-            new_elements = new_dd[key]
-            for elements_name, elements in value.items():
-                new_elements[elements_name] = dict()
-                new_element_dict = new_elements[elements_name]
-                for element_name, element in elements.items():
-                    if 'in_service' in element and (not element['in_service']):
-                        continue
-                    else:
-                        new_element_dict[element_name] = cp.deepcopy(element)
-        else:
-            new_dd[key] = cp.deepcopy(value)
-    return new_dd
-

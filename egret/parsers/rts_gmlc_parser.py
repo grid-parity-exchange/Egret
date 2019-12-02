@@ -232,7 +232,7 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
     for load in load_timeseries:
         times.append(str(load.DateTime))
 
-    system["time_indices"] = times
+    system["time_keys"] = times
 
     _times_to_idx_map = { t : i for i,t in enumerate(times) }
 

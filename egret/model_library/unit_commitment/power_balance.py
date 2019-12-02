@@ -21,7 +21,7 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
-import egret.data.data_utils as data_utils
+import egret.data.ptdf_utils as ptdf_utils
 import egret.common.lazy_ptdf_utils as lpu
 
 from egret.model_library.defn import BasePointType, CoordinateType, ApproximationType
@@ -145,11 +145,11 @@ def _ptdf_dcopf_network_model(block,tm):
 
         reference_bus = value(m.ReferenceBus)
 
-        PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx, interfaces=interfaces)
+        PTDF = ptdf_utils.get_ptdf_potentially_from_file(ptdf_options, branches_in_service, buses_idx, interfaces=interfaces)
         
         ## NOTE: For now, just use a flat-start for unit commitment
         if PTDF is None:
-            PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, branches_keys=branches_in_service, buses_keys=buses_idx, interfaces=interfaces)
+            PTDF = ptdf_utils.PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, branches_keys=branches_in_service, buses_keys=buses_idx, interfaces=interfaces)
 
         m._PTDFs[branches_out_service] = PTDF
 

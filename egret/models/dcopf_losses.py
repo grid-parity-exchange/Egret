@@ -23,11 +23,11 @@ import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 
-import egret.data.data_utils as data_utils
+import egret.data.ptdf_utils as ptdf_utils
 import egret.common.lazy_ptdf_utils as lpu
 
 from egret.model_library.defn import CoordinateType, ApproximationType, RelaxationType, BasePointType
-from egret.data.model_data import map_items, zip_items
+from egret.data.data_utils import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack
 from egret.models.dcopf import _include_feasibility_slack
 from math import pi, radians
@@ -251,7 +251,7 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
     ## We'll assume we have a solution to initialize from
     base_point = BasePointType.SOLUTION
 
-    PTDF = data_utils.PTDFLossesMatrix(branches, buses, reference_bus, base_point, ptdf_options)
+    PTDF = ptdf_utils.PTDFLossesMatrix(branches, buses, reference_bus, base_point, ptdf_options)
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
 

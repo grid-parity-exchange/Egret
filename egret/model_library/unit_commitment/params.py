@@ -10,7 +10,7 @@
 ## loads and validates input unit commitment data
 from pyomo.environ import *
 import math
-from egret.data.model_data import map_items, zip_items
+from egret.data.data_utils import map_items, zip_items
 from egret.model_library.transmission import tx_utils
 from egret.common.log import logger
     
@@ -83,7 +83,7 @@ def load_params(model, model_data):
     system = md.data['system']
     elements = md.data['elements']
 
-    time_keys = system['time_indices']
+    time_keys = system['time_keys']
     TimeMapper = uc_time_helper
     
     ## insert potentially missing keys
@@ -164,7 +164,7 @@ def load_params(model, model_data):
     ## IN HOURS, assert athat this must be a positive number
     model.TimePeriodLengthHours = Param(default=value(model.TimePeriodLengthMinutes)/60., within=PositiveReals)
 
-    model.NumTimePeriods = Param(within=PositiveIntegers, initialize=len(system['time_indices']))
+    model.NumTimePeriods = Param(within=PositiveIntegers, initialize=len(system['time_keys']))
     
     model.InitialTime = Param(within=PositiveIntegers, default=1)
     model.TimePeriods = RangeSet(model.InitialTime, model.NumTimePeriods)

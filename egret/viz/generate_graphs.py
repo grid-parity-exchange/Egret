@@ -115,7 +115,7 @@ def _fuel_type_to_code(x):
     
     return code
 
-def _build_attribute_to_array_func(time_indices):
+def _build_attribute_to_array_func(time_keys):
     '''returns a function for converting EGRET time-valued objects to np arrays'''
     def attribute_to_array(attr):
         '''returns a numpy array for the time-valued attr, or None if the attr is None'''
@@ -124,11 +124,11 @@ def _build_attribute_to_array_func(time_indices):
         if isinstance(attr, dict):
             if isinstance(attr['values'], dict):
                 # For backwards compatibility
-                return np.array([float(attr['values'][t]) for t in time_indices])
+                return np.array([float(attr['values'][t]) for t in time_keys])
             else:
                 return np.array(attr['values'])
         else:
-            return np.array([float(attr) for t in time_indices])
+            return np.array([float(attr) for t in time_keys])
     return attribute_to_array
 
 def generate_stack_graph(egret_model_data, bar_width=0.9, 
@@ -157,7 +157,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     '''
 
     ## functions for interfacing with EGRET time structure
-    time_periods = egret_model_data.data['system']['time_indices']
+    time_periods = egret_model_data.data['system']['time_keys']
     attribute_to_array = _build_attribute_to_array_func(time_periods)
 
     def _plot_generation_stack_components():
@@ -398,7 +398,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
 
     fig, ax = plt.subplots(figsize=(16, 8))
 
-    time_labels = [textwrap.fill(time_index, 10) for time_index in egret_model_data.data['system']['time_indices']]
+    time_labels = [textwrap.fill(time_index, 10) for time_index in egret_model_data.data['system']['time_keys']]
     indices = np.arange(len(time_labels))
                 
     # Plot generation dispatch/output.

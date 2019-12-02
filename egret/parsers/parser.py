@@ -132,7 +132,7 @@ def convert_load_by_area_to_source(data_dir, begin_time, end_time, t0_state=None
         for load in load_timeseries:
             times.append(str(load.DateTime))
 
-        system["time_indices"] = times
+        system["time_keys"] = times
 
         ## load into grid_network object
         ## First, load Pl, Ql
@@ -393,7 +393,7 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
     for load in load_dict:
         times.append(str(load['DateTime']))
 
-    system["time_indices"] = times
+    system["time_keys"] = times
 
     ## load into grid_network object
     ## First, load Pl, Ql

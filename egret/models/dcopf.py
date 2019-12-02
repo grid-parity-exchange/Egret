@@ -20,10 +20,10 @@ import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 import egret.common.lazy_ptdf_utils as lpu
-import egret.data.data_utils as data_utils
+import egret.data.ptdf_utils as ptdf_utils
 
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
-from egret.data.model_data import map_items, zip_items
+from egret.data.data_utils import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack, create_copperplate_dispatch_approx_model
 from egret.common.log import logger
 from math import pi, radians
@@ -244,14 +244,14 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
 
-    PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_idx, buses_idx)
+    PTDF = ptdf_utils.get_ptdf_potentially_from_file(ptdf_options, branches_idx, buses_idx)
     if PTDF is None:
-        PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
+        PTDF = ptdf_utils.PTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
 
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
 
-    data_utils.write_ptdf_potentially_to_file(ptdf_options, PTDF)
+    ptdf_utils.write_ptdf_potentially_to_file(ptdf_options, PTDF)
 
     if ptdf_options['lazy']:
 
