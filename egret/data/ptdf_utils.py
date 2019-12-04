@@ -60,7 +60,7 @@ def get_ptdf_potentially_from_file(ptdf_options, branches_keys,
 
 def write_ptdf_potentially_to_file(ptdf_options, PTDF):
     if ptdf_options['save_to'] is not None:
-        pickle.dump(PTDF, open(ptdf_options['save_to'], 'wb'))
+        pickle.dump(PTDF, open(ptdf_options['save_to'], 'wb'), protocol=4)
 
 def _is_consistent_ptdfm(ptdf_mat, branches_keys, buses_keys):
     '''
