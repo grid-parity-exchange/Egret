@@ -834,19 +834,13 @@ def declare_ineq_p_interface_lbub(model, index_set, interfaces):
     for interface_name in con_set:
         interface = interfaces[interface_name]
 
-        if interface['minimum_limit'] is not None:
-            expr_lower = m.pfi[interface_name]
+        if interface['minimum_limit'] is not None or \
+                interface['maximum_limit'] is not None:
+            expr = m.pfi[interface_name]
             if slacks_neg and interface_name in m.pfi_slack_neg:
-                expr_lower += m.pfi_slack_neg[interface_name]
+                expr += m.pfi_slack_neg[interface_name]
+            if slacks_pos and interface_name in m.pfi_slack_pos:
+                expr -= m.pfi_slack_pos[interface_name]
 
             m.ineq_pf_interface_lb[interface_name] = \
-                interface['minimum_limit'] <= expr_lower
-
-
-        if interface['maximum_limit'] is not None:
-            expr_upper = m.pfi[interface_name]
-            if slacks_pos and interface_name in m.pfi_slack_pos:
-                expr_upper -= m.pfi_slack_pos[interface_name]
-
-            m.ineq_pf_interface_ub[interface_name] = \
-                expr_upper <= interface['maximum_limit']
+                (interface['minimum_limit'], expr, interface['maximum_limit'])
