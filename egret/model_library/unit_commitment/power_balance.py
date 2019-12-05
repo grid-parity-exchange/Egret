@@ -169,8 +169,12 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      p_thermal_limits=None,
                                                      approximation_type=None,
                                                      )
+
         ### add helpers for tracking monitored branches
         lpu.add_monitored_branch_tracker(block)
+
+        ### add initial branches to monitored set
+        lpu.add_initial_monitored_branches(block, branches, branches_in_service, ptdf_options, PTDF)
         
     else: ### add all the dense constraints
         p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
@@ -293,7 +297,7 @@ def _btheta_dcopf_network_model(block,tm):
                                                        )
 
     ### declare the interface flow limits
-    libbranch.declare_ineq_p_interface_lbub(model=block,
+    libbranch.declare_ineq_p_interface_bounds(model=block,
                                             index_set=interfaces.keys(),
                                             interfaces=interfaces,
                                             )

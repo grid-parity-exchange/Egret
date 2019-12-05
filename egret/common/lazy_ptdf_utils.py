@@ -59,7 +59,7 @@ def populate_default_ptdf_options(ptdf_options):
     if 'pre_lp_iteration_limit' not in ptdf_options:
         ptdf_options['pre_lp_iteration_limit'] = 100
     if 'active_flow_tol' not in ptdf_options:
-        ptdf_options['active_flow_tol'] = 10.
+        ptdf_options['active_flow_tol'] = 50.
     if 'lp_cleanup_phase' not in ptdf_options:
         ptdf_options['lp_cleanup_phase'] = True
     return ptdf_options
@@ -290,15 +290,21 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
     ## get the branchnname to index map
     branchname_index_map = PTDF.branchname_to_index_masked_map
 
+    ## branches
+    branches = model.model_data.data['elements']['branch']
+
     constr_to_remove = list()
 
     for bn, constr in mb.ineq_pf_branch_thermal_bounds.items():
+        ## don't take out branches we were told to monitor
+        if 'monitored' in branches[bn] and branches[bn]['monitored']:
+            continue
         slack = constr.slack()
         if slack_tol <= abs(slack):
             logger.debug(prepend_str+_generate_branch_remove_message(bn, abs(slack), baseMVA, time))
             constr_to_remove.append(constr)
             ## remove the index from the lines we're monitoring
-            lt_idx_monitored.remove(branchname_index_map[bn])
+            idx_monitored.remove(branchname_index_map[bn])
 
     msg = prepend_str+"removing {} inactive transmission constraint(s)".format(len(constr_to_remove))
     if time is not None:
@@ -364,6 +370,32 @@ def add_violations(viol_lazy, PFV, mb, md, solver, ptdf_options,
         if persistent_solver:
             solver.add_constraint(constr[bn])
 
+### initial monitored set adder
+def add_initial_monitored_branches(mb, branches, branches_in_service, ptdf_options, PTDF):
+    model = mb.model()
+
+    ## static information between runs
+    rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
+    abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
+
+    ## helper for generating pf
+    def _iter_over_initial_set():
+        for bn in branches_in_service:
+            branch = branches[bn]
+            if 'monitored' in branch and branch['monitored']:
+                if bn in PTDF.branchname_to_index_masked_map:
+                    i = PTDF.branchname_to_index_masked_map[bn]
+                    yield i, bn
+                else:
+                    logger.warning("Branch {0} has flag 'monitored' but is excluded from monitored set based on kV limits".format(bn))
+
+    constr = mb.ineq_pf_branch_thermal_bounds
+    viol_in_mb = mb._idx_monitored
+    for i, bn in _iter_over_initial_set():
+        thermal_limit = PTDF.branch_limits_array_masked[i]
+        mb.pf[bn] = libbranch.get_power_flow_expr_ptdf_approx(mb, bn, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
+        constr[bn] = (-thermal_limit, mb.pf[bn], thermal_limit)
+        viol_in_mb.append(i)
 
 def copy_active_to_next_time(m, b_next, PTDF_next, slacks):
     active_slack_tol = m._ptdf_options['active_flow_tol']
