@@ -107,8 +107,7 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
 ## to hold the indicies of the violations
 ## in the model or block
 def add_monitored_branch_tracker(mb):
-    mb._lt_idx_monitored = list()
-    mb._gt_idx_monitored = list()
+    mb._idx_monitored = list()
 
 def calculate_PFV(mb, PTDF):
     NWV = np.fromiter((pe.value(mb.p_nw[b]) for b in PTDF.bus_iterator()), float, count=len(PTDF.buses_keys))
@@ -149,13 +148,12 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
     lt_viol = frozenset(lt_viol_lazy[lt_viol])
 
     ## get the lines we're monitoring
-    gt_idx_monitored = mb._gt_idx_monitored
-    lt_idx_monitored = mb._lt_idx_monitored
+    idx_monitored = mb._idx_monitored
 
     ## get the lines for which we've found a violation that's
     ## in the model
-    gt_viol_in_mb = gt_viol.intersection(gt_idx_monitored)
-    lt_viol_in_mb = lt_viol.intersection(lt_idx_monitored)
+    gt_viol_in_mb = gt_viol.intersection(idx_monitored)
+    lt_viol_in_mb = lt_viol.intersection(idx_monitored)
 
     ## print a warning for these lines
     ## check if the found violations are in the model and print warning
@@ -175,31 +173,32 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
     ## that are already in the monitored set
 
     # eliminate lines in the monitored set
-    gt_viol_lazy = set(gt_viol_lazy).difference(gt_idx_monitored)
-    lt_viol_lazy = set(lt_viol_lazy).difference(lt_idx_monitored)
+    gt_viol_lazy = set(gt_viol_lazy).difference(idx_monitored)
+    lt_viol_lazy = set(lt_viol_lazy).difference(idx_monitored)
+
+    viol_lazy = gt_viol_lazy.union(lt_viol_lazy)
 
     ## limit the number of lines we add in one iteration
     ## if we have too many violations, just take those largest
     ## in absolute value in either direction
-    if len(gt_viol_lazy)+len(lt_viol_lazy) > max_viol_add:
+    if len(viol_lazy) > max_viol_add:
 
         tracking_gt_viol_lazy = list(gt_viol_lazy)
         tracking_lt_viol_lazy = list(lt_viol_lazy)
 
-        gt_viol_lazy = list()
-        lt_viol_lazy = list()
+        viol_lazy = set()
 
         ## one of the tracking_*t_viol_lazy could be empty
 
         if not tracking_gt_viol_lazy: 
             idx = np.argmax(lt_viol_lazy_array[tracking_lt_viol_lazy])
             ptdf_idx = tracking_lt_viol_lazy.pop(idx)
-            lt_viol_lazy.append(ptdf_idx)
+            viol_lazy.append(ptdf_idx)
 
         elif not tracking_lt_viol_lazy:
             idx = np.argmax(gt_viol_lazy_array[tracking_gt_viol_lazy])
             ptdf_idx = tracking_gt_viol_lazy.pop(idx)
-            gt_viol_lazy.append(ptdf_idx)
+            viol_lazy.append(ptdf_idx)
 
         else: ## get the worst of both
             gt_idx = np.argmax(gt_viol_lazy_array[tracking_gt_viol_lazy])
@@ -209,11 +208,11 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
             if gt_viol_lazy_array[gt_branch_idx] > lt_viol_lazy_array[lt_branch_idx]:
                 ptdf_idx = gt_branch_idx
-                gt_viol_lazy.append(ptdf_idx)
+                viol_lazy.append(ptdf_idx)
                 del tracking_gt_viol_lazy[gt_idx]
             else:
                 ptdf_idx = lt_branch_idx
-                lt_viol_lazy.append(ptdf_idx)
+                viol_lazy.append(ptdf_idx)
                 del tracking_lt_viol_lazy[lt_idx]
 
         if max_viol_add > 1:
@@ -254,12 +253,9 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
             ptdf_idx = all_other_violations[all_other_idx]
 
-            if ptdf_idx in tracking_gt_viol_lazy:
-                tracking_gt_viol_lazy.remove(ptdf_idx)
-                gt_viol_lazy.append(ptdf_idx)
-            elif ptdf_idx in tracking_lt_viol_lazy:
-                tracking_lt_viol_lazy.remove(ptdf_idx)
-                lt_viol_lazy.append(ptdf_idx)
+            if ptdf_idx in tracking_viol_lazy:
+                tracking_viol_lazy.remove(ptdf_idx)
+                viol_lazy.add(ptdf_idx)
             else:
                 raise Exception("Unexpected case")
 
@@ -267,11 +263,11 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
     viol_num = len(gt_viol)+len(lt_viol)
     monitored_viol_num = len(lt_viol_in_mb)+len(gt_viol_in_mb)
 
-    return PFV, viol_num, monitored_viol_num, gt_viol_lazy, lt_viol_lazy
+    return PFV, viol_num, monitored_viol_num, viol_lazy
 
 
-def _generate_branch_remove_message(sense, bn, slack, baseMVA, time):
-    ret_str = "removing line {0} ({1}) from monitored set".format(bn, sense)
+def _generate_branch_remove_message(bn, slack, baseMVA, time):
+    ret_str = "removing line {0} from monitored set".format(bn)
     if time is not None:
         ret_str += " at time {}".format(time)
     ret_str += ", flow slack={0}".format(slack*baseMVA)
@@ -289,29 +285,20 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
     persistent_solver = isinstance(solver, PersistentSolver)
 
     ## get the lines we're monitoring
-    gt_idx_monitored = mb._gt_idx_monitored
-    lt_idx_monitored = mb._lt_idx_monitored
+    idx_monitored = mb._idx_monitored
 
     ## get the branchnname to index map
     branchname_index_map = PTDF.branchname_to_index_masked_map
 
     constr_to_remove = list()
 
-    for bn, constr in mb.ineq_pf_branch_thermal_lb.items():
+    for bn, constr in mb.ineq_pf_branch_thermal_bounds.items():
         slack = constr.slack()
         if slack_tol <= abs(slack):
-            logger.debug(prepend_str+_generate_branch_remove_message('LB', bn, abs(slack), baseMVA, time))
+            logger.debug(prepend_str+_generate_branch_remove_message(bn, abs(slack), baseMVA, time))
             constr_to_remove.append(constr)
             ## remove the index from the lines we're monitoring
             lt_idx_monitored.remove(branchname_index_map[bn])
-
-    for bn, constr in mb.ineq_pf_branch_thermal_ub.items():
-        slack = constr.slack()
-        if slack_tol <= abs(slack):
-            logger.debug(prepend_str+_generate_branch_remove_message('UB', bn, abs(slack), baseMVA, time))
-            constr_to_remove.append(constr)
-            ## remove the index from the lines we're monitoring
-            gt_idx_monitored.remove(branchname_index_map[bn])
 
     msg = prepend_str+"removing {} inactive transmission constraint(s)".format(len(constr_to_remove))
     if time is not None:
@@ -325,16 +312,16 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
     return len(constr_to_remove)
 
 
-def _generate_flow_viol_warning(sense, mb, bn, flow, limit, baseMVA, time):
-    ret_str = "WARNING: line {0} ({1}) is in the  monitored set".format(bn, sense)
+def _generate_flow_viol_warning(mb, bn, flow, limit, baseMVA, time):
+    ret_str = "WARNING: line {0} is in the  monitored set".format(bn)
     if time is not None:
         ret_str += " at time {}".format(time)
-    ret_str += ", but flow exceeds limit!!\n\t flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA, sense)
+    ret_str += ", but flow exceeds limit!!\n\t flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA)
     ret_str += ", model_flow={}".format(pe.value(mb.pf[bn])*baseMVA)
     return ret_str
 
-def _generate_flow_monitor_message(sense, bn, flow=None, limit=None, baseMVA=None, time=None):
-    ret_str = "adding line {0} ({1}) to monitored set".format(bn, sense)
+def _generate_flow_monitor_message(bn, flow=None, limit=None, baseMVA=None, time=None):
+    ret_str = "adding line {0} to monitored set".format(bn)
     if time is not None:
         ret_str += " at time {}".format(time)
     if flow is not None:
@@ -342,7 +329,7 @@ def _generate_flow_monitor_message(sense, bn, flow=None, limit=None, baseMVA=Non
     return ret_str
 
 ## violation adder
-def add_violations(gt_viol_lazy, lt_viol_lazy, PFV, mb, md, solver, ptdf_options,
+def add_violations(viol_lazy, PFV, mb, md, solver, ptdf_options,
                     PTDF, time=None, prepend_str=""):
 
     model = mb.model()
@@ -364,53 +351,34 @@ def add_violations(gt_viol_lazy, lt_viol_lazy, PFV, mb, md, solver, ptdf_options
                 mb.pf[bn] = expr
             yield i, bn
 
-    constr = mb.ineq_pf_branch_thermal_lb
-    lt_viol_in_mb = mb._lt_idx_monitored
-    for i, bn in _iter_over_viol_set(lt_viol_lazy):
+    constr = mb.ineq_pf_branch_thermal_bounds
+    viol_in_mb = mb._idx_monitored
+    for i, bn in _iter_over_viol_set(viol_lazy):
         thermal_limit = PTDF.branch_limits_array_masked[i]
         if PFV is None:
-            logger.debug(prepend_str+_generate_flow_monitor_message('LB', bn, time=time))
+            logger.debug(prepend_str+_generate_flow_monitor_message(bn, time=time))
         else:
-            logger.debug(prepend_str+_generate_flow_monitor_message('LB', bn, PFV[i], -thermal_limit, baseMVA, time))
-        constr[bn] = (-thermal_limit, mb.pf[bn], None)
-        lt_viol_in_mb.append(i)
-        if persistent_solver:
-            solver.add_constraint(constr[bn])
-
-    constr = mb.ineq_pf_branch_thermal_ub
-    gt_viol_in_mb = mb._gt_idx_monitored
-    for i, bn in _iter_over_viol_set(gt_viol_lazy):
-        thermal_limit = PTDF.branch_limits_array_masked[i]
-        if PFV is None:
-            logger.debug(prepend_str+_generate_flow_monitor_message('UB', bn, time=time))
-        else:
-            logger.debug(prepend_str+_generate_flow_monitor_message('UB', bn, PFV[i], thermal_limit, baseMVA, time))
-        constr[bn] = (None, mb.pf[bn], thermal_limit)
-        gt_viol_in_mb.append(i)
+            logger.debug(prepend_str+_generate_flow_monitor_message(bn, PFV[i], -thermal_limit, baseMVA, time))
+        constr[bn] = (-thermal_limit, mb.pf[bn], thermal_limit)
+        viol_in_mb.append(i)
         if persistent_solver:
             solver.add_constraint(constr[bn])
 
 
-def copy_active_to_next_time(m, b_next, PTDF_next, slacks_ub, slacks_lb):
+def copy_active_to_next_time(m, b_next, PTDF_next, slacks):
     active_slack_tol = m._ptdf_options['active_flow_tol']
 
     branchname_index_map= PTDF_next.branchname_to_index_masked_map
 
-    lt_viol_lazy = set()
-    gt_viol_lazy = set()
+    viol_lazy = set()
 
-    for (bn, constr), slack in slacks_lb.items():
+    for (bn, constr), slack in slacks.items():
         if abs(slack) <= active_slack_tol:
             ## in case the topology has changed
             if bn in branchname_index_map:
-                lt_viol_lazy.add(branchname_index_map[bn])
-    for (bn, constr), slack in slacks_ub.items():
-        if abs(slack) <= active_slack_tol:
-            ## in case the topology has changed
-            if bn in branchname_index_map:
-                gt_viol_lazy.add(branchname_index_map[bn])
+                viol_lazy.add(branchname_index_map[bn])
 
-    return None, gt_viol_lazy, lt_viol_lazy
+    return None, viol_lazy
 
 
 def _binary_var_generator(instance):

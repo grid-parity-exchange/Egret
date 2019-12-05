@@ -774,6 +774,29 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
             m.ineq_pf_branch_thermal_ub[branch_name] = \
                 m.pf[branch_name] <= p_thermal_limits[branch_name]
 
+def declare_ineq_p_branch_thermal_bounds(model, index_set,
+                                        branches, p_thermal_limits,
+                                        approximation_type=ApproximationType.BTHETA):
+    """
+    Create an inequality constraint for the branch thermal limits
+    based on the power variables or expressions.
+    """
+    m = model
+    con_set = decl.declare_set('_con_ineq_p_branch_thermal_lbub',
+                               model=model, index_set=index_set)
+
+    m.ineq_pf_branch_thermal_bounds = pe.Constraint(con_set)
+
+    if approximation_type == ApproximationType.BTHETA or \
+            approximation_type == ApproximationType.PTDF:
+        for branch_name in con_set:
+            limit = p_thermal_limits[branch_name]
+            if limit is None:
+                continue
+
+            m.ineq_pf_branch_thermal_bounds[branch_name] = \
+                (-limit, m.pf[branch_name], limit)
+
 
 def declare_ineq_angle_diff_branch_lbub(model, index_set,
                                         branches,
@@ -811,7 +834,7 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
                 - pe.atan(m.vj[to_bus] / m.vr[to_bus]) <= math.radians(branches[branch_name]['angle_diff_max'])
 
 
-def declare_ineq_p_interface_lbub(model, index_set, interfaces):
+def declare_ineq_p_interface_bounds(model, index_set, interfaces):
     """
     Create the inequality constraints for the interface limits
     based on the power variables or expressions.
@@ -819,11 +842,10 @@ def declare_ineq_p_interface_lbub(model, index_set, interfaces):
     p_interface_limits should be (lower, upper) tuple
     """
     m = model
-    con_set = decl.declare_set('_con_ineq_p_interface_lbub',
+    con_set = decl.declare_set('_con_ineq_p_interface_bounds',
                                model=model, index_set=index_set)
 
-    m.ineq_pf_interface_lb = pe.Constraint(con_set)
-    m.ineq_pf_interface_ub = pe.Constraint(con_set)
+    m.ineq_pf_interface_bounds = pe.Constraint(con_set)
 
     slacks_pos = hasattr(m, 'pfi_slack_pos')
     slacks_neg = hasattr(m, 'pfi_slack_neg')
@@ -842,5 +864,5 @@ def declare_ineq_p_interface_lbub(model, index_set, interfaces):
             if slacks_pos and interface_name in m.pfi_slack_pos:
                 expr -= m.pfi_slack_pos[interface_name]
 
-            m.ineq_pf_interface_lb[interface_name] = \
+            m.ineq_pf_interface_bounds[interface_name] = \
                 (interface['minimum_limit'], expr, interface['maximum_limit'])

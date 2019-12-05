@@ -163,7 +163,7 @@ def _ptdf_dcopf_network_model(block,tm):
 
     if ptdf_options['lazy']:
         ### add "blank" real power flow limits
-        libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
+        libbranch.declare_ineq_p_branch_thermal_bounds(model=block,
                                                      index_set=branches_in_service,
                                                      branches=branches,
                                                      p_thermal_limits=None,
@@ -183,7 +183,7 @@ def _ptdf_dcopf_network_model(block,tm):
                                                       rel_ptdf_tol=rel_ptdf_tol
                                                       )
         ### declare the real power flow limits
-        libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
+        libbranch.declare_ineq_p_branch_thermal_bounds(model=block,
                                                      index_set=branches_in_service,
                                                      branches=branches,
                                                      p_thermal_limits=p_max,
@@ -201,7 +201,7 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      )
 
     ### declare the interface flow limits
-    libbranch.declare_ineq_p_interface_lbub(model=block,
+    libbranch.declare_ineq_p_interface_bounds(model=block,
                                             index_set=interfaces.keys(),
                                             interfaces=interfaces,
                                             )
