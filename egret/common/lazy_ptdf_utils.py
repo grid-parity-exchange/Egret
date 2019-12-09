@@ -420,6 +420,9 @@ def _check_and_generate_flow_viol_warnings(mb, md, PTDF, PFV, PFV_I, prepend_str
         thermal_limit = PTDF.branch_limits_array_masked[i]
         logger.warning(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], thermal_limit, baseMVA, time))
 
+    ## break here if no interfaces
+    if 'interface' not in md.data['elements']:
+        return len(gt_viol_in_mb)+len(lt_viol_in_mb), 0
     ## print a warning for these interfaces if they don't have slack
     ## check if the found violations are in the model and print warning
     interfaces = md.data['elements']['interface']
@@ -508,6 +511,9 @@ def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_op
         if persistent_solver:
             solver.add_constraint(constr[bn])
 
+    ## in case there's no interfaces
+    if not hasattr(mb, 'ineq_pf_interface_bounds'):
+        return
     constr = mb.ineq_pf_interface_bounds
     int_viol_in_mb = mb._interfaces_monitored
     for i, i_n in _iter_over_int_viol_set(int_viol_lazy, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
