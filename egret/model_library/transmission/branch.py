@@ -514,6 +514,10 @@ def declare_eq_interface_power_btheta_approx(model, index_set, interfaces):
                 raise Exception("line_orientation must be in [-1,0,1], found "\
                         "line_orientation {} for line {} in interface {}".format(
                             orientation, line, interface_name))
+        if interface_name in model.pfi_slack_neg:
+            expr += model.pfi_slack_neg[interface_name]
+        if interface_name in model.pfi_slack_pos:
+            expr -= model.pfi_slack_pos[interface_name]
         m.eq_pf_interface[interface_name] = m.pfi[interface_name] == expr
 
 
@@ -670,11 +674,21 @@ def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol
             if abs(coef) >= ptdf_tol:
                 coef_list.append(coef)
                 var_list.append(m_p_nw[bus_name])
+        if interface_name in model.pfi_slack_neg:
+            coef_list.append(1)
+            var_list.append(model.pfi_slack_neg[interface_name])
+        if interface_name in model.pfi_slack_pos:
+            coef_list.append(-1)
+            var_list.append(model.pfi_slack_pos[interface_name])
 
         lin_expr_list = [const] + coef_list + var_list
         expr = LinearExpression(lin_expr_list)
     else:
         expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+        if interface_name in model.pfi_slack_neg:
+            expr += model.pfi_slack_neg[interface_name]
+        if interface_name in model.pfi_slack_pos:
+            expr -= model.pfi_slack_pos[interface_name]
 
     return expr
 
@@ -797,7 +811,6 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
             m.ineq_pf_branch_thermal_bounds[branch_name] = \
                 (-limit, m.pf[branch_name], limit)
 
-
 def declare_ineq_angle_diff_branch_lbub(model, index_set,
                                         branches,
                                         coordinate_type=CoordinateType.POLAR):
@@ -834,7 +847,8 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
                 - pe.atan(m.vj[to_bus] / m.vr[to_bus]) <= math.radians(branches[branch_name]['angle_diff_max'])
 
 
-def declare_ineq_p_interface_bounds(model, index_set, interfaces):
+def declare_ineq_p_interface_bounds(model, index_set, interfaces,
+                                        approximation_type=ApproximationType.BTHETA):
     """
     Create the inequality constraints for the interface limits
     based on the power variables or expressions.
@@ -847,22 +861,11 @@ def declare_ineq_p_interface_bounds(model, index_set, interfaces):
 
     m.ineq_pf_interface_bounds = pe.Constraint(con_set)
 
-    slacks_pos = hasattr(m, 'pfi_slack_pos')
-    slacks_neg = hasattr(m, 'pfi_slack_neg')
-    if slacks_pos != slacks_neg:
-        raise Exception("Both positive and negative interface slacks "\
-                "should be added to the transmission model")
-
-    for interface_name in con_set:
-        interface = interfaces[interface_name]
-
-        if interface['minimum_limit'] is not None or \
-                interface['maximum_limit'] is not None:
-            expr = m.pfi[interface_name]
-            if slacks_neg and interface_name in m.pfi_slack_neg:
-                expr += m.pfi_slack_neg[interface_name]
-            if slacks_pos and interface_name in m.pfi_slack_pos:
-                expr -= m.pfi_slack_pos[interface_name]
-
-            m.ineq_pf_interface_bounds[interface_name] = \
-                (interface['minimum_limit'], expr, interface['maximum_limit'])
+    if approximation_type == ApproximationType.BTHETA or \
+            approximation_type == ApproximationType.PTDF:
+        for interface_name in con_set:
+            interface = interfaces[interface_name]
+            if interface['minimum_limit'] is not None or \
+                    interface['maximum_limit'] is not None:
+                m.ineq_pf_interface_bounds[interface_name] = \
+                    (interface['minimum_limit'], m.pfi[interface_name], interface['maximum_limit'])

@@ -48,13 +48,12 @@ def get_ptdf_potentially_from_file(ptdf_options, branches_keys,
                 PTDF = PTDF_pickle
 
     if PTDF is not None:
-        PTDF._set_lazy_limits(ptdf_options)
-
         ## since it's simple, recalculate the
         ## interfaces from scratch each time
         if interfaces is None:
             interfaces = dict()
         PTDF._calculate_ptdf_interface(interfaces)
+        PTDF._set_lazy_limits(ptdf_options)
 
     return PTDF
 
@@ -118,11 +117,11 @@ class PTDFMatrix(object):
         self._base_point = base_point
         self._calculate()
 
-        self._set_lazy_limits(ptdf_options)
-
         if interfaces is None:
             interfaces = dict()
         self._calculate_ptdf_interface(interfaces)
+
+        self._set_lazy_limits(ptdf_options)
 
     def _calculate(self):
         self._calculate_ptdf()
@@ -157,8 +156,18 @@ class PTDFMatrix(object):
         self.PTDFM_I.flags.writeable = False
         self.PTDFM_I_const.flags.writeable = False
 
-        self._interfacename_to_index_map = \
+        self.interfacename_to_index_map = \
                 { i_n: idx for idx, i_n in enumerate(self.interface_keys) }
+
+        def _interface_limit_iter(limit, inf):
+            for i_n in self.interface_keys:
+                interface = interfaces[i_n]
+                if limit in interface and interface[limit] is not None:
+                    yield interface[limit]
+                else:
+                    yield inf
+        self.interface_max_limits = np.fromiter(_interface_limit_iter('maximum_limit', np.inf), float, count=len(self.interface_keys))
+        self.interface_min_limits = np.fromiter(_interface_limit_iter('minimum_limit', -np.inf), float, count=len(self.interface_keys))
 
     def _calculate_phi_from_phi_to(self):
         return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF, mapping_bus_to_idx=self._busname_to_index_map)
@@ -242,6 +251,8 @@ class PTDFMatrix(object):
             self._get_filtered_lines(ptdf_options)
             ## add / reset the relative limits based on the current options
             branch_limits = self.branch_limits_array_masked
+            interface_max_limits = self.interface_max_limits
+            interface_min_limits = self.interface_min_limits
             rel_flow_tol = ptdf_options['rel_flow_tol']
             abs_flow_tol = ptdf_options['abs_flow_tol']
             lazy_flow_tol = ptdf_options['lazy_rel_flow_tol']
@@ -250,7 +261,24 @@ class PTDFMatrix(object):
             self.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
             ## make sure the lazy limits are a superset of the enforce limits
             self.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), self.enforced_branch_limits)
+            abs_max_limits_i = np.abs(interface_max_limits)
+            abs_min_limits_i = np.abs(interface_min_limits)
 
+            self.enforced_interface_max_limits = \
+                np.maximum(interface_max_limits+rel_flow_tol*abs_max_limits_i,
+                            interface_max_limits+abs_flow_tol)
+
+            self.enforced_interface_min_limits = \
+                np.minimum(interface_min_limits-rel_flow_tol*abs_min_limits_i,
+                            interface_min_limits-abs_flow_tol)
+
+            self.lazy_interface_max_limits = \
+                    np.minimum(interface_max_limits+lazy_flow_tol*abs_max_limits_i,
+                                self.enforced_interface_max_limits)
+
+            self.lazy_interface_min_limits = \
+                    np.maximum(interface_min_limits-lazy_flow_tol*abs_min_limits_i,
+                                self.enforced_interface_min_limits)
 
     def get_branch_ptdf_iterator(self, branch_name):
         row_idx = self._branchname_to_index_map[branch_name]
@@ -280,16 +308,16 @@ class PTDFMatrix(object):
         yield from self.buses_keys
 
     def get_interface_const(self, interface_name):
-        return self.PTDFM_I_const[self._interfacename_to_index_map[interface_name]]
+        return self.PTDFM_I_const[self.interfacename_to_index_map[interface_name]]
 
     def get_interface_ptdf_abs_max(self, interface_name):
-        row_idx = self._interfacename_to_index_map[interface_name]
+        row_idx = self.interfacename_to_index_map[interface_name]
         ## get the row slice
         PTDF_I_row = self.PTDFM_I[row_idx]
         return np.abs(PTDF_I_row).max()
 
     def get_interface_ptdf_iterator(self, interface_name):
-        row_idx = self._interfacename_to_index_map[interface_name]
+        row_idx = self.interfacename_to_index_map[interface_name]
         ## get the row slice
         PTDF_I_row = self.PTDFM_I[row_idx]
         yield from zip(self.buses_keys, PTDF_I_row)

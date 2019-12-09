@@ -106,8 +106,9 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
 
 ## to hold the indicies of the violations
 ## in the model or block
-def add_monitored_branch_tracker(mb):
+def add_monitored_flow_tracker(mb):
     mb._idx_monitored = list()
+    mb._interfaces_monitored = list()
 
 def calculate_PFV(mb, PTDF):
     NWV = np.fromiter((pe.value(mb.p_nw[b]) for b in PTDF.bus_iterator()), float, count=len(PTDF.buses_keys))
@@ -116,158 +117,219 @@ def calculate_PFV(mb, PTDF):
     PFV  = PTDF.PTDFM_masked.dot(NWV)
     PFV += PTDF.phase_shift_array_masked
 
-    return PFV
+    PFV_I = PTDF.PTDFM_I.dot(NWV)
+    PFV_I += PTDF.PTDFM_I_const
 
+    return PFV, PFV_I
 
-## violation checker
-def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
+def _get_viol_viol_lazy(limit_type, flow, lazy_limits, enforced_limits, mon_idx):
+    assert limit_type in ['ub', 'lb']
+    ## calculate the potential violations
+    if limit_type == 'ub':
+        viol_lazy_array = flow - lazy_limits
+    else:
+        viol_lazy_array = lazy_limits - flow
+    ## get the indices of the violation
+    viol_lazy_idx = np.nonzero(viol_lazy_array > 0)[0]
 
-    PFV = calculate_PFV(mb, PTDF)
+    ## calculate the enforced violations using the smaller subset
+    if limit_type == 'ub':
+        viol_array = flow[viol_lazy_idx] - enforced_limits[viol_lazy_idx]
+    else:
+        viol_array = enforced_limits[viol_lazy_idx] - flow[viol_lazy_idx]
+    ## viol_idx_idx will be indexed by viol_lazy_idx
+    viol_idx_idx = np.nonzero(viol_array > 0)[0]
+    viol_idx = frozenset(viol_lazy_idx[viol_idx_idx])
 
-    ## calculate the lazy violations
-    gt_viol_lazy_array = PFV - PTDF.lazy_branch_limits
-    lt_viol_lazy_array = -PFV - PTDF.lazy_branch_limits
-
-    ## *_viol_lazy has the indices of the violations at
-    ## the lazy limit
-    gt_viol_lazy = np.nonzero(gt_viol_lazy_array > 0)[0]
-    lt_viol_lazy = np.nonzero(lt_viol_lazy_array > 0)[0]
-
-    ## calculate the violations
-    ## these will be just a subset
-    gt_viol_array = PFV[gt_viol_lazy] - PTDF.enforced_branch_limits[gt_viol_lazy]
-    lt_viol_array = -PFV[lt_viol_lazy]- PTDF.enforced_branch_limits[lt_viol_lazy]
-
-    ## *_viol will be indexed by *_viol_lazy
-    gt_viol = np.nonzero(gt_viol_array > 0)[0]
-    lt_viol = np.nonzero(lt_viol_array > 0)[0]
-
-    ## these will hold the violations 
-    ## we found this iteration
-    gt_viol = frozenset(gt_viol_lazy[gt_viol])
-    lt_viol = frozenset(lt_viol_lazy[lt_viol])
-
-    ## get the lines we're monitoring
-    idx_monitored = mb._idx_monitored
-
-    ## get the lines for which we've found a violation that's
-    ## in the model
-    gt_viol_in_mb = gt_viol.intersection(idx_monitored)
-    lt_viol_in_mb = lt_viol.intersection(idx_monitored)
-
-    ## print a warning for these lines
-    ## check if the found violations are in the model and print warning
-    baseMVA = md.data['system']['baseMVA']
-    for i in lt_viol_in_mb:
-        bn = PTDF.branches_keys_masked[i]
-        thermal_limit = PTDF.branch_limits_array_masked[i]
-        logger.warning(prepend_str+_generate_flow_viol_warning('LB', mb, bn, PFV[i], -thermal_limit, baseMVA, time))
-
-    for i in gt_viol_in_mb:
-        bn = PTDF.branches_keys_masked[i]
-        thermal_limit = PTDF.branch_limits_array_masked[i]
-        logger.warning(prepend_str+_generate_flow_viol_warning('UB', mb, bn, PFV[i], thermal_limit, baseMVA, time))
-
-    ## *t_viol_lazy will hold the lines we're adding
+    ## viol_lazy_idx will hold the lines we're adding
     ## this iteration -- don't want to add lines
     ## that are already in the monitored set
 
     # eliminate lines in the monitored set
-    gt_viol_lazy = set(gt_viol_lazy).difference(idx_monitored)
-    lt_viol_lazy = set(lt_viol_lazy).difference(idx_monitored)
+    viol_lazy_idx = set(viol_lazy_idx).difference(mon_idx)
 
+    return viol_lazy_array, viol_lazy_idx, viol_idx
+
+## violation checker
+def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
+
+    ## PFV -- power flow vector
+    ## PFV_I -- interface power flow vector
+    PFV, PFV_I = calculate_PFV(mb, PTDF)
+
+    ## get the lines we're monitoring
+    idx_monitored = mb._idx_monitored
+    interfaces_monitored = mb._interfaces_monitored
+
+    lazy_arrays = dict()
+
+    ## _get_viol_viol_lazy calculates the difference between the measured
+    ## flow and the outer (enforced_*) and inner (lazy_*) limits.
+    ## *_viol_lazy are those lines that violate the lazy limits,
+    ## and *_viol are those lines that violate the enforced limits.
+    ## finally, we also return the amount over the lazy limits
+    ## each line is
+    lazy_arrays['gt_viol'], gt_viol_lazy, gt_viol = \
+            _get_viol_viol_lazy('ub', PFV, PTDF.lazy_branch_limits,
+                                PTDF.enforced_branch_limits, idx_monitored)
+    lazy_arrays['lt_viol'], lt_viol_lazy, lt_viol = \
+            _get_viol_viol_lazy('lb', PFV, -PTDF.lazy_branch_limits,\
+                                -PTDF.enforced_branch_limits, idx_monitored)
+
+    lazy_arrays['max_viol_int'], max_viol_int_lazy, max_viol_int = \
+            _get_viol_viol_lazy('ub', PFV_I, PTDF.lazy_interface_max_limits,
+                                PTDF.enforced_interface_max_limits, interfaces_monitored)
+    lazy_arrays['min_viol_int'], min_viol_int_lazy, min_viol_int = \
+            _get_viol_viol_lazy('lb', PFV_I, PTDF.lazy_interface_min_limits,
+                                PTDF.enforced_interface_min_limits, interfaces_monitored)
+
+    ## get the lines for which we've found a violation that's in the model
+    viol_num = len(gt_viol)+len(lt_viol)+len(max_viol_int)+len(min_viol_int)
+    monitored_viol_num, mon_int_soft_viol_num =  _check_and_generate_flow_viol_warnings(
+                                                            mb, md, PTDF, PFV, PFV_I, prepend_str,
+                                                            lt_viol, gt_viol, min_viol_int, max_viol_int,
+                                                            time)
+    ## interfaces with slack that are
+    ## in the monitored set do not count
+    ## toward the overall violation
+    ## NOTE: This should probably be improved
+    ## to see if the slack is measuring the
+    ## violation correctly!
+    viol_num -= mon_int_soft_viol_num
+
+    ## since lb, ub are enforced as one constraint
+    ## union these two sets.
     viol_lazy = gt_viol_lazy.union(lt_viol_lazy)
+    viol_int_lazy = max_viol_int_lazy.union(min_viol_int_lazy)
 
     ## limit the number of lines we add in one iteration
-    ## if we have too many violations, just take those largest
-    ## in absolute value in either direction
-    if len(viol_lazy) > max_viol_add:
+    ## if we have too many violations, take a combination
+    ## of the next most violated and orthogonal lines
+    if len(viol_lazy) + len(viol_int_lazy) > max_viol_add:
 
-        tracking_gt_viol_lazy = list(gt_viol_lazy)
-        tracking_lt_viol_lazy = list(lt_viol_lazy)
-
+        ## reset these since we'll only take a subset
         viol_lazy = set()
+        viol_int_lazy = set()
 
-        ## one of the tracking_*t_viol_lazy could be empty
+        ## keep track of candidate lines to add to
+        ## viol_lazy or viol_int_lazy
+        tracking_lazy = {
+                          'max_viol_int' : list(max_viol_int_lazy),
+                          'min_viol_int' : list(min_viol_int_lazy),
+                          'gt_viol' : list(gt_viol_lazy),
+                          'lt_viol' : list(lt_viol_lazy),
+                        }
 
-        if not tracking_gt_viol_lazy: 
-            idx = np.argmax(lt_viol_lazy_array[tracking_lt_viol_lazy])
-            ptdf_idx = tracking_lt_viol_lazy.pop(idx)
-            viol_lazy.append(ptdf_idx)
+        ## these sets separate lines from interfaces,
+        ## which we treat as the same when deciding
+        ## which constraint to add next
+        lazy_keys = {'gt_viol', 'lt_viol'}
+        int_lazy_keys = {'max_viol_int', 'min_viol_int'}
 
-        elif not tracking_lt_viol_lazy:
-            idx = np.argmax(gt_viol_lazy_array[tracking_gt_viol_lazy])
-            ptdf_idx = tracking_gt_viol_lazy.pop(idx)
-            viol_lazy.append(ptdf_idx)
+        ## gather the candidate max violations
+        ## max_viol - holds the maximum violation amount
+        ## sel_viol_type - key into tracking_lazy of the max violation
+        ## sel_viol_idx - line index (into PTDF.PTDFM) or interface index
+        ##                (into PTDF.PTDFM_I) of the max violation
+        ## sel_viol_idx_idx - index of the line sel_viol_idx in the list tracking_lazy[sel_viol_type]
+        max_viol, sel_viol_type, sel_viol_idx, sel_viol_idx_idx = None, None, None, None
+        for viol_type, viol_slicer in tracking_lazy.items():
+            if len(viol_slicer) > 0:
+                lazy_array = lazy_arrays[viol_type]
+                ## get the worst violations, only checking
+                ## amoung those we found to be violated
+                idx = np.argmax(lazy_array[viol_slicer])
+                val = lazy_array[viol_slicer[idx]]
+                if max_viol is None or val > max_viol:
+                    max_viol = val
+                    sel_viol_type = viol_type
+                    sel_viol_idx = viol_slicer[idx]
+                    sel_viol_idx_idx = idx
 
-        else: ## get the worst of both
-            gt_idx = np.argmax(gt_viol_lazy_array[tracking_gt_viol_lazy])
-            lt_idx = np.argmax(lt_viol_lazy_array[tracking_lt_viol_lazy])
-            gt_branch_idx = tracking_gt_viol_lazy[gt_idx]
-            lt_branch_idx = tracking_lt_viol_lazy[lt_idx]
-
-            if gt_viol_lazy_array[gt_branch_idx] > lt_viol_lazy_array[lt_branch_idx]:
-                ptdf_idx = gt_branch_idx
-                viol_lazy.append(ptdf_idx)
-                del tracking_gt_viol_lazy[gt_idx]
-            else:
-                ptdf_idx = lt_branch_idx
-                viol_lazy.append(ptdf_idx)
-                del tracking_lt_viol_lazy[lt_idx]
+        ## once we add the violation to either
+        ## viol_lazy or viol_int_lazy, delete
+        ## it from our list of candidates
+        if sel_viol_type in lazy_keys:
+            viol_lazy.add(sel_viol_idx)
+            del tracking_lazy[sel_viol_type][sel_viol_idx_idx]
+        elif sel_viol_type in int_lazy_keys:
+            viol_int_lazy.add(sel_viol_idx)
+            del tracking_lazy[sel_viol_type][sel_viol_idx_idx]
+        else:
+            raise Exception("Unexpected sel_viol_type {}".format(sel_viol_type))
 
         if max_viol_add > 1:
+            ## this will be the sum of the current PTDF
+            ## "rows" we're adding at this pass
             ptdf_lin = np.zeros(len(PTDF.buses_keys))
 
-        ## for those in the monitored set, assume they're feasible for
-        ## the purposes of sorting the worst violations, which means
-        ## resetting the values for these lines as computed above
+            ## the matrix associated with each violation type,
+            ## for ease
+            tracking_lazy_matrix = { 'max_viol_int' : PTDF.PTDFM_I,
+                                     'min_viol_int' : PTDF.PTDFM_I,
+                                     'gt_viol' : PTDF.PTDFM_masked,
+                                     'lt_viol' : PTDF.PTDFM_masked,
+                                    }
+
+        ## gather other violations upto the max_viol_add limit
         for _ in range(max_viol_add-1):
 
-            ptdf_lin += PTDF.PTDFM_masked[ptdf_idx]
-
-            all_other_violations = list(tracking_gt_viol_lazy + tracking_lt_viol_lazy)
-
-            other_gt_viols = gt_viol_lazy_array[all_other_violations]
-            other_lt_viols = lt_viol_lazy_array[all_other_violations]
-
-            other_viols = np.maximum(other_gt_viols, other_lt_viols)
-
-            ## put this in baseMVA
-            other_viols *= baseMVA
-
-            other_viol_rows = PTDF.PTDFM_masked[all_other_violations]
-
-            orthogonality = np.absolute(np.dot(other_viol_rows, ptdf_lin))
-
-            ## divide by transmission limits to give higher
-            ## priority to those lines with larger violations
-
-            ## larger values emphasize violation
-            ## smaller emphasize orthogonality
-            ## TODO: try weighting by number of nonzeros
-            orthogonality /= other_viols
-
-            ## this is the index into the orthogonality matrix,
-            ## which is indexed by all_other_violations
-            all_other_idx = np.argmin(orthogonality)
-
-            ptdf_idx = all_other_violations[all_other_idx]
-
-            if ptdf_idx in tracking_viol_lazy:
-                tracking_viol_lazy.remove(ptdf_idx)
-                viol_lazy.add(ptdf_idx)
+            ## first add the violation selected at the last
+            ## interation to the ptdf_lin, which helps track
+            ## the current linear subspace the violations added
+            ## thus far live in
+            if sel_viol_type in lazy_keys:
+                ptdf_lin += PTDF.PTDFM_masked[sel_viol_idx]
+            elif sel_viol_type in int_lazy_keys:
+                ptdf_lin += PTDF.PTDFM_I[sel_viol_idx]
             else:
-                raise Exception("Unexpected case")
+                raise Exception("Unexpected sel_viol_type {}".format(sel_viol_type))
+
+            ## gather a candidate violation
+            ## min_viol_orth - holds the combinarion of orthogonality and violation
+            ##                 that is minimum (we take the inverse of the violation
+            ##                 amount for calculating this quantity)
+            ## sel_viol_type - key into tracking_lazy of the min violation orth
+            ## sel_viol_idx - line index (into PTDF.PTDFM) or interface index
+            ##                (into PTDF.PTDFM_I) of the min violation orth
+            ## sel_viol_idx_idx - index of the line sel_viol_idx in the list tracking_lazy[sel_viol_type]
+            min_viol_orth, sel_viol_type, sel_viol_idx, sel_viol_idx_idx = None, None, None, None
+            ## do the interfaces first for tie breakers
+            for viol_type, viol_slicer in tracking_lazy.items():
+                if len(viol_slicer) > 0:
+                    ## get all the rows for this violation type
+                    viol_rows = tracking_lazy_matrix[viol_type][viol_slicer]
+                    ## get the vector of orthogonality
+                    orthogonality = np.absolute(np.dot(viol_rows, ptdf_lin))
+                    ## divide in place by the violation amount, so
+                    ## what we select is slaced by both the orthogonality
+                    ## and the violation amount
+                    orthogonality /= lazy_arrays[viol_type][viol_slicer]
+                    idx = np.argmin(orthogonality)
+                    val = orthogonality[idx]
+                    if min_viol_orth is None or val < min_viol_orth:
+                        min_viol_orth = val
+                        sel_viol_type = viol_type
+                        sel_viol_idx = viol_slicer[idx]
+                        sel_viol_idx_idx = idx
+
+            ## once we add the violation to either
+            ## viol_lazy or viol_int_lazy, delete
+            ## it from our list of candidates
+            if sel_viol_type in lazy_keys:
+                viol_lazy.add(sel_viol_idx)
+                del tracking_lazy[sel_viol_type][sel_viol_idx_idx]
+            elif sel_viol_type in int_lazy_keys:
+                viol_int_lazy.add(sel_viol_idx)
+                del tracking_lazy[sel_viol_type][sel_viol_idx_idx]
+            else:
+                raise Exception("Unexpected sel_viol_type {}".format(sel_viol_type))
+
+    return PFV, PFV_I, viol_num, monitored_viol_num, viol_lazy, viol_int_lazy
 
 
-    viol_num = len(gt_viol)+len(lt_viol)
-    monitored_viol_num = len(lt_viol_in_mb)+len(gt_viol_in_mb)
-
-    return PFV, viol_num, monitored_viol_num, viol_lazy
-
-
-def _generate_branch_remove_message(bn, slack, baseMVA, time):
-    ret_str = "removing line {0} from monitored set".format(bn)
+def _generate_flow_monitor_remove_message(flow_type, bn, slack, baseMVA, time):
+    ret_str = "removing {0} {1} from monitored set".format(flow_type, bn)
     if time is not None:
         ret_str += " at time {}".format(time)
     ret_str += ", flow slack={0}".format(slack*baseMVA)
@@ -286,25 +348,39 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
 
     ## get the lines we're monitoring
     idx_monitored = mb._idx_monitored
+    interfaces_monitored = mb._interfaces_monitored
 
     ## get the branchnname to index map
     branchname_index_map = PTDF.branchname_to_index_masked_map
+    interfacename_index_map = PTDF.interfacename_to_index_map
 
     ## branches
     branches = model.model_data.data['elements']['branch']
+    interfaces = model.model_data.data['elements']['interface']
 
     constr_to_remove = list()
 
     for bn, constr in mb.ineq_pf_branch_thermal_bounds.items():
         ## don't take out branches we were told to monitor
-        if 'monitored' in branches[bn] and branches[bn]['monitored']:
+        if 'lazy' in branches[bn] and not branches[bn]['lazy']:
             continue
         slack = constr.slack()
         if slack_tol <= abs(slack):
-            logger.debug(prepend_str+_generate_branch_remove_message(bn, abs(slack), baseMVA, time))
+            logger.debug(prepend_str+_generate_flow_monitor_remove_message('branch', bn, abs(slack), baseMVA, time))
             constr_to_remove.append(constr)
             ## remove the index from the lines we're monitoring
             idx_monitored.remove(branchname_index_map[bn])
+
+    for i_n, constr in mb.ineq_pf_interface_bounds.items():
+        ## don't take out branches we were told to monitor
+        if 'lazy' in interfaces[i_n] and not interfaces[i_n]['lazy']:
+            continue
+        slack = constr.slack()
+        if slack_tol <= abs(slack):
+            logger.debug(prepend_str+_generate_flow_monitor_remove_message('interface', i_n, abs(slack), baseMVA, time))
+            constr_to_remove.append(constr)
+            ## remove the index from the lines we're monitoring
+            interfaces_monitored.remove(interfacename_index_map[i_n])
 
     msg = prepend_str+"removing {} inactive transmission constraint(s)".format(len(constr_to_remove))
     if time is not None:
@@ -318,24 +394,95 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
     return len(constr_to_remove)
 
 
-def _generate_flow_viol_warning(mb, bn, flow, limit, baseMVA, time):
-    ret_str = "WARNING: line {0} is in the  monitored set".format(bn)
+def _check_and_generate_flow_viol_warnings(mb, md, PTDF, PFV, PFV_I, prepend_str, \
+        lt_viol, gt_viol, min_viol_int, max_viol_int, time):
+
+    ## get the lines we're monitoring
+    idx_monitored = mb._idx_monitored
+    interfaces_monitored = mb._interfaces_monitored
+
+    gt_viol_in_mb = gt_viol.intersection(idx_monitored)
+    lt_viol_in_mb = lt_viol.intersection(idx_monitored)
+
+    max_viol_int_in_mb = max_viol_int.intersection(interfaces_monitored)
+    min_viol_int_in_mb = min_viol_int.intersection(interfaces_monitored)
+
+    ## print a warning for these lines
+    ## check if the found violations are in the model and print warning
+    baseMVA = md.data['system']['baseMVA']
+    for i in lt_viol_in_mb:
+        bn = PTDF.branches_keys_masked[i]
+        thermal_limit = PTDF.branch_limits_array_masked[i]
+        logger.warning(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], -thermal_limit, baseMVA, time))
+
+    for i in gt_viol_in_mb:
+        bn = PTDF.branches_keys_masked[i]
+        thermal_limit = PTDF.branch_limits_array_masked[i]
+        logger.warning(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], thermal_limit, baseMVA, time))
+
+    ## print a warning for these interfaces if they don't have slack
+    ## check if the found violations are in the model and print warning
+    interfaces = md.data['elements']['interface']
+    interface_hard_violations = 0
+    interface_soft_violations = 0
+    for i in min_viol_int_in_mb:
+        i_n = PTDF.interface_keys[i]
+        if 'violation_penalty' in interfaces[i_n] \
+                and interfaces[i_n]['violation_penalty'] is not None:
+            interface_soft_violations += 1
+            continue
+        limit = PTDF.interface_min_limits[i]
+        logger.warning(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time))
+        interface_hard_violations += 1
+
+    for i in max_viol_int_in_mb:
+        i_n = PTDF.interface_keys[i]
+        if 'violation_penalty' in interfaces[i_n] \
+                and interfaces[i_n]['violation_penalty'] is not None:
+            interface_soft_violations += 1
+            continue
+        limit = PTDF.interface_max_limits[i]
+        logger.warning(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time))
+        interface_hard_violations += 1
+
+    return len(gt_viol_in_mb)+len(lt_viol_in_mb)+interface_hard_violations, interface_soft_violations
+
+def _generate_flow_viol_warning(expr, e_type, bn, flow, limit, baseMVA, time):
+    ret_str = "WARNING: {0} {1} is in the  monitored set".format(e_type,bn)
     if time is not None:
         ret_str += " at time {}".format(time)
     ret_str += ", but flow exceeds limit!!\n\t flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA)
-    ret_str += ", model_flow={}".format(pe.value(mb.pf[bn])*baseMVA)
+    ret_str += ", model_flow={}".format(pe.value(expr[bn])*baseMVA)
     return ret_str
 
-def _generate_flow_monitor_message(bn, flow=None, limit=None, baseMVA=None, time=None):
-    ret_str = "adding line {0} to monitored set".format(bn)
+def _generate_flow_monitor_message(e_type, bn, flow=None, lower_limit=None, upper_limit=None, baseMVA=None, time=None):
+    ret_str = "adding {0} {1} to monitored set".format(e_type, bn)
     if time is not None:
         ret_str += " at time {}".format(time)
     if flow is not None:
-        ret_str += ", flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA)
+        ret_str += ", flow={0}, lower limit={1}, upper limit={2}".format(flow*baseMVA, lower_limit*baseMVA, upper_limit*baseMVA)
     return ret_str
 
+## helper for generating pf
+def _iter_over_viol_set(viol_set, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
+    for i in viol_set:
+        bn = PTDF.branches_keys_masked[i]
+        if mb.pf[bn].expr is None:
+            expr = libbranch.get_power_flow_expr_ptdf_approx(mb, bn, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
+            mb.pf[bn] = expr
+        yield i, bn
+
+## helper for generating pfi
+def _iter_over_int_viol_set(int_viol_set, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
+    for i in int_viol_set:
+        i_n = PTDF.interface_keys[i]
+        if mb.pfi[i_n].expr is None:
+            expr = libbranch.get_power_flow_interface_expr_ptdf(mb, i_n, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
+            mb.pfi[i_n] = expr
+        yield i, i_n
+
 ## violation adder
-def add_violations(viol_lazy, PFV, mb, md, solver, ptdf_options,
+def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_options,
                     PTDF, time=None, prepend_str=""):
 
     model = mb.model()
@@ -348,70 +495,109 @@ def add_violations(viol_lazy, PFV, mb, md, solver, ptdf_options,
     rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
     abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
 
-    ## helper for generating pf
-    def _iter_over_viol_set(viol_set):
-        for i in viol_set:
-            bn = PTDF.branches_keys_masked[i]
-            if mb.pf[bn].expr is None:
-                expr = libbranch.get_power_flow_expr_ptdf_approx(mb, bn, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
-                mb.pf[bn] = expr
-            yield i, bn
-
     constr = mb.ineq_pf_branch_thermal_bounds
     viol_in_mb = mb._idx_monitored
-    for i, bn in _iter_over_viol_set(viol_lazy):
+    for i, bn in _iter_over_viol_set(viol_lazy, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
         thermal_limit = PTDF.branch_limits_array_masked[i]
         if PFV is None:
-            logger.debug(prepend_str+_generate_flow_monitor_message(bn, time=time))
+            logger.debug(prepend_str+_generate_flow_monitor_message('branch', bn, time=time))
         else:
-            logger.debug(prepend_str+_generate_flow_monitor_message(bn, PFV[i], -thermal_limit, baseMVA, time))
+            logger.debug(prepend_str+_generate_flow_monitor_message('branch', bn, PFV[i], -thermal_limit, thermal_limit, baseMVA, time))
         constr[bn] = (-thermal_limit, mb.pf[bn], thermal_limit)
         viol_in_mb.append(i)
         if persistent_solver:
             solver.add_constraint(constr[bn])
 
+    constr = mb.ineq_pf_interface_bounds
+    int_viol_in_mb = mb._interfaces_monitored
+    for i, i_n in _iter_over_int_viol_set(int_viol_lazy, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
+        minimum_limit = PTDF.interface_min_limits[i]
+        maximum_limit = PTDF.interface_max_limits[i]
+        if PFV_I is None:
+            logger.debug(prepend_str+_generate_flow_monitor_message('interface', i_n, time=time))
+        else:
+            logger.debug(prepend_str+_generate_flow_monitor_message('interface', i_n, PFV_I[i], minimum_limit, maximum_limit, baseMVA, time))
+        constr[i_n] = (minimum_limit, mb.pfi[i_n], maximum_limit)
+        int_viol_in_mb.append(i)
+        if persistent_solver:
+            solver.add_constraint(constr[i_n])
+
+
+## helper for generating pf
+def _iter_over_initial_set(branches, branches_in_service, PTDF):
+    for bn in branches_in_service:
+        branch = branches[bn]
+        if 'lazy' in branch and not branch['lazy']:
+            if bn in PTDF.branchname_to_index_masked_map:
+                i = PTDF.branchname_to_index_masked_map[bn]
+                yield i, bn
+            else:
+                logger.warning("Branch {0} has flag 'lazy' set to False but is excluded from monitored set based on kV limits".format(bn))
+
 ### initial monitored set adder
 def add_initial_monitored_branches(mb, branches, branches_in_service, ptdf_options, PTDF):
-    model = mb.model()
-
     ## static information between runs
     rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
     abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
 
-    ## helper for generating pf
-    def _iter_over_initial_set():
-        for bn in branches_in_service:
-            branch = branches[bn]
-            if 'monitored' in branch and branch['monitored']:
-                if bn in PTDF.branchname_to_index_masked_map:
-                    i = PTDF.branchname_to_index_masked_map[bn]
-                    yield i, bn
-                else:
-                    logger.warning("Branch {0} has flag 'monitored' but is excluded from monitored set based on kV limits".format(bn))
-
     constr = mb.ineq_pf_branch_thermal_bounds
     viol_in_mb = mb._idx_monitored
-    for i, bn in _iter_over_initial_set():
+    for i, bn in _iter_over_initial_set(branches, branches_in_service, PTDF):
         thermal_limit = PTDF.branch_limits_array_masked[i]
         mb.pf[bn] = libbranch.get_power_flow_expr_ptdf_approx(mb, bn, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
         constr[bn] = (-thermal_limit, mb.pf[bn], thermal_limit)
         viol_in_mb.append(i)
 
-def copy_active_to_next_time(m, b_next, PTDF_next, slacks):
+def _iter_over_initial_set_interfaces(interfaces, PTDF):
+    for i_n, interface in interfaces.items():
+        if 'lazy' in interface and not interface['lazy']:
+            i = PTDF.interfacename_to_index_map[i_n]
+            yield i, i_n
+
+### initial monitored set adder
+def add_initial_monitored_interfaces(mb, interfaces, ptdf_options, PTDF):
+    ## static information between runs
+    rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
+    abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
+
+    constr = mb.ineq_pf_interface_bounds
+    int_viol_in_mb = mb._interfaces_monitored
+    for i, i_n in _iter_over_initial_set_interfaces(interfaces, PTDF):
+        minimum_limit = PTDF.interface_min_limits[i]
+        maximum_limit = PTDF.interface_max_limits[i]
+        mb.pfi[i_n] = libbranch.get_power_flow_interface_expr_ptdf(mb, i_n, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
+        constr[i_n] = (minimum_limit, mb.pfi[i_n], maximum_limit)
+        int_viol_in_mb.append(i)
+
+def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I):
     active_slack_tol = m._ptdf_options['active_flow_tol']
 
-    branchname_index_map= PTDF_next.branchname_to_index_masked_map
+    branchname_index_map = PTDF_next.branchname_to_index_masked_map
+    interfacename_index_map = PTDF_next.interfacename_to_index_map
 
     viol_lazy = set()
+    int_viol_lazy = set()
 
-    for (bn, constr), slack in slacks.items():
+    idx_monitored = b_next._idx_monitored
+    interfaces_monitored = b_next._interfaces_monitored
+
+    for bn, slack in slacks.items():
         if abs(slack) <= active_slack_tol:
             ## in case the topology has changed
             if bn in branchname_index_map:
-                viol_lazy.add(branchname_index_map[bn])
+                idx = branchname_index_map[bn]
+                if idx not in idx_monitored:
+                    viol_lazy.add(idx)
 
-    return None, viol_lazy
+    for i_n, slack in slacks_I.items():
+        if abs(slack) <= active_slack_tol:
+            ## in case the topology has changed
+            if i_n in interfacename_index_map:
+                idx = interfacename_index_map[i_n]
+                if idx not in interfaces_monitored:
+                    int_viol_lazy.add(idx)
 
+    return None, None, viol_lazy, int_viol_lazy
 
 def _binary_var_generator(instance):
     regulation =  hasattr(instance, 'regulation_service')
