@@ -163,14 +163,27 @@ def _ptdf_dcopf_network_model(block,tm):
 
     if ptdf_options['lazy']:
         ### add "blank" real power flow limits
-        libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
+        libbranch.declare_ineq_p_branch_thermal_bounds(model=block,
                                                      index_set=branches_in_service,
                                                      branches=branches,
                                                      p_thermal_limits=None,
                                                      approximation_type=None,
                                                      )
+        ### declare the "blank" interface flow limits
+        libbranch.declare_ineq_p_interface_bounds(model=block,
+                                                index_set=interfaces.keys(),
+                                                interfaces=interfaces,
+                                                approximation_type=None,
+                                                )
+
         ### add helpers for tracking monitored branches
-        lpu.add_monitored_branch_tracker(block)
+        lpu.add_monitored_flow_tracker(block)
+
+        ### add initial branches to monitored set
+        lpu.add_initial_monitored_branches(block, branches, branches_in_service, ptdf_options, PTDF)
+
+        ### add initial interfaces to monitored set
+        lpu.add_initial_monitored_interfaces(block, interfaces, ptdf_options, PTDF)
         
     else: ### add all the dense constraints
         p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
@@ -183,28 +196,27 @@ def _ptdf_dcopf_network_model(block,tm):
                                                       rel_ptdf_tol=rel_ptdf_tol
                                                       )
         ### declare the real power flow limits
-        libbranch.declare_ineq_p_branch_thermal_lbub(model=block,
+        libbranch.declare_ineq_p_branch_thermal_bounds(model=block,
                                                      index_set=branches_in_service,
                                                      branches=branches,
                                                      p_thermal_limits=p_max,
                                                      approximation_type=ApproximationType.PTDF
                                                      )
 
-    ## for now, just add all the interface constraints
-    ## TODO: incorporate into lazy logic
-    ### declare the branch power flow approximation constraints
-    libbranch.declare_eq_interface_power_ptdf_approx(model=block,
-                                                     index_set=interfaces.keys(),
-                                                     PTDF=PTDF,
-                                                     abs_ptdf_tol=abs_ptdf_tol,
-                                                     rel_ptdf_tol=rel_ptdf_tol
-                                                     )
+        ### declare the branch power flow approximation constraints
+        libbranch.declare_eq_interface_power_ptdf_approx(model=block,
+                                                         index_set=interfaces.keys(),
+                                                         PTDF=PTDF,
+                                                         abs_ptdf_tol=abs_ptdf_tol,
+                                                         rel_ptdf_tol=rel_ptdf_tol
+                                                         )
 
-    ### declare the interface flow limits
-    libbranch.declare_ineq_p_interface_lbub(model=block,
-                                            index_set=interfaces.keys(),
-                                            interfaces=interfaces,
-                                            )
+        ### declare the interface flow limits
+        libbranch.declare_ineq_p_interface_bounds(model=block,
+                                                index_set=interfaces.keys(),
+                                                interfaces=interfaces,
+                                                approximation_type=ApproximationType.PTDF
+                                                )
 
 def _btheta_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
@@ -293,7 +305,7 @@ def _btheta_dcopf_network_model(block,tm):
                                                        )
 
     ### declare the interface flow limits
-    libbranch.declare_ineq_p_interface_lbub(model=block,
+    libbranch.declare_ineq_p_interface_bounds(model=block,
                                             index_set=interfaces.keys(),
                                             interfaces=interfaces,
                                             )

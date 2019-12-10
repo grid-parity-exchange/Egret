@@ -550,35 +550,40 @@ def create_CA_unit_commitment_model(model_data,
 
 
 def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, prepend_str):
-    slacks_ub = None
-    PVF = dict()
-    gt_viol_lazy = dict()
-    lt_viol_lazy = dict()
+    if len(t_subset) > 1:
+        raise Exception("_lazy_ptdf_warmstart_copy_violations only handles t_subset with one element -- somebody should fix that!")
+    slacks = None
+    PFV = dict()
+    PFV_I = dict()
+    viol_lazy = dict()
+    int_viol_lazy = dict()
     total_flow_constr_added = 0
     for t_o in m.TimePeriods:
         if t_o in t_subset:
             continue
 
-        if slacks_ub is None:
-            slacks_lb = dict()
-            slacks_ub = dict()
+        if slacks is None:
+            slacks = dict()
+            slacks_I = dict()
             for t in t_subset:
                 b_ = m.TransmissionBlock[t]
 
                 ## only load the slacks once
-                for bn, constr in b_.ineq_pf_branch_thermal_lb.items():
-                    slacks_lb[bn, constr] = constr.slack()
-                for bn, constr in b_.ineq_pf_branch_thermal_ub.items():
-                    slacks_ub[bn, constr] = constr.slack()
+                for bn, constr in b_.ineq_pf_branch_thermal_bounds.items():
+                    slacks[bn] = constr.slack()
+                ## if the interface slack variable is active, we will have 0
+                ## slack in the constraint
+                for i_n, constr in b_.ineq_pf_interface_bounds.items():
+                    slacks_I[i_n] = constr.slack()
 
         b_other = m.TransmissionBlock[t_o]
         PTDF_other = b_other._PTDF
 
-        PVF[t_o], gt_viol_lazy[t_o], lt_viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks_ub, slacks_lb)
+        PFV[t_o], PFV_I[t_o], viol_lazy[t_o], int_viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks, slacks_I)
 
-        logger.debug(prepend_str+"adding {0} flow constraints at time {1}".format(len(gt_viol_lazy[t_o])+len(lt_viol_lazy[t_o]),t_o))
-        lpu.add_violations(gt_viol_lazy[t_o], lt_viol_lazy[t_o], PVF[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str)
-        total_flow_constr_added += len(gt_viol_lazy[t_o]) + len(lt_viol_lazy[t_o])
+        logger.debug(prepend_str+"adding {0} flow constraints at time {1}".format(len(viol_lazy[t_o])+len(int_viol_lazy[t_o]),t_o))
+        lpu.add_violations(viol_lazy[t_o], int_viol_lazy[t_o],  PFV[t_o], PFV_I[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str)
+        total_flow_constr_added += len(viol_lazy[t_o]) + len(int_viol_lazy[t_o])
     logger.info(prepend_str+"added {0} flow constraint(s)".format(total_flow_constr_added))
 
 def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load):
@@ -648,11 +653,12 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
     ptdf_options = m._ptdf_options
 
-    PVF = dict()
+    PFV = dict()
+    PFV_I = dict()
     viol_num = dict()
     mon_viol_num = dict()
-    gt_viol_lazy = dict()
-    lt_viol_lazy = dict()
+    viol_lazy = dict()
+    int_viol_lazy = dict()
 
     if warmstart_loop:
         if t_subset is None:
@@ -674,7 +680,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
             PTDF = b._PTDF
 
-            PVF[t], viol_num[t], mon_viol_num[t], gt_viol_lazy[t], lt_viol_lazy[t] = \
+            PFV[t], PFV_I[t], viol_num[t], mon_viol_num[t], viol_lazy[t], int_viol_lazy[t] = \
                     lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t, prepend_str=prepend_str)
 
         total_viol_num = sum(viol_num.values())
@@ -708,8 +714,8 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
             PTDF = b._PTDF
 
-            lpu.add_violations(gt_viol_lazy[t], lt_viol_lazy[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t, prepend_str=prepend_str)
-            total_flow_constr_added += len(gt_viol_lazy[t]) + len(lt_viol_lazy[t])
+            lpu.add_violations(viol_lazy[t], int_viol_lazy[t], PFV[t], PFV_I[t], b, md, solver, ptdf_options, PTDF, time=t, prepend_str=prepend_str)
+            total_flow_constr_added += len(viol_lazy[t]) + len(int_viol_lazy[t])
 
         logger.info(prepend_str+"iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
@@ -750,8 +756,12 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
             b = m.TransmissionBlock[t]
             if isinstance(b.p_nw, pe.Var):
                 vars_to_load.extend(b.p_nw.values())
+                vars_to_load.extend(b.pfi_slack_neg.values())
+                vars_to_load.extend(b.pfi_slack_pos.values())
                 if t in t_subset:
                     vars_to_load_t_subset.extend(b.p_nw.values())
+                    vars_to_load_t_subset.extend(b.pfi_slack_neg.values())
+                    vars_to_load_t_subset.extend(b.pfi_slack_pos.values())
             else:
                 vars_to_load = None
                 vars_to_load_t_subset = None
@@ -1167,17 +1177,13 @@ def solve_unit_commitment(model_data,
             if relaxed:
                 PFD = np.zeros(len(branches_idx))
                 for i,bn in enumerate(branches_idx):
-                    if bn in b.ineq_pf_branch_thermal_lb:
-                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_lb[bn]])
-                    if bn in b.ineq_pf_branch_thermal_ub:
-                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_ub[bn]])
+                    if bn in b.ineq_pf_branch_thermal_bounds:
+                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_bounds[bn]])
                 ## interface constributions to LMP
                 PFID = np.zeros(len(interface_idx))
                 for i,i_n in enumerate(interface_idx):
-                    for i_n in b.ineq_pf_interface_lb:
-                        PFID[i] += value(m.dual[b.ineq_pf_interface_lb[i_n]])
-                    for i_n in b.ineq_pf_interface_ub:
-                        PFID[i] += value(m.dual[b.ineq_pf_interface_ub[i_n]])
+                    for i_n in b.ineq_pf_interface_bounds:
+                        PFID[i] += value(m.dual[b.ineq_pf_interface_bounds[i_n]])
 
                 ## TODO: PFD is likely to be sparse, implying we just need a few
                 ##       rows of the PTDF matrix (or columns in its transpose).

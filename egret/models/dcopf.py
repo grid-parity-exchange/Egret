@@ -256,15 +256,18 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     if ptdf_options['lazy']:
 
         ### add "blank" real power flow limits
-        libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
-                                                     index_set=branches_idx,
-                                                     branches=branches,
-                                                     p_thermal_limits=None,
-                                                     approximation_type=None,
-                                                     )
+        libbranch.declare_ineq_p_branch_thermal_bounds(model=model,
+                                                       index_set=branches_idx,
+                                                       branches=branches,
+                                                       p_thermal_limits=None,
+                                                       approximation_type=None,
+                                                       )
 
         ### add helpers for tracking monitored branches
-        lpu.add_monitored_branch_tracker(model)
+        lpu.add_monitored_flow_tracker(model)
+
+        ### add initial branches to monitored set
+        lpu.add_initial_monitored_branches(model, branches, branches_idx, ptdf_options, PTDF)
 
     else:
         p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
@@ -339,7 +342,8 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
 
     for i in range(iteration_limit):
 
-        PFV, viol_num, mon_viol_num, gt_viol_lazy, lt_viol_lazy = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
+        PFV, PFV_I, viol_num, mon_viol_num, viol_lazy, int_viol_lazy \
+                = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
 
         iter_status_str = "iteration {0}, found {1} violation(s)".format(i,viol_num)
         if mon_viol_num:
@@ -360,8 +364,8 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
 
-        lpu.add_violations(gt_viol_lazy, lt_viol_lazy, PFV, m, md, solver, ptdf_options, PTDF)
-        total_flow_constr_added = len(gt_viol_lazy) + len(lt_viol_lazy)
+        lpu.add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, m, md, solver, ptdf_options, PTDF)
+        total_flow_constr_added = len(viol_lazy) + len(int_viol_lazy)
         logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
         if persistent_solver:
@@ -460,10 +464,8 @@ def solve_dcopf(model_data,
         PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
             branches[bn]['pf'] = PFV[i]
-            if bn in m.ineq_pf_branch_thermal_lb:
-                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_lb[bn]])
-            if bn in m.ineq_pf_branch_thermal_ub:
-                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_ub[bn]])
+            if bn in m.ineq_pf_branch_thermal_bounds:
+                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_bounds[bn]])
         ## TODO: PFD is likely to be sparse, implying we just need a few
         ##       rows of the PTDF matrix (or columns in its transpose).
         LMPC = -PTDFM.T.dot(PFD)

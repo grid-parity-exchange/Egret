@@ -201,7 +201,7 @@ def test_uc_lazy_ptdf_thresholding():
         assert math.isclose(c, md_results.data['system']['total_cost'])
 
 def test_uc_ptdf_termination():
-    test_name = 'tiny_uc_tc'
+    test_name = 'tiny_uc_tc_3'
     input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
 
     md_in = ModelData(json.load(open(input_json_file_name, 'r')))
@@ -213,7 +213,7 @@ def test_uc_ptdf_termination():
 
 def test_uc_ptdf_serialization_deserialization():
 
-    test_name = 'tiny_uc_tc' ## based on tiny_uc_1
+    test_name = 'tiny_uc_tc_2' ## based on tiny_uc_1
     input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
 
     md_in = ModelData(json.load(open(input_json_file_name, 'r')))
