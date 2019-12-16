@@ -75,7 +75,8 @@ def _solve_model(model,
                  symbolic_solver_labels = False,
                  options = None,
                  return_solver = False,
-                 vars_to_load = None):
+                 vars_to_load = None,
+                 set_instance = True):
     '''
     Create and solve an Egret power system optimization model
 
@@ -101,6 +102,9 @@ def _solve_model(model,
     vars_to_load : list (optional)
         When supplied, and the solver is persistent, this will just load
         pyomo variables specificed
+    set_instance : bool
+        When the solver is persistent, this controls whether set_instance
+        is called. Default is True
 
     Returns
     -------
@@ -133,7 +137,8 @@ def _solve_model(model,
     _set_options(solver, mipgap, timelimit, options)
 
     if isinstance(solver, PersistentSolver):
-        solver.set_instance(model, symbolic_solver_labels=symbolic_solver_labels)
+        if set_instance:
+            solver.set_instance(model, symbolic_solver_labels=symbolic_solver_labels)
         results = solver.solve(model, tee=solver_tee, load_solutions=False, save_results=False)
     else:
         results = solver.solve(model, tee=solver_tee, \

@@ -568,7 +568,9 @@ def copperplate_relaxed_power_flow(model, slacks=True):
                                             'storage_service': None,
                                             })
 def ptdf_power_flow(model, slacks=True):
-    model._PTDFs = dict()
+    ## allow for this to already exist
+    if not hasattr(model, '_PTDFs'):
+        model._PTDFs = dict()
     _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
