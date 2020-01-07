@@ -413,7 +413,8 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
         load["q_load"] = _make_time_series_dict(list(ql_dict.values()))
 
     ## load in area reserve factors
-    area_spin_map = {'Area1': 'Spin_Up_R1', 'Area2': 'Spin_Up_R2', 'Area3': 'Spin_Up_R3'}
+    area_names = ['Area1', 'Area2', 'Area3']
+    area_spin_map = _create_rts_gmlc_area_spin_map(rts_gmlc_dir, area_names)
     for name, area in md_obj.elements("area"):
         spin_reserve_dict = dict()
         for datetimevalue in reserves_dict[area_spin_map[name]]:
@@ -475,6 +476,16 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
             gen["initial_q_output"] = t0_state[name]["initial_q_output"]
 
     return md_obj.data
+
+def _create_rts_gmlc_area_spin_map(rts_gmlc_dir, area_names):
+    base_dir = os.path.join(rts_gmlc_dir, 'SourceData')
+    reserves = pd.read_csv(os.path.join(base_dir, 'reserves.csv'))
+    area_spin_map = {}
+    #assuming we have areas that correspond to the "Eligible Regions" category, starting at 1, 2, 3...
+    for index, name in enumerate(area_names):
+        spin_name = reserves.loc[reserves['Eligible Regions'] == str(index + 1)]['Reserve Product'].values[0]
+        area_spin_map[name] = spin_name
+    return area_spin_map
 
 
 def _create_rtsgmlc_skeleton(rts_gmlc_dir):
