@@ -58,11 +58,10 @@ def convert_load_by_area_to_source(data_dir, begin_time, end_time, t0_state=None
         DateTimeValue = namedtuple('DateTimeValue',
                                    ['DateTime', 'Value'])
 
-        Load = namedtuple('Load',
-                          ['DateTime',
-                           'Area1',
-                           'Area2',
-                           'Area3'])
+        areas = _get_eligible_areas(rts_gmlc_dir)
+        area_names = _get_eligible_area_names(areas)
+
+        Load = namedtuple('Load', ['DateTime'] + area_names)
 
         timeseries_pointer_df = pd.read_csv(os.path.join(base_dir, "timeseries_pointers.csv"), header=0, sep=',')
 
@@ -274,11 +273,10 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
     DateTimeValue = namedtuple('DateTimeValue',
                                ['DateTime', 'Value'])
 
-    Load = namedtuple('Load',
-                      ['DateTime',
-                       'Area1',
-                       'Area2',
-                       'Area3'])
+    areas = _get_eligible_areas(rts_gmlc_dir)
+    area_names = _get_eligible_area_names(areas)
+
+    Load = namedtuple('Load', ['DateTime'] + area_names)
 
     timeseries_pointer_df = pd.read_csv(os.path.join(base_dir, "timeseries_pointers.csv"), header=0, sep=',')
 
@@ -302,8 +300,7 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
     # compute aggregate load per area, and then compute
     # load participation factors from each bus from that data.
     region_total_load = {}
-    areas = ["Area" + str(i) for i in range(1, 4)]
-    for this_region in areas:
+    for this_region in area_names:
         this_region_total_load = 0.0
         ## loads have exactly one bus
         for name, load in md_obj.elements("load"):
@@ -413,8 +410,7 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
         load["q_load"] = _make_time_series_dict(list(ql_dict.values()))
 
     ## load in area reserve factors
-    area_names = ['Area1', 'Area2', 'Area3']
-    area_spin_map = _create_rts_gmlc_area_spin_map(rts_gmlc_dir, area_names)
+    area_spin_map = _create_rts_gmlc_area_spin_map(rts_gmlc_dir)
     for name, area in md_obj.elements("area"):
         spin_reserve_dict = dict()
         for datetimevalue in reserves_dict[area_spin_map[name]]:
@@ -477,15 +473,26 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
 
     return md_obj.data
 
-def _create_rts_gmlc_area_spin_map(rts_gmlc_dir, area_names):
+def _create_rts_gmlc_area_spin_map(rts_gmlc_dir):
     base_dir = os.path.join(rts_gmlc_dir, 'SourceData')
     reserves = pd.read_csv(os.path.join(base_dir, 'reserves.csv'))
     area_spin_map = {}
+    areas = _get_eligible_areas(rts_gmlc_dir)
+    area_names = _get_eligible_area_names(areas)
     #assuming we have areas that correspond to the "Eligible Regions" category, starting at 1, 2, 3...
-    for index, name in enumerate(area_names):
-        spin_name = reserves.loc[reserves['Eligible Regions'] == str(index + 1)]['Reserve Product'].values[0]
+    for area, name in zip(areas, area_names):
+        spin_name = reserves.loc[reserves['Eligible Regions'] == str(area)]['Reserve Product'].values[0]
         area_spin_map[name] = spin_name
     return area_spin_map
+
+def _get_eligible_areas(rts_gmlc_dir):
+    base_dir = os.path.join(rts_gmlc_dir, 'SourceData')
+    bus = pd.read_csv(os.path.join(base_dir, 'bus.csv'))
+    return bus['Area'].drop_duplicates().values.tolist()
+
+def _get_eligible_area_names(areas):
+    area_names = list(map(lambda x: 'Area' + str(x), areas))
+    return area_names
 
 
 def _create_rtsgmlc_skeleton(rts_gmlc_dir):
@@ -597,8 +604,10 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
         elements["bus"][BUS_I] = bus_dict
 
     # add the areas
-    area_names = ['Area1', 'Area2', 'Area3']
+
     elements["area"] = {}
+    areas = _get_eligible_areas(rts_gmlc_dir)
+    area_names = _get_eligible_area_names(areas)
     for name in area_names:
         ## TODO: what else should be in here?
         elements["area"][name] = dict()
