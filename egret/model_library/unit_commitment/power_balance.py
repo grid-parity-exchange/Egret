@@ -39,9 +39,7 @@ def _setup_egret_network_model(block, tm):
     ### declare (and fix) the loads at the buses
     bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
 
-    ## index of net injections from the UC model
-    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
-    block.pl.fix()
+    block.pl = Param(m.Buses, initialize=bus_p_loads)
 
     bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 

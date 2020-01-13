@@ -719,7 +719,7 @@ def solve_acopf(model_data,
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+                              symbolic_solver_labels=symbolic_solver_labels,solver_options=options)
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))

@@ -586,12 +586,14 @@ def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, 
         total_flow_constr_added += len(viol_lazy[t_o]) + len(int_viol_lazy[t_o])
     logger.info(prepend_str+"added {0} flow constraint(s)".format(total_flow_constr_added))
 
-def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load):
+def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options=None):
+    if solve_method_options is None:
+        solve_method_options = dict()
     if persistent_solver:
-        results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+        results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False, **solve_method_options)
         solver.load_vars(vars_to_load)
     else:
-        results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
+        results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False, **solve_method_options)
         m.solutions.load_from(results)
 
 def _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str):
@@ -600,7 +602,8 @@ def _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str):
         return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
     return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
 
-def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, vars_to_load=None, add_all_lazy_violations=False, warmstart_loop=False, t_subset=None, vars_to_load_t_subset=None, prepend_str=""):
+def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, vars_to_load=None, 
+        solve_method_options=None, add_all_lazy_violations=False, warmstart_loop=False, t_subset=None, vars_to_load_t_subset=None, prepend_str=""):
     '''
     The lazy PTDF unit commitment solver loop. This function iteratively
     adds violated transmission constraints until either the result is
@@ -625,6 +628,8 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         Applies only to persistent solvers. If None, every primal variable is loaded.
         If a list, then should be a list of pyomo Vars to be loaded into the pyomo model
         at termination. Default is None.
+    solve_method_options : None, dict (optional)
+        Additional options passed into the solve method. Default is None
     add_all_lazy_violations : bool (optional)
         If True, on the termination iteration, additional violations or near violations
         will be added to the model before returning (and before re-solving). Used
@@ -703,7 +708,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         if terminate_this_iter and not add_all_lazy_violations:
             if warmstart_loop:
                 _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options, prepend_str)
-                results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load)
+                results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
             if persistent_solver and duals and (results is not None) and (vars_to_load is None):
                 solver.load_duals()
             return _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str)
@@ -724,18 +729,18 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         if terminate_this_iter and add_all_lazy_violations:
             return _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str)
 
-        results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load_time_periods)
+        results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load_time_periods, solve_method_options)
 
     else:
         logger.warning(prepend_str+'WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
         if warmstart_loop:
             _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options)
-            results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load)
+            results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
         if persistent_solver and duals and (results is not None) and (vars_to_load is None):
             solver.load_duals()
         return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
 
-def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed):
+def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options, relaxed):
 
     from egret.common.solver_interface import _solve_model
     import time
@@ -778,7 +783,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     if not relaxed and lp_iter_limit > 0:
 
         lpu.uc_instance_binary_relaxer(m, None)
-        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load = vars_to_load)
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True, vars_to_load = vars_to_load)
         if lp_warmstart_iter_limit > 0:
             lp_warmstart_termination_cond, results, lp_warmstart_iterations = \
                     _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_warmstart_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[LP warmstart phase] ")
@@ -812,7 +817,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 
     ## else if relaxed or lp_iter_limit == 0, do an initial solve
     else:
-        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load=vars_to_load)
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options, solve_method_options, return_solver=True, vars_to_load=vars_to_load)
 
     iter_limit = m._ptdf_options['iteration_limit']
     
@@ -855,7 +860,8 @@ def solve_unit_commitment(model_data,
                           timelimit = None,
                           solver_tee = True,
                           symbolic_solver_labels = False,
-                          options = None,
+                          solver_options = None,
+                          solve_method_options = None,
                           uc_model_generator = create_tight_unit_commitment_model,
                           relaxed = False,
                           return_model = False,
@@ -880,8 +886,10 @@ def solve_unit_commitment(model_data,
         Display solver log. Default is True.
     symbolic_solver_labels : bool (optional)
         Use symbolic solver labels. Useful for debugging; default is False.
-    options : dict (optional)
+    solver_options : dict (optional)
         Other options to pass into the solver. Default is dict().
+    solve_method_options : dict (optional)
+        Other options to pass into the pyomo solve method. Default is dict().
     uc_model_generator : function (optional)
         Function for generating the unit commitment model. Default is 
         egret.models.unit_commitment.create_tight_unit_commitment_model
@@ -906,9 +914,9 @@ def solve_unit_commitment(model_data,
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
-        m, results, solver = _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed )
+        m, results, solver = _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
     else:
-        m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
+        m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True)
 
     md = m.model_data
 
