@@ -587,7 +587,7 @@ def main():
                         timelimit = None,
                         solver_tee = True,
                         symbolic_solver_labels = False,
-                        options = None,
+                        solver_options = None,
                         uc_model_generator=create_tight_unit_commitment_model,
                         relaxed=False,
                         return_model=False)
@@ -616,7 +616,7 @@ def main():
                             timelimit = None,
                             solver_tee = True,
                             symbolic_solver_labels = False,
-                            options = None,
+                            solver_options = None,
                             uc_model_generator=create_tight_unit_commitment_model,
                             relaxed=False,
                             return_model=False)
