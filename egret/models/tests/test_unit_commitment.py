@@ -164,7 +164,7 @@ def test_uc_relaxation():
 
     md_in = ModelData(json.load(open(input_json_file_name, 'r')))
 
-    md_results = solve_unit_commitment(md_in, solver='cbc', options={'presolve': 'off', 'primalS':''}, relaxed=True)
+    md_results = solve_unit_commitment(md_in, solver='cbc', solver_options={'presolve': 'off', 'primalS':''}, relaxed=True)
     reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_relaxed_results.json')
     md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
     assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
@@ -197,7 +197,7 @@ def test_uc_lazy_ptdf_thresholding():
                         (ntc_cost, {'branch_kv_threshold':301, 'kv_threshold_type':'both'}),
                        ]
     for c, ptdf_opt in ptdf_sol_options:
-        md_results = solve_unit_commitment(md_in, solver='cbc', options={'presolve': 'off', 'primalS':''}, relaxed=True, ptdf_options=ptdf_opt)
+        md_results = solve_unit_commitment(md_in, solver='cbc', solver_options={'presolve': 'off', 'primalS':''}, relaxed=True, ptdf_options=ptdf_opt)
         assert math.isclose(c, md_results.data['system']['total_cost'])
 
 def test_uc_ptdf_termination():
@@ -207,7 +207,7 @@ def test_uc_ptdf_termination():
     md_in = ModelData(json.load(open(input_json_file_name, 'r')))
 
     kwargs = {'ptdf_options':{'lazy': True, 'rel_ptdf_tol':10.}}
-    md_results, results = solve_unit_commitment(md_in, solver='cbc', options={'presolve': 'off', 'primalS':''}, relaxed=True, return_results=True, **kwargs)
+    md_results, results = solve_unit_commitment(md_in, solver='cbc', solver_options={'presolve': 'off', 'primalS':''}, relaxed=True, return_results=True, **kwargs)
 
     assert results.egret_metasolver['iterations'] == 1
 
