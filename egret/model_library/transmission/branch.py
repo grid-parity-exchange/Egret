@@ -843,7 +843,7 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
                                                         (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]) <=
                                                         m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
             m.ineq_angle_diff_branch_ub[branch_name] = (m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus] <=
-                                                        math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
+                                                        math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
                                                         (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]))
 
 
