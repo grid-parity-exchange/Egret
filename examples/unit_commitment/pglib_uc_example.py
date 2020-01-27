@@ -13,7 +13,7 @@ import os
 from egret.data.model_data import ModelData
 from egret.models.unit_commitment import solve_unit_commitment
 
-
+## First, get pglib-uc-master if it's not already in Egret/download/
 this_module_path = os.path.dirname(os.path.abspath(__file__))
 if not os.path.isdir(os.path.join(this_module_path, '..', '..', 'download', 'pglib-uc-master')):
     print('Downloading pglib-uc...')
