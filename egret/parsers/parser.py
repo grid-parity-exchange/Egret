@@ -47,7 +47,7 @@ def convert_load_by_area_to_source(data_dir, begin_time, end_time, t0_state=None
 
         base_dir = os.path.join(data_dir, 'SourceData')
 
-        begin_time, end_time = _get_datetimes(begin_time, end_time)
+        begin_time, end_time = _get_datetimes(begin_time, end_time, base_dir, simulation)
 
         TimeSeriesPointer = namedtuple('TimeSeriesPointer',
                                        ['Object',
@@ -262,7 +262,7 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
 
     base_dir = os.path.join(rts_gmlc_dir, 'SourceData')
 
-    begin_time, end_time = _get_datetimes(begin_time, end_time)
+    begin_time, end_time = _get_datetimes(begin_time, end_time, base_dir, simulation)
 
     TimeSeriesPointer = namedtuple('TimeSeriesPointer',
                                    ['Object',
@@ -484,6 +484,22 @@ def _create_rts_gmlc_area_spin_map(rts_gmlc_dir):
         spin_name = reserves.loc[reserves['Eligible Regions'] == str(area)]['Reserve Product'].values[0]
         area_spin_map[name] = spin_name
     return area_spin_map
+
+def _get_rts_gmlc_start_end_dates(base_dir, simulation):
+    simulation_objects = pd.read_csv(os.path.join(base_dir, 'simulation_objects.csv'))
+    date_from = simulation_objects.loc[simulation_objects['Simulation_Parameters'] == 'Date_From']
+    date_to = simulation_objects.loc[simulation_objects['Simulation_Parameters'] == 'Date_To']
+    from_date_string = ''
+    to_date_string = ''
+    if simulation == 'DAY_AHEAD':
+        from_date_string = date_from.iloc[0]['DAY_AHEAD']
+        to_date_string = date_to.iloc[0]['DAY_AHEAD']
+    else:
+        from_date_string = date_from.iloc[0]['REAL_TIME']
+        to_date_string = date_to.iloc[0]['REAL_TIME']
+    start_date = datetime.strptime(from_date_string, '%m/%d/%y %H:%M')
+    end_date = datetime.strptime(to_date_string, '%m/%d/%y %H:%M')
+    return start_date, end_date
 
 def _get_eligible_areas(rts_gmlc_dir):
     base_dir = os.path.join(rts_gmlc_dir, 'SourceData')
@@ -871,7 +887,7 @@ def _make_time_series_dict(values):
     return {"data_type": "time_series", "values": values}
 
 
-def _get_datetimes(begin_time, end_time):
+def _get_datetimes(begin_time, end_time, base_dir, simulation):
     datetime_format = "%Y-%m-%d %H:%M:%S"
 
     datestr = "YYYY-DD-MM"
@@ -896,8 +912,9 @@ def _get_datetimes(begin_time, end_time):
         raise ValueError("Unable to parse end_time")
 
     # stay in the times provided
-    assert begin_time >= datetime(year=2020, month=1, day=1)
-    assert end_time < datetime(year=2021, month=1, day=1)
+    rts_start_date, rts_end_date = _get_rts_gmlc_start_end_dates(base_dir, simulation)
+    assert begin_time >= rts_start_date
+    assert end_time <= rts_end_date
 
     # We only take times in whole hours (for now)
     assert (begin_time.minute == 0. and begin_time.second == 0. and begin_time.microsecond == 0.)
