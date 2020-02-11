@@ -84,7 +84,6 @@ def load_params(model, model_data):
     elements = md.data['elements']
 
     time_keys = system['time_keys']
-    TimeMapper = uc_time_helper
     
     ## insert potentially missing keys
     if 'branch' not in elements:
@@ -168,6 +167,8 @@ def load_params(model, model_data):
     
     model.InitialTime = Param(within=PositiveIntegers, default=1)
     model.TimePeriods = RangeSet(model.InitialTime, model.NumTimePeriods)
+
+    TimeMapper = uc_time_helper(model.TimePeriods)
     
     ## For now, hard code these. Probably need to be able to specify in model_data
     model.StageSet = Set(ordered=True, initialize=['Stage_1', 'Stage_2']) 
@@ -298,7 +299,7 @@ def load_params(model, model_data):
         bus = load['bus']
         load_time = TimeMapper(load['p_load'])
         for t in model.TimePeriods:
-            bus_loads[bus, t] += load_time(None,t)
+            bus_loads[bus, t] += load_time[t]
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
