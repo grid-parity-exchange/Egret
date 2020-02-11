@@ -186,25 +186,25 @@ def load_params(model, model_data):
     
     model.TransmissionLines = Set(initialize=branch_attrs['names'])
     
-    model.BusFrom = Param(model.TransmissionLines, initialize=branch_attrs.get('from_bus'))
-    model.BusTo   = Param(model.TransmissionLines, initialize=branch_attrs.get('to_bus'))
+    model.BusFrom = Param(model.TransmissionLines, initialize=branch_attrs.get('from_bus', dict()))
+    model.BusTo   = Param(model.TransmissionLines, initialize=branch_attrs.get('to_bus', dict()))
 
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs.get('reactance'))
+    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs.get('reactance', dict()))
 
-    model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term')) # max flow across the line
+    model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term', dict())) # max flow across the line
 
     model.LineOutOfService = Param(model.TransmissionLines, model.TimePeriods, within=Boolean, default=False,
-                                    initialize=TimeMapper(branch_attrs.get('planned_outage')))
+                                    initialize=TimeMapper(branch_attrs.get('planned_outage', dict())))
 
     ## Interfaces
     model.Interfaces = Set(initialize=interface_attrs['names'])
 
-    model.InterfaceLines = Set(model.Interfaces, within=model.TransmissionLines, initialize=interface_attrs.get('lines'), ordered=True)
-    model.InterfaceMinFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('minimum_limit'))
-    model.InterfaceMaxFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('maximum_limit'))
+    model.InterfaceLines = Set(model.Interfaces, within=model.TransmissionLines, initialize=interface_attrs.get('lines', dict()), ordered=True)
+    model.InterfaceMinFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('minimum_limit', dict()))
+    model.InterfaceMaxFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('maximum_limit', dict()))
 
     def check_min_less_max_interface_flow_limits(m):
         for i in m.Interfaces:
@@ -248,7 +248,7 @@ def load_params(model, model_data):
     model.ThermalGenerators = Set(initialize=thermal_gen_attrs['names'])
     model.ThermalGeneratorsAtBus = Set(model.Buses, initialize=thermal_gens_by_bus)
     
-    model.ThermalGeneratorType = Param(model.ThermalGenerators, within=Any, default='C', initialize=thermal_gen_attrs.get('fuel'))
+    model.ThermalGeneratorType = Param(model.ThermalGenerators, within=Any, default='C', initialize=thermal_gen_attrs.get('fuel', dict()))
     
     def verify_thermal_generator_buses_rule(m, g):
        for b in m.Buses:
@@ -259,7 +259,7 @@ def load_params(model, model_data):
     
     model.VerifyThermalGeneratorBuses = BuildAction(model.ThermalGenerators, rule=verify_thermal_generator_buses_rule)
     
-    model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('quickstart_capable'))
+    model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('quickstart_capable', dict()))
     
     def init_quick_start_generators(m):
         return [g for g in m.ThermalGenerators if value(m.QuickStart[g]) == 1]
@@ -272,14 +272,14 @@ def load_params(model, model_data):
                                   model.TimePeriods,
                                   within=model.FixedCommitmentTypes,
                                   default=None,
-                                  initialize=TimeMapper(thermal_gen_attrs.get('fixed_commitment')),)
+                                  initialize=TimeMapper(thermal_gen_attrs.get('fixed_commitment', dict())),)
     
     model.NondispatchableGeneratorsAtBus = Set(model.Buses, initialize=renewable_gens_by_bus)
     
     model.AllNondispatchableGenerators = Set(initialize=renewable_gen_attrs['names'])
 
     model.NondispatchableGeneratorType = Param(model.AllNondispatchableGenerators, within=Any, default='W', 
-                                                initialize=renewable_gen_attrs.get('fuel'))
+                                                initialize=renewable_gen_attrs.get('fuel', dict()))
     
     
     #################################################################
@@ -344,14 +344,14 @@ def load_params(model, model_data):
                                         default=0.0)
 
     model.MinimumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
-                                                initialize=thermal_gen_attrs.get('q_min'),
+                                                initialize=thermal_gen_attrs.get('q_min', dict()),
                                                 default=0.0)
 
     def maximum_reactive_output_validator(m, v, g):
         return v >= value(m.MinimumReactivePowerOutput[g])
 
     model.MaximumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
-                                                initialize=thermal_gen_attrs.get('q_max'),
+                                                initialize=thermal_gen_attrs.get('q_max', dict()),
                                                 default=0.0)
     
     # wind is similar, but max and min will be equal for non-dispatchable wind
@@ -361,7 +361,7 @@ def load_params(model, model_data):
                                             within=NonNegativeReals,
                                             default=0.0,
                                             mutable=True,
-                                            initialize=TimeMapper(renewable_gen_attrs.get('p_min')))
+                                            initialize=TimeMapper(renewable_gen_attrs.get('p_min', dict())))
     
     def maximum_nd_output_validator(m, v, g, t):
        return v >= value(m.MinNondispatchablePower[g,t])
@@ -372,7 +372,7 @@ def load_params(model, model_data):
                                             default=0.0,
                                             mutable=True,
                                             validate=maximum_nd_output_validator,
-                                            initialize=TimeMapper(renewable_gen_attrs.get('p_max')))
+                                            initialize=TimeMapper(renewable_gen_attrs.get('p_max', dict())))
     
     #################################################
     # generator ramp up/down rates. units are MW/h. #
@@ -410,13 +410,13 @@ def load_params(model, model_data):
                                     default=startup_ramp_default,
                                     validate=ramp_limit_validator,
                                     mutable=True,
-                                    initialize=thermal_gen_attrs.get('startup_capacity'))
+                                    initialize=thermal_gen_attrs.get('startup_capacity', dict()))
     model.ShutdownRampLimit = Param(model.ThermalGenerators, 
                                     within=NonNegativeReals,
                                     default=shutdown_ramp_default, 
                                     validate=ramp_limit_validator,
                                     mutable=True,
-                                    initialize=thermal_gen_attrs.get('shutdown_capacity'))
+                                    initialize=thermal_gen_attrs.get('shutdown_capacity', dict()))
     
     ## These get used in the basic UC constraints, which implicity assume RU, RD <= Pmax
     def scale_ramp_up(m, g):
@@ -895,7 +895,7 @@ def load_params(model, model_data):
 
     ModeratelyBigPenalty = 1e3*system['baseMVA']
     
-    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost'))
+    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
 
     #########################################
     # penalty costs for constraint violation #
@@ -903,8 +903,8 @@ def load_params(model, model_data):
     
     BigPenalty = 1e4*system['baseMVA']
     
-    model.LoadMismatchPenalty = Param(within=NonNegativeReals, default=BigPenalty, mutable=True, initialize=system.get('load_mismatch_cost'))
-    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, default=BigPenalty/2., mutable=True, initialize=system.get('q_load_mismatch_cost'))
+    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
 
     ## END PRODUCTION COST CALCULATIONS
 
@@ -975,26 +975,26 @@ def load_params(model, model_data):
     # Storage power output >0 when discharging
     
     model.MinimumPowerOutputStorage = Param(model.Storage, within=NonNegativeReals,
-                                            default=0.0, initialize=storage_attrs.get('min_discharge_rate'))
+                                            default=0.0, initialize=storage_attrs.get('min_discharge_rate', dict()))
     
     def maximum_power_output_validator_storage(m, v, s):
         return v >= value(m.MinimumPowerOutputStorage[s])
     
     model.MaximumPowerOutputStorage = Param(model.Storage, within=NonNegativeReals,
                                             validate=maximum_power_output_validator_storage, default=0.0,
-                                            initialize=storage_attrs.get('max_discharge_rate'))
+                                            initialize=storage_attrs.get('max_discharge_rate', dict()))
     
     #Storage power input >0 when charging
     
     model.MinimumPowerInputStorage = Param(model.Storage, within=NonNegativeReals,
-                                            default=0.0, initialize=storage_attrs.get('min_charge_rate'))
+                                            default=0.0, initialize=storage_attrs.get('min_charge_rate', dict()))
     
     def maximum_power_input_validator_storage(m, v, s):
         return v >= value(m.MinimumPowerInputStorage[s])
     
     model.MaximumPowerInputStorage = Param(model.Storage, within=NonNegativeReals,
                                             validate=maximum_power_input_validator_storage, default=0.0,
-                                            initialize=storage_attrs.get('max_charge_rate'))
+                                            initialize=storage_attrs.get('max_charge_rate', dict()))
     
     ###############################################
     # storage ramp up/down rates. units are MW/h. #
@@ -1002,15 +1002,15 @@ def load_params(model, model_data):
     
     # ramp rate limits when discharging
     model.NominalRampUpLimitStorageOutput    = Param(model.Storage, within=NonNegativeReals,
-                                                        initialize=storage_attrs.get('ramp_up_output_60min'))
+                                                        initialize=storage_attrs.get('ramp_up_output_60min', dict()))
     model.NominalRampDownLimitStorageOutput  = Param(model.Storage, within=NonNegativeReals,
-                                                        initialize=storage_attrs.get('ramp_down_output_60min'))
+                                                        initialize=storage_attrs.get('ramp_down_output_60min', dict()))
     
     # ramp rate limits when charging
     model.NominalRampUpLimitStorageInput     = Param(model.Storage, within=NonNegativeReals,
-                                                        initialize=storage_attrs.get('ramp_up_input_60min'))
+                                                        initialize=storage_attrs.get('ramp_up_input_60min', dict()))
     model.NominalRampDownLimitStorageInput   = Param(model.Storage, within=NonNegativeReals,
-                                                        initialize=storage_attrs.get('ramp_down_input_60min'))
+                                                        initialize=storage_attrs.get('ramp_down_input_60min', dict()))
     
     def scale_storage_ramp_up_out(m, s):
         return m.NominalRampUpLimitStorageOutput[s] * m.TimePeriodLengthHours
@@ -1036,23 +1036,23 @@ def load_params(model, model_data):
     # you enter storage energy ratings once for each storage unit
     
     model.MaximumEnergyStorage = Param(model.Storage, within=NonNegativeReals, default=0.0,
-                                        initialize=storage_attrs.get('energy_capacity'))
+                                        initialize=storage_attrs.get('energy_capacity', dict()))
     model.MinimumSocStorage = Param(model.Storage, within=PercentFraction, default=0.0,
-                                        initialize=storage_attrs.get('minimum_state_of_charge'))
+                                        initialize=storage_attrs.get('minimum_state_of_charge', dict()))
     
     ################################################################################
     # round trip efficiency for each storage unit given as a fraction (i.e. [0,1]) #
     ################################################################################
     
     model.InputEfficiencyEnergy  = Param(model.Storage, within=PercentFraction, default=1.0,
-                                            initialize=storage_attrs.get('charge_efficiency'))
+                                            initialize=storage_attrs.get('charge_efficiency', dict()))
     model.OutputEfficiencyEnergy = Param(model.Storage, within=PercentFraction, default=1.0,
-                                            initialize=storage_attrs.get('discharge_efficienty'))
+                                            initialize=storage_attrs.get('discharge_efficienty', dict()))
     model.RetentionRate          = Param(model.Storage, within=PercentFraction, default=1.0,
-                                            initialize=storage_attrs.get('retention_rate_60min')) ## assumed to be %/hr
+                                            initialize=storage_attrs.get('retention_rate_60min', dict())) ## assumed to be %/hr
 
-    model.ChargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('charge_cost'))
-    model.DischargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('discharge_cost'))
+    model.ChargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('charge_cost', dict()))
+    model.DischargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('discharge_cost', dict()))
 
     ## this will be multiplied by itself 1/m.TimePeriodLengthHours times, so this is the scaling to
     ## get us back to %/hr
@@ -1068,7 +1068,7 @@ def load_params(model, model_data):
     # storage units will always be empty at the final time period.
     
     model.EndPointSocStorage = Param(model.Storage, within=PercentFraction, default=0.5,
-                                        initialize=storage_attrs.get('initial_state_of_charge'))
+                                        initialize=storage_attrs.get('initial_state_of_charge', dict()))
     
     ############################################################
     # storage initial conditions: SOC, power output and input  #
@@ -1083,13 +1083,13 @@ def load_params(model, model_data):
     model.StoragePowerOutputOnT0 = Param(model.Storage, within=NonNegativeReals,
                                             validate=t0_storage_power_output_validator,
                                             default=0.0,
-                                            initialize=storage_attrs.get('initial_discharge_rate'))
+                                            initialize=storage_attrs.get('initial_discharge_rate', dict()))
     model.StoragePowerInputOnT0  = Param(model.Storage, within=NonNegativeReals,
                                             validate=t0_storage_power_input_validator,
                                             default=0.0,
-                                            initialize=storage_attrs.get('initial_charge_rate'))
+                                            initialize=storage_attrs.get('initial_charge_rate', dict()))
     model.StorageSocOnT0         = Param(model.Storage, within=PercentFraction,
-                                            default=0.5, initialize=storage_attrs.get('initial_state_of_charge'))
+                                            default=0.5, initialize=storage_attrs.get('initial_state_of_charge', dict()))
 
     ##############################################################
     # failure probability for each generator, in any given hour. #
