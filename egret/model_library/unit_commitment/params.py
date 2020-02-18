@@ -332,27 +332,31 @@ def load_params(model, model_data):
     
     # you can enter generator limits either once for the generator or for each period (or just take 0)
     
-    model.MinimumPowerOutput = Param(model.ThermalGenerators, within=NonNegativeReals, 
-                                        initialize=thermal_gen_attrs['p_min'],
+    model.MinimumPowerOutput = Param(model.ThermalGenerators, model.TimePeriods, 
+                                        within=NonNegativeReals, 
+                                        initialize=TimeMapper(thermal_gen_attrs['p_min']),
                                         default=0.0)
     
-    def maximum_power_output_validator(m, v, g):
-       return v >= value(m.MinimumPowerOutput[g])
+    def maximum_power_output_validator(m, v, g, t):
+       return v >= value(m.MinimumPowerOutput[g,t])
     
-    model.MaximumPowerOutput = Param(model.ThermalGenerators, within=NonNegativeReals, 
+    model.MaximumPowerOutput = Param(model.ThermalGenerators, model.TimePeriods, 
+                                        within=NonNegativeReals, 
                                         validate=maximum_power_output_validator, 
-                                        initialize=thermal_gen_attrs['p_max'],
+                                        initialize=TimeMapper(thermal_gen_attrs['p_max']),
                                         default=0.0)
 
-    model.MinimumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
-                                                initialize=thermal_gen_attrs.get('q_min', dict()),
+    model.MinimumReactivePowerOutput = Param(model.ThermalGenerators, model.TimePeriods,
+                                                within=Reals,
+                                                initialize=TimeMapper(thermal_gen_attrs.get('q_min', dict())),
                                                 default=0.0)
 
-    def maximum_reactive_output_validator(m, v, g):
-        return v >= value(m.MinimumReactivePowerOutput[g])
+    def maximum_reactive_output_validator(m, v, g, t):
+        return v >= value(m.MinimumReactivePowerOutput[g,t])
 
-    model.MaximumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
-                                                initialize=thermal_gen_attrs.get('q_max', dict()),
+    model.MaximumReactivePowerOutput = Param(model.ThermalGenerators, model.TimePeriods, 
+                                                within=Reals,
+                                                initialize=TimeMapper(thermal_gen_attrs.get('q_max', dict())),
                                                 default=0.0)
     
     # wind is similar, but max and min will be equal for non-dispatchable wind
@@ -383,80 +387,117 @@ def load_params(model, model_data):
     # fully ramp in less than an hour, then this    #
     # will occur.                                   #
     #################################################
-    
+
+    ## be sure the generator can ramp
+    ## between all the p_min/p_max values
+    def ramp_up_validator(m, v, g):
+        t1 = m.InitialTime
+        for t in m.TimePeriods:
+            if t == t1:
+                continue
+            diff = value(m.MinimumPowerOutput[g,t] - m.MaximumPowerOutput[g,t-1])
+            if v*m.TimePeriodLengthHours < diff:
+                logger.warn('Generator {} has an infeasible ramp up between time periods {} and {}'.format(g,t-1,t))
+                return False
+        return True
+
+    ## be sure the generator can ramp
+    ## between all the p_min/p_max values
+    def ramp_down_validator(m, v, g):
+        t1 = m.InitialTime
+        for t in m.TimePeriods:
+            if t == t1:
+                continue
+            diff = value(m.MinimumPowerOutput[g,t-1] - m.MaximumPowerOutput[g,t])
+            if v*m.TimePeriodLengthHours < diff:
+                logger.warn('Generator {} has an infeasible ramp down between time periods {} and {}'.format(g,t-1,t))
+                return False
+        return True
+
     # limits for normal time periods
     model.NominalRampUpLimit = Param(model.ThermalGenerators,
                                         within=NonNegativeReals,
                                         mutable=True,
-                                        initialize=thermal_gen_attrs['ramp_up_60min'])
+                                        initialize=thermal_gen_attrs['ramp_up_60min'],
+                                        validate=ramp_up_validator)
     model.NominalRampDownLimit = Param(model.ThermalGenerators,
                                         within=NonNegativeReals,
                                         mutable=True,
-                                        initialize=thermal_gen_attrs['ramp_down_60min'])
+                                        initialize=thermal_gen_attrs['ramp_down_60min'],
+                                        validate=ramp_down_validator)
     
     # limits for time periods in which generators are brought on or off-line.
     # must be no less than the generator minimum output.
-    def ramp_limit_validator(m, v, g):
-       return v >= m.MinimumPowerOutput[g]
+    def ramp_limit_validator(m, v, g, t):
+       return v >= m.MinimumPowerOutput[g,t]
 
     ## These defaults follow what is in most market manuals
     ## We scale this for the time period below
-    def startup_ramp_default(m, g):
-        return m.MinimumPowerOutput[g]+m.NominalRampUpLimit[g]/2.
-    def shutdown_ramp_default(m, g):
-        return m.MinimumPowerOutput[g]+m.NominalRampDownLimit[g]/2.
+    def startup_ramp_default(m, g, t):
+        return m.MinimumPowerOutput[g,t]+m.NominalRampUpLimit[g]/2.
+    def shutdown_ramp_default(m, g, t):
+        return m.MinimumPowerOutput[g,t]+m.NominalRampDownLimit[g]/2.
 
     model.StartupRampLimit = Param(model.ThermalGenerators, 
+                                    model.TimePeriods,
                                     within=NonNegativeReals,
                                     default=startup_ramp_default,
                                     validate=ramp_limit_validator,
                                     mutable=True,
-                                    initialize=thermal_gen_attrs.get('startup_capacity', dict()))
+                                    initialize=TimeMapper(thermal_gen_attrs.get('startup_capacity', dict())))
     model.ShutdownRampLimit = Param(model.ThermalGenerators, 
+                                    model.TimePeriods,
                                     within=NonNegativeReals,
                                     default=shutdown_ramp_default, 
                                     validate=ramp_limit_validator,
                                     mutable=True,
-                                    initialize=thermal_gen_attrs.get('shutdown_capacity', dict()))
+                                    initialize=TimeMapper(thermal_gen_attrs.get('shutdown_capacity', dict())))
     
     ## These get used in the basic UC constraints, which implicity assume RU, RD <= Pmax
-    def scale_ramp_up(m, g):
+    ## Ramping constraints look backward, so these will accordingly as well
+    ## NOTES: can't ramp up higher than the current pmax from the previous value
+    ##        can't ramp down more than the pmax from the prior time period
+    def scale_ramp_up(m, g, t):
         temp = m.NominalRampUpLimit[g] * m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g]):
-            return m.MaximumPowerOutput[g]
+        if value(temp) > value(m.MaximumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
         else:
             return temp
-    model.ScaledNominalRampUpLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=scale_ramp_up, mutable=True)
+    model.ScaledNominalRampUpLimit = Param(model.ThermalGenerators, model.TimePeriods,  within=NonNegativeReals, initialize=scale_ramp_up, mutable=True)
     
-    def scale_ramp_down(m, g):
+    def scale_ramp_down(m, g, t):
         temp = m.NominalRampDownLimit[g] * m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g]):
-            return m.MaximumPowerOutput[g]
+        if t == m.InitialTime:
+            param = m.PowerGeneratedT0[g]
+        else:
+            param = m.MaximumPowerOutput[g,t-1]
+        if value(temp) > value(param):
+            return param
         else:
             return temp
-    model.ScaledNominalRampDownLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=scale_ramp_down, mutable=True)
+    model.ScaledNominalRampDownLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=scale_ramp_down, mutable=True)
     
-    def scale_startup_limit(m, g):
+    def scale_startup_limit(m, g, t):
         ## temp now has the "running room" over Pmin. This will be scaled for the time period length, 
         ## most market models do not have this notion, so this is set-up so that the defaults
         ## will be scaled as they would be in most market models
-        temp = (m.StartupRampLimit[g] - m.MinimumPowerOutput[g])*m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g]):
-            return m.MaximumPowerOutput[g]
+        temp = (m.StartupRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
+        if value(temp) > value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
         else:
-            return temp + m.MinimumPowerOutput[g]
-    model.ScaledStartupRampLimit = Param(model.ThermalGenerators, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_startup_limit, mutable=True)
+            return temp + m.MinimumPowerOutput[g,t]
+    model.ScaledStartupRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_startup_limit, mutable=True)
     
-    def scale_shutdown_limit(m, g):
+    def scale_shutdown_limit(m, g, t):
         ## temp now has the "running room" over Pmin. This will be scaled for the time period length
         ## most market models do not have this notion, so this is set-up so that the defaults
         ## will be scaled as they would be in most market models
-        temp = (m.ShutdownRampLimit[g] - m.MinimumPowerOutput[g])*m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g]):
-            return m.MaximumPowerOutput[g]
+        temp = (m.ShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
+        if value(temp) > value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
         else:
-            return temp + m.MinimumPowerOutput[g]
-    model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
+            return temp + m.MinimumPowerOutput[g,t]
+    model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
     
     
     ##########################################################################################################
@@ -517,10 +558,16 @@ def load_params(model, model_data):
     ####################################################################
     
     def between_limits_validator(m, v, g):
-       status = (v <= (value(m.MaximumPowerOutput[g]) * value(m.UnitOnT0[g]))  and v >= (value(m.MinimumPowerOutput[g]) * value(m.UnitOnT0[g])))
-       if status == False:
-          print("Failed to validate PowerGeneratedT0 value for g="+g+"; new value="+str(v)+", UnitOnT0="+str(value(m.UnitOnT0[g])))
-       return status
+        t = m.TimePeriods.first() 
+
+        v_less_max = v <= value(m.MaximumPowerOutput[g,t] + m.NominalRampDownLimit[g]*m.TimePeriodLengthHours)*value(m.UnitOnT0[g])
+        if not v_less_max:
+            logger.error('Generator {} has more output at T0 than is feasible to ramp down to'.format(g))
+
+        v_greater_min = v >= value(m.MinimumPowerOutput[g,t] - m.NominalRampUpLimit[g]*m.TimePeriodLengthHours)*value(m.UnitOnT0[g])
+        if not v_less_max:
+            logger.error('Generator {} has less output at T0 than is feasible to ramp up to'.format(g))
+        return True
     model.PowerGeneratedT0 = Param(model.ThermalGenerators, 
                                     within=NonNegativeReals, 
                                     validate=between_limits_validator, 
@@ -755,8 +802,8 @@ def load_params(model, model_data):
     
         # per the requirement below, there have to be at least two piecewise points if there are any.
     
-        min_output = value(m.MinimumPowerOutput[g])
-        max_output = value(m.MaximumPowerOutput[g])   
+        min_output = min(value(m.MinimumPowerOutput[g,t]) for t in m.TimePeriods)
+        max_output = max(value(m.MaximumPowerOutput[g,t]) for t in m.TimePeriods)
     
         points = list(m.CostPiecewisePoints[g])
     
@@ -782,14 +829,14 @@ def load_params(model, model_data):
     # Minimum production cost (needed because Piecewise constraint on ProductionCost 
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
     # back in to the objective if a unit is on
-    def minimum_production_cost(m, g):
+    def minimum_production_cost(m, g, t):
         if len(m.CostPiecewisePoints[g]) >= 1:
             return m.CostPiecewiseValues[g].first()
         else:
             return (m.ProductionCostA0[g] + \
-                    m.ProductionCostA1[g] * m.MinimumPowerOutput[g] + \
-                    m.ProductionCostA2[g] * (m.MinimumPowerOutput[g]**2))
-    model.MinimumProductionCost = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=minimum_production_cost, mutable=True)
+                    m.ProductionCostA1[g] * m.MinimumPowerOutput[g,t] + \
+                    m.ProductionCostA2[g] * (m.MinimumPowerOutput[g,t]**2))
+    model.MinimumProductionCost = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=minimum_production_cost, mutable=True)
     
     ##############################################################################################
     # number of pieces in the linearization of each generator's quadratic cost production curve. #
@@ -822,10 +869,10 @@ def load_params(model, model_data):
     
         # factor out the fuel cost here, as the piecewise approximation is scaled by fuel cost
         # elsewhere in the model (i.e., in the Piecewise construct below).
-        minimum_production_cost = value(m.MinimumProductionCost[g])
+        minimum_production_cost = value(m.MinimumProductionCost[g,t])
     
         # minimum output
-        minimum_power_output = value(m.MinimumPowerOutput[g])
+        minimum_power_output = value(m.MinimumPowerOutput[g,t])
         
         piecewise_type = value(m.PiecewiseType)
     
@@ -844,8 +891,8 @@ def load_params(model, model_data):
     
            if value(m.ProductionCostA2[g]) == 0:
               # If cost is linear, we only need two points -- (0,0) and (MaxOutput-MinOutput, MaxCost-MinCost))
-              min_power = value(m.MinimumPowerOutput[g])
-              max_power = value(m.MaximumPowerOutput[g])
+              min_power = value(m.MinimumPowerOutput[g,t])
+              max_power = value(m.MaximumPowerOutput[g,t])
               if min_power == max_power:
                  m.PowerGenerationPiecewisePoints[g, t] = [0.0]
               else:
@@ -862,8 +909,8 @@ def load_params(model, model_data):
                      - minimum_production_cost
     
            else:
-               min_power = value(m.MinimumPowerOutput[g])
-               max_power = value(m.MaximumPowerOutput[g])
+               min_power = value(m.MinimumPowerOutput[g,t])
+               max_power = value(m.MaximumPowerOutput[g,t])
                n = value(m.NumGeneratorCostCurvePieces)
                width = (max_power - min_power) / float(n)
                if width == 0:

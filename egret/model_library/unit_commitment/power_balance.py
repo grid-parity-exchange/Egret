@@ -366,9 +366,9 @@ def _add_load_mismatch(model):
     over_gen_maxes = {}
     over_gen_times_per_bus = {b: list() for b in model.Buses}
     for b in model.Buses:
-        gen = sum(value(model.MaximumPowerOutput[g]) for g in model.ThermalGeneratorsAtBus[b])
         for t in model.TimePeriods:
-            total_gen = gen + sum(value(model.MinNondispatchablePower[n,t]) for n in model.NondispatchableGeneratorsAtBus[b])
+            total_gen = sum(value(model.MaximumPowerOutput[g,t]) for g in model.ThermalGeneratorsAtBus[b])
+            total_gen += sum(value(model.MinNondispatchablePower[n,t]) for n in model.NondispatchableGeneratorsAtBus[b])
             total_gen -= value(model.Demand[b,t])
             if total_gen > 0:
                 over_gen_maxes[b,t] = total_gen

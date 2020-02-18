@@ -335,8 +335,8 @@ def ancillary_services(model):
                     + (m.RegulationReserveUp[g,t] if reg else 0.) \
                     + (m.SpinningReserveDispatched[g,t] if add_spinning_reserve else 0.) \
                     + (m.SupplementalSpinReserveDispatched[g,t] if add_supplemental_reserve else 0.) \
-                <= m.MaximumPowerOutput[g]*m.UnitOn[g,t] \
-                    - ((m.MaximumPowerOutput[g] - m.RegulationHighLimit[g])*m.RegulationOn[g,t] if reg else 0.)
+                <= m.MaximumPowerOutput[g,t]*m.UnitOn[g,t] \
+                    - ((m.MaximumPowerOutput[g,t] - m.RegulationHighLimit[g,t])*m.RegulationOn[g,t] if reg else 0.)
     model.AncillaryServiceCapacityLimitUpper = Constraint(model.ThermalGenerators, model.TimePeriods, rule=ancillary_service_capacity_limit_upper)
 
     def ancillary_service_capacity_limit_lower(m, g, t):
@@ -347,7 +347,7 @@ def ancillary_services(model):
                     - (m.FlexDnProvided[g,t] if add_flexi_ramp_reserve else 0.) \
                     - (m.RegulationReserveDn[g,t] if reg else 0.) \
                 >= \
-                    ((m.RegulationLowLimit[g] - m.MinimumPowerOutput[g])*m.RegulationOn[g,t] if reg else 0.)
+                    ((m.RegulationLowLimit[g,t] - m.MinimumPowerOutput[g,t])*m.RegulationOn[g,t] if reg else 0.)
     model.AncillaryServiceCapacityLimitLower = Constraint(model.ThermalGenerators, model.TimePeriods, rule=ancillary_service_capacity_limit_lower)
 
     ## NOTE: ScaledNominalRampUpLimit/ScaledNominalRampDownLimit and ScaledStartupRampLimit/ScaledShutdownRampLimit
@@ -364,13 +364,14 @@ def ancillary_services(model):
         return m.NominalRampDownLimit[g]*m.TimePeriodLengthHours
     model.AS_ScaledNominalRampDownLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_ramp_down)
 
-    def as_startup_ramp(m,g):
-        return (m.StartupRampLimit[g] - m.MinimumPowerOutput[g])*m.TimePeriodLengthHours
-    model.AS_ScaledStartupRampLessMin = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_startup_ramp)
+    ##TODO: FIXME: REVISIT AFTER RAMPING CONSTRAINTS
+    def as_startup_ramp(m,g,t):
+        return (m.StartupRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
+    model.AS_ScaledStartupRampLessMin = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=as_startup_ramp)
 
-    def as_shutdown_ramp(m,g):
-        return (m.ShutdownRampLimit[g] - m.MinimumPowerOutput[g])*m.TimePeriodLengthHours
-    model.AS_ScaledShutdownRampLessMin = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_shutdown_ramp)
+    def as_shutdown_ramp(m,g,t):
+        return (m.ShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
+    model.AS_ScaledShutdownRampLessMin = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=as_shutdown_ramp)
 
     def ancillary_service_ramp_up_limit(m,g,t):
         reg = (add_regulation_reserve and (g in m.AGC_Generators))
@@ -452,7 +453,7 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     # When units are selected for regulation, their limits are bounded by the RegulationHighLimit and RegulationLowLimit
     # I'll refer to it as the "regulation band"
     def regulation_high_limit_validator(m, v, g):
-        return v <= value(m.MaximumPowerOutput[g])
+        return v <= value(m.MaximumPowerOutput[g,t])
     model.RegulationHighLimit = Param(model.AGC_Generators, within=NonNegativeReals, validate=regulation_high_limit_validator, initialize=agc_gen_attrs['p_max_agc'])
     
     def regulation_low_limit_validator(m, v, g):
@@ -709,7 +710,7 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
     # Non-spinning reserves are assumed to be fast -- Supplemental reserves are slow (30 minutes)
 
     def validate_nonspin_bid(m,v,g):
-        return v <= value(m.MaximumPowerOutput[g])
+        return v <= value(m.MaximumPowerOutput[g,t])
     model.NonSpinningReserveCapability = Param(model.NonSpinGenerators, within=NonNegativeReals, default=0.0, validate=validate_nonspin_bid,
                                                     initialize=nspin_gen_attrs['non_spinning_capacity'])
     model.NonSpinningReservePrice = Param(model.NonSpinGenerators, within=NonNegativeReals, default=0.0, initialize=nspin_gen_attrs.get('non_spinning_cost', dict()))
@@ -808,7 +809,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
 
     # Thirty-minute supplemental reserves, for generators which can start in 30 minutes
     def validate_nonspin_bid(m,v,g):
-        return v <= value(m.MaximumPowerOutput[g])
+        return v <= value(m.MaximumPowerOutput[g,t])
     model.SupplementalReserveCapabilityNonSpin = Param(model.SupplementalNonSpinGenerators, within=NonNegativeReals, default=0.0, 
                                                         validate=validate_nonspin_bid, initialize=supplemental_nspin_gen_attrs.get('supplemental_non_spinning_capacity', dict()))
 
