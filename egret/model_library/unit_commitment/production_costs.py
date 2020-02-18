@@ -321,7 +321,7 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
 
         su_step = _step_coeff(upper, lower, SU-minP)
         if t < value(m.NumTimePeriods):
-            SD = value(m.ScaledShutdownRampLimit[g,t])
+            SD = value(m.ScaledShutdownRampLimit[g,t+1])
             sd_step = _step_coeff(upper, lower, SD-minP)
             if m.MinimumUpTime[g] > 1:
                 return m.PiecewiseProduction[g,t,i] <= (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
@@ -346,7 +346,7 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
         if m.MinimumUpTime[g] <= 1 and t < value(m.NumTimePeriods):
             upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
             lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-            SD = value(m.ScaledShutdownRampLimit[g,t])
+            SD = value(m.ScaledShutdownRampLimit[g,t+1])
             minP = value(m.MinimumPowerOutput[g,t])
 
             sd_step = _step_coeff(upper, lower, SD-minP)
@@ -589,7 +589,7 @@ def SLL_production_costs_tightened(model):
 
     def piecewise_production_frac_limits_shutdown_rule0(m, g, t):
         if t < value(m.NumTimePeriods):
-            upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledShutdownRampLimit[g,t]-m.MinimumPowerOutput[g,t]))
+            upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledShutdownRampLimit[g,t+1]-m.MinimumPowerOutput[g,t]))
             return sum( m.PiecewiseProductionFrac[g,t,i] for i in range(upper_limit+1) ) >= m.UnitStop[g,t+1]
         else:
             return Constraint.Skip
@@ -598,10 +598,10 @@ def SLL_production_costs_tightened(model):
     def piecewise_production_frac_limits_shutdown_rule1(m, g, t):
         if t >= value(m.NumTimePeriods):
             return Constraint.Skip
-        upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledShutdownRampLimit[g,t]-m.MinimumPowerOutput[g,t]))
-        if m.ScaledShutdownRampLimit[g,t]-m.MinimumPowerOutput[g,t] == m.PowerGenerationPiecewisePoints[g,t][upper_limit]:
+        upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledShutdownRampLimit[g,t+1]-m.MinimumPowerOutput[g,t]))
+        if m.ScaledShutdownRampLimit[g,t+1]-m.MinimumPowerOutput[g,t] == m.PowerGenerationPiecewisePoints[g,t][upper_limit]:
             return Constraint.Skip
-        frac_from_before = 1 - (m.ScaledShutdownRampLimit[g,t]-m.MinimumPowerOutput[g,t] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])/(m.PowerGenerationPiecewisePoints[g,t][upper_limit] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])
+        frac_from_before = 1 - (m.ScaledShutdownRampLimit[g,t+1]-m.MinimumPowerOutput[g,t] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])/(m.PowerGenerationPiecewisePoints[g,t][upper_limit] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])
         return sum( m.PiecewiseProductionFrac[g,t,i] for i in range(upper_limit) ) >= frac_from_before* m.UnitStop[g,t+1]
     model.PiecewiseProductionSumShutdown1 = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_frac_limits_shutdown_rule1 )
 
