@@ -323,7 +323,30 @@ def load_params(model, model_data):
     model.ReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, 
                                         initialize=TimeMapper(reserve_requirement), mutable=True)
     
+    ##########################################################################################################
+    # the minimum number of time periods that a generator must be on-line (off-line) once brought up (down). #
+    ##########################################################################################################
     
+    model.MinimumUpTime = Param(model.ThermalGenerators,
+                                    within=NonNegativeReals,
+                                    default=0,
+                                    initialize=thermal_gen_attrs['min_up_time'])
+    model.MinimumDownTime = Param(model.ThermalGenerators,
+                                    within=NonNegativeReals,
+                                    default=0,
+                                    initialize=thermal_gen_attrs['min_down_time'])
+    
+    ## Assert that MUT and MDT are at least 1 in the time units of the model.
+    ## Otherwise, turn on/offs may not be enforced correctly.
+    def scale_min_uptime(m, g):
+        scaled_up_time = int(round(m.MinimumUpTime[g] / m.TimePeriodLengthHours))
+        return min(max(scaled_up_time,1), value(m.NumTimePeriods))
+    model.ScaledMinimumUpTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_uptime)
+    
+    def scale_min_downtime(m, g):
+        scaled_down_time = int(round(m.MinimumDownTime[g] / m.TimePeriodLengthHours))
+        return min(max(scaled_down_time,1), value(m.NumTimePeriods))
+    model.ScaledMinimumDownTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_downtime)
     
     ####################################################################################
     # minimum and maximum generation levels, for each thermal generator. units are MW. #
@@ -425,106 +448,7 @@ def load_params(model, model_data):
                                         mutable=True,
                                         initialize=thermal_gen_attrs['ramp_down_60min'],
                                         validate=ramp_down_validator)
-    
-    # limits for time periods in which generators are brought on or off-line.
-    # must be no less than the generator minimum output.
-    def ramp_limit_validator(m, v, g, t):
-       return v >= m.MinimumPowerOutput[g,t]
 
-    ## These defaults follow what is in most market manuals
-    ## We scale this for the time period below
-    def startup_ramp_default(m, g, t):
-        return m.MinimumPowerOutput[g,t]+m.NominalRampUpLimit[g]/2.
-    def shutdown_ramp_default(m, g, t):
-        return m.MinimumPowerOutput[g,t]+m.NominalRampDownLimit[g]/2.
-
-    model.StartupRampLimit = Param(model.ThermalGenerators, 
-                                    model.TimePeriods,
-                                    within=NonNegativeReals,
-                                    default=startup_ramp_default,
-                                    validate=ramp_limit_validator,
-                                    mutable=True,
-                                    initialize=TimeMapper(thermal_gen_attrs.get('startup_capacity', dict())))
-    model.ShutdownRampLimit = Param(model.ThermalGenerators, 
-                                    model.TimePeriods,
-                                    within=NonNegativeReals,
-                                    default=shutdown_ramp_default, 
-                                    validate=ramp_limit_validator,
-                                    mutable=True,
-                                    initialize=TimeMapper(thermal_gen_attrs.get('shutdown_capacity', dict())))
-    
-    ## These get used in the basic UC constraints, which implicity assume RU, RD <= Pmax
-    ## Ramping constraints look backward, so these will accordingly as well
-    ## NOTES: can't ramp up higher than the current pmax from the previous value
-    ##        can't ramp down more than the pmax from the prior time period
-    def scale_ramp_up(m, g, t):
-        temp = m.NominalRampUpLimit[g] * m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g,t]):
-            return m.MaximumPowerOutput[g,t]
-        else:
-            return temp
-    model.ScaledNominalRampUpLimit = Param(model.ThermalGenerators, model.TimePeriods,  within=NonNegativeReals, initialize=scale_ramp_up, mutable=True)
-    
-    def scale_ramp_down(m, g, t):
-        temp = m.NominalRampDownLimit[g] * m.TimePeriodLengthHours
-        if t == m.InitialTime:
-            param = m.PowerGeneratedT0[g]
-        else:
-            param = m.MaximumPowerOutput[g,t-1]
-        if value(temp) > value(param):
-            return param
-        else:
-            return temp
-    model.ScaledNominalRampDownLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=scale_ramp_down, mutable=True)
-    
-    def scale_startup_limit(m, g, t):
-        ## temp now has the "running room" over Pmin. This will be scaled for the time period length, 
-        ## most market models do not have this notion, so this is set-up so that the defaults
-        ## will be scaled as they would be in most market models
-        temp = (m.StartupRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t]):
-            return m.MaximumPowerOutput[g,t]
-        else:
-            return temp + m.MinimumPowerOutput[g,t]
-    model.ScaledStartupRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_startup_limit, mutable=True)
-    
-    def scale_shutdown_limit(m, g, t):
-        ## temp now has the "running room" over Pmin. This will be scaled for the time period length
-        ## most market models do not have this notion, so this is set-up so that the defaults
-        ## will be scaled as they would be in most market models
-        temp = (m.ShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t]):
-            return m.MaximumPowerOutput[g,t]
-        else:
-            return temp + m.MinimumPowerOutput[g,t]
-    model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
-    
-    
-    ##########################################################################################################
-    # the minimum number of time periods that a generator must be on-line (off-line) once brought up (down). #
-    ##########################################################################################################
-    
-    model.MinimumUpTime = Param(model.ThermalGenerators,
-                                    within=NonNegativeReals,
-                                    default=0,
-                                    initialize=thermal_gen_attrs['min_up_time'])
-    model.MinimumDownTime = Param(model.ThermalGenerators,
-                                    within=NonNegativeReals,
-                                    default=0,
-                                    initialize=thermal_gen_attrs['min_down_time'])
-    
-    ## Assert that MUT and MDT are at least 1 in the time units of the model.
-    ## Otherwise, turn on/offs may not be enforced correctly.
-    def scale_min_uptime(m, g):
-        scaled_up_time = int(round(m.MinimumUpTime[g] / m.TimePeriodLengthHours))
-        return min(max(scaled_up_time,1), value(m.NumTimePeriods))
-    model.ScaledMinimumUpTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_uptime)
-    
-    def scale_min_downtime(m, g):
-        scaled_down_time = int(round(m.MinimumDownTime[g] / m.TimePeriodLengthHours))
-        return min(max(scaled_down_time,1), value(m.NumTimePeriods))
-    model.ScaledMinimumDownTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_downtime)
-    
     #############################################
     # unit on state at t=0 (initial condition). #
     #############################################
@@ -573,6 +497,81 @@ def load_params(model, model_data):
                                     validate=between_limits_validator, 
                                     mutable=True,
                                     initialize=thermal_gen_attrs['initial_p_output'])
+    
+    # limits for time periods in which generators are brought on or off-line.
+    # must be no less than the generator minimum output.
+    def ramp_limit_validator(m, v, g, t):
+       return v >= m.MinimumPowerOutput[g,t]
+
+    ## These defaults follow what is in most market manuals
+    ## We scale this for the time period below
+    def startup_ramp_default(m, g, t):
+        return m.MinimumPowerOutput[g,t]+m.NominalRampUpLimit[g]/2.
+    def shutdown_ramp_default(m, g, t):
+        return m.MinimumPowerOutput[g,t]+m.NominalRampDownLimit[g]/2.
+
+    model.StartupRampLimit = Param(model.ThermalGenerators, 
+                                    model.TimePeriods,
+                                    within=NonNegativeReals,
+                                    default=startup_ramp_default,
+                                    validate=ramp_limit_validator,
+                                    mutable=True,
+                                    initialize=TimeMapper(thermal_gen_attrs.get('startup_capacity', dict())))
+    model.ShutdownRampLimit = Param(model.ThermalGenerators, 
+                                    model.TimePeriods,
+                                    within=NonNegativeReals,
+                                    default=shutdown_ramp_default, 
+                                    validate=ramp_limit_validator,
+                                    mutable=True,
+                                    initialize=TimeMapper(thermal_gen_attrs.get('shutdown_capacity', dict())))
+    
+    ## These get used in the basic UC constraints, which implicity assume RU, RD <= Pmax
+    ## Ramping constraints look backward, so these will accordingly as well
+    ## NOTES: can't ramp up higher than the current pmax from the previous value
+    ##        can't ramp down more than the pmax from the prior time period
+    def scale_ramp_up(m, g, t):
+        temp = m.NominalRampUpLimit[g] * m.TimePeriodLengthHours
+        if value(temp) > value(m.MaximumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
+        else:
+            return temp
+    model.ScaledNominalRampUpLimit = Param(model.ThermalGenerators, model.TimePeriods,  within=NonNegativeReals, initialize=scale_ramp_up, mutable=True)
+    
+    def scale_ramp_down(m, g, t):
+        temp = m.NominalRampDownLimit[g] * m.TimePeriodLengthHours
+        if t == m.InitialTime:
+            param = max(value(m.PowerGeneratedT0[g]), value(m.MaximumPowerOutput[g,t]))
+        else:
+            param = m.MaximumPowerOutput[g,t-1]
+        if value(temp) > value(param):
+            return param
+        else:
+            return temp
+    model.ScaledNominalRampDownLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=scale_ramp_down, mutable=True)
+    
+    def scale_startup_limit(m, g, t):
+        ## temp now has the "running room" over Pmin. This will be scaled for the time period length, 
+        ## most market models do not have this notion, so this is set-up so that the defaults
+        ## will be scaled as they would be in most market models
+        temp = (m.StartupRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
+        if value(temp) > value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
+        else:
+            return temp + m.MinimumPowerOutput[g,t]
+    model.ScaledStartupRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_startup_limit, mutable=True)
+    
+    def scale_shutdown_limit(m, g, t):
+        ## temp now has the "running room" over Pmin. This will be scaled for the time period length
+        ## most market models do not have this notion, so this is set-up so that the defaults
+        ## will be scaled as they would be in most market models
+        temp = (m.ShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
+        if value(temp) > value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
+        else:
+            return temp + m.MinimumPowerOutput[g,t]
+    model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
+    
+    
     
     
     ###############################################
