@@ -20,6 +20,7 @@ from egret.data.data_utils import zip_items
 from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
 from collections import OrderedDict
+from pyomo.contrib.fbbt.fbbt import fbbt
 try:
     import coramin
     coramin_available = True
@@ -421,6 +422,8 @@ def declare_ineq_soc(model, index_set, use_outer_approximation=False):
         for from_bus, to_bus in con_set:
             m._eq_z1[from_bus, to_bus] = m._z1[from_bus, to_bus] == 0.5 * (m.vmsq[from_bus] - m.vmsq[to_bus])
             m._eq_z2[from_bus, to_bus] = m._z2[from_bus, to_bus] == 0.5 * (m.vmsq[from_bus] + m.vmsq[to_bus])
+            fbbt(m._eq_z1[from_bus, to_bus])
+            fbbt(m._eq_z2[from_bus, to_bus])
             m.ineq_soc_OA[from_bus, to_bus].build(aux_var=m._z2[from_bus, to_bus],
                                                   shape=coramin.utils.FunctionShape.CONVEX,
                                                   f_x_expr=(m.c[from_bus, to_bus]**2 +
