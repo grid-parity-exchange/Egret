@@ -15,6 +15,7 @@ working with unit commitment models
 
 ## some useful function decorators for building these dynamic models
 from functools import wraps
+import warnings
 
 import logging
 logger = logging.getLogger('egret.model_library.unit_commitment.uc_utils')
@@ -26,16 +27,22 @@ def add_model_attr(attr, requires = {}):
             ## tag this function in the model with the appropriate attribute
             model = args[0]
             if hasattr(model, attr):
-                raise logger.warning("Warning: adding %s! Model already has %s %s! You may only add one type of %s!"%(func.__name__, attr, getattr(model,attr), attr)) 
+                msg = "Warning: adding %s! Model already has %s %s! You may only add one type of %s!"%(func.__name__, attr, getattr(model,attr), attr)
+                logger.warning(msg)
+                warnings.warn(msg)
             # this checks to see if the required components were already added
             for base_attr in requires:
                 if not hasattr(model, base_attr):
-                    raise logger.warning("Warning: adding %s! %s requires some %s to be added first!"%(func.__name__, func.__name__, base_attr)) 
+                    msg = "Warning: adding %s! %s requires some %s to be added first!"%(func.__name__, func.__name__, base_attr)
+                    logger.warning(msg)
+                    warnings.warn(msg)
                 ## None in this context means there is no specific requirement
                 if requires[base_attr] is None:
                     continue
                 if getattr(model, base_attr) not in requires[base_attr]:
-                    raise logger.warning("Warning: adding %s! %s requires one of: "%(func.__name__, func.__name__) + ", ".join(requires[base_attr]) + ", to be added first.")
+                    msg = "Warning: adding %s! %s requires one of: "%(func.__name__, func.__name__) + ", ".join(requires[base_attr]) + ", to be added first."
+                    logger.warning(msg)
+                    warnings.warn(msg)
             setattr(model, attr, func.__name__)
             return func(*args, **kwds)
         return wrapper
