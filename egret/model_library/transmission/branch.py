@@ -815,7 +815,7 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
                 (-limit, m.pf[branch_name], limit)
 
 
-def declare_ineq_angle_diff_branch_lbub(model, index_set, branches):
+def declare_ineq_angle_diff_branch_lbub_c_s(model, index_set, branches):
     """
     Create the inequality constraints for the angle difference
     bounds between interconnected buses.
@@ -838,7 +838,7 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set, branches):
                                                     m.c[(from_bus, to_bus)])
 
 
-def declare_ineq_angle_diff_branch_lbub_rectangular(model, index_set, branches):
+def declare_ineq_angle_diff_branch_lbub(model, index_set, branches, coordinate_type=CoordinateType.POLAR):
     """
     Create the inequality constraints for the angle difference
     bounds between interconnected buses.
@@ -850,16 +850,26 @@ def declare_ineq_angle_diff_branch_lbub_rectangular(model, index_set, branches):
     m.ineq_angle_diff_branch_lb = pe.Constraint(con_set)
     m.ineq_angle_diff_branch_ub = pe.Constraint(con_set)
 
-    for branch_name in con_set:
-        from_bus = branches[branch_name]['from_bus']
-        to_bus = branches[branch_name]['to_bus']
+    if coordinate_type == CoordinateType.POLAR:
+        for branch_name in con_set:
+            from_bus = branches[branch_name]['from_bus']
+            to_bus = branches[branch_name]['to_bus']
 
-        m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
-                                                    (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]) <=
-                                                    m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
-        m.ineq_angle_diff_branch_ub[branch_name] = (m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus] <=
-                                                    math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
-                                                    (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]))
+            m.ineq_angle_diff_branch_lb[branch_name] = \
+                math.radians(branches[branch_name]['angle_diff_min']) <= m.va[from_bus] - m.va[to_bus]
+            m.ineq_angle_diff_branch_ub[branch_name] = \
+                m.va[from_bus] - m.va[to_bus] <= math.radians(branches[branch_name]['angle_diff_max'])
+    elif coordinate_type == CoordinateType.RECTANGULAR:
+        for branch_name in con_set:
+            from_bus = branches[branch_name]['from_bus']
+            to_bus = branches[branch_name]['to_bus']
+
+            m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
+                                                        (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]) <=
+                                                        m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
+            m.ineq_angle_diff_branch_ub[branch_name] = (m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus] <=
+                                                        math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
+                                                        (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]))
 
 
 def declare_ineq_p_interface_bounds(model, index_set, interfaces,

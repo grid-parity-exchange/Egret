@@ -206,10 +206,10 @@ def _create_base_ac_model(model_data, include_feasibility_slack=False):
                                                   )
 
     # declare angle difference limits on interconnected buses
-    libbranch.declare_ineq_angle_diff_branch_lbub(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches
-                                                  )
+    libbranch.declare_ineq_angle_diff_branch_lbub_c_s(model=model,
+                                                      index_set=branch_attrs['names'],
+                                                      branches=branches
+                                                      )
 
     ### declare the generator cost objective
     libgen.declare_expression_pgqg_operating_cost(model=model,
@@ -507,9 +507,10 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
                                     )
 
     ### declare angle difference limits on interconnected buses
-    libbranch.declare_ineq_angle_diff_branch_lbub_rectangular(model=model,
-                                                              index_set=branch_attrs['names'],
-                                                              branches=branches)
+    libbranch.declare_ineq_angle_diff_branch_lbub(model=model,
+                                                  index_set=branch_attrs['names'],
+                                                  branches=branches,
+                                                  coordinate_type=CoordinateType.RECTANGULAR)
 
     ### declare the generator cost objective
     libgen.declare_expression_pgqg_operating_cost(model=model,
