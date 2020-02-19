@@ -401,7 +401,7 @@ def load_params(model, model_data):
                                             mutable=True,
                                             validate=maximum_nd_output_validator,
                                             initialize=TimeMapper(renewable_gen_attrs.get('p_max', dict())))
-    
+
     #################################################
     # generator ramp up/down rates. units are MW/h. #
     # IMPORTANT: Generator ramp limits can exceed   #
@@ -480,7 +480,7 @@ def load_params(model, model_data):
     ####################################################################
     # generator power output at t=0 (initial condition). units are MW. #
     ####################################################################
-    
+
     def between_limits_validator(m, v, g):
         t = m.TimePeriods.first() 
 
@@ -503,18 +503,6 @@ def load_params(model, model_data):
                                     mutable=True,
                                     initialize=thermal_gen_attrs['initial_p_output'])
     
-    def _init_p_min_t0(m,g):
-        if 'initial_p_min' in thermal_gen_attrs and \
-                g in thermal_gen_attrs['initial_p_min']:
-            return thermal_gen_attrs['initial_p_min'][g]
-        else:
-            return m.MinimumPowerOutput[g,m.InitialTime]
-
-    model.MinimumPowerOutputT0 = Param(model.ThermalGenerators, 
-                                    within=NonNegativeReals, 
-                                    mutable=True,
-                                    initialize=_init_p_min_t0)
-    
     # limits for time periods in which generators are brought on or off-line.
     # must be no less than the generator minimum output.
     def ramp_limit_validator(m, v, g, t):
@@ -526,12 +514,8 @@ def load_params(model, model_data):
         return m.MinimumPowerOutput[g,t]+m.NominalRampUpLimit[g]/2.
 
     ## shutdown is based on the last period *on*
-    ## this defines things so that a shutdown of g at time t
-    ## aligns with the ShutdownRampLimit[g,t]
     def shutdown_ramp_default(m, g, t):
-        if t == m.InitialTime:
-            return m.MinimumPowerOutputT0+m.NominalRampDownLimit[g]/2.
-        return m.MinimumPowerOutput[g,t-1]+m.NominalRampDownLimit[g]/2.
+        return m.MinimumPowerOutput[g,t]+m.NominalRampDownLimit[g]/2.
 
     model.StartupRampLimit = Param(model.ThermalGenerators, 
                                     model.TimePeriods,
@@ -593,9 +577,43 @@ def load_params(model, model_data):
         else:
             return temp + m.MinimumPowerOutput[g,t]
     model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
+
+    ## Some additional ramping parameters to 
+    ## deal with shutdowns at time=1
     
+    def _init_p_min_t0(m,g):
+        if 'initial_p_min' in thermal_gen_attrs and \
+                g in thermal_gen_attrs['initial_p_min']:
+            return thermal_gen_attrs['initial_p_min'][g]
+        else:
+            return m.MinimumPowerOutput[g,m.InitialTime]
+
+    model.MinimumPowerOutputT0 = Param(model.ThermalGenerators, 
+                                    within=NonNegativeReals, 
+                                    mutable=True,
+                                    initialize=_init_p_min_t0)
+
+    def _init_sd_t0(m,g):
+        if 'initial_shutdown_capacity' in thermal_gen_attrs and\
+                g in thermal_gen_attrs['initial_shutdown_capacity']:
+            return thermal_gen_attrs['initial_shutdown_capacity'][g]
+        return m.ShutdownRampLimit[g,m.InitialTime]
+
+    model.ShutdownRampLimitT0 = Param(model.ThermalGenerators,
+                                    within=NonNegativeReals,
+                                    mutable=True,
+                                    initialize=_init_sd_t0)
     
-    
+    def scale_shutdown_limit_t0(m, g):
+        ## temp now has the "running room" over Pmin. This will be scaled for the time period length
+        ## most market models do not have this notion, so this is set-up so that the defaults
+        ## will be scaled as they would be in most market models
+        temp = (m.ShutdownRampLimitT0[g] - m.MinimumPowerOutputT0[g])*m.TimePeriodLengthHours
+        if value(temp) > value(m.PowerGeneratedT0[g] - m.MinimumPowerOutputT0[g]):
+            return m.PowerGeneratedT0[g]
+        else:
+            return temp + m.MinimumPowerOutputT0[g]
+    model.ScaledShutdownRampLimitT0 = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=scale_shutdown_limit_t0, mutable=True)
     
     ###############################################
     # startup cost parameters for each generator. #

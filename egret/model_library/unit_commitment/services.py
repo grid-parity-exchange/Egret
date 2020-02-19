@@ -366,24 +366,29 @@ def ancillary_services(model):
 
     ##TODO: FIXME: REVISIT AFTER RAMPING CONSTRAINTS
     def as_startup_ramp(m,g,t):
-        return (m.StartupRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
-    model.AS_ScaledStartupRampLessMin = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=as_startup_ramp)
+        return (m.StartupRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours + m.MinimumPowerOutput[g,t]
+    model.AS_ScaledStartupRamp = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=as_startup_ramp)
 
     def as_shutdown_ramp(m,g,t):
-        return (m.ShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
-    model.AS_ScaledShutdownRampLessMin = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=as_shutdown_ramp)
+        return (m.ShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours + m.MinimumPowerOutput[g,t]
+    model.AS_ScaledShutdownRamp = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=as_shutdown_ramp)
 
+    def as_shutdown_ramp_t0(m,g):
+        return (m.ShutdownRampLimitT0[g] - m.MinimumPowerOutputT0[g])*m.TimePeriodLengthHours + m.MinimumPowerOutputT0[g]
+    model.AS_ScaledShutdownRampT0 = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=as_shutdown_ramp_t0)
+
+    ## These are formulated similarly to the damci-kurt ramp limits
     def ancillary_service_ramp_up_limit(m,g,t):
         reg = (add_regulation_reserve and (g in m.AGC_Generators))
         if t == m.InitialTime:
-            return m.MaximumPowerAvailableAboveMinimum[g, t] - (m.PowerGeneratedT0[g]-m.MinimumPowerOutput[g]*m.UnitOnT0[g]) \
+            return m.MaximumPowerAvailableAboveMinimum[g, t] - m.PowerGeneratedT0[g]\
                      + ((m.TimePeriodLengthMinutes/m.RegulationMinutes)*m.RegulationReserveUp[g,t] if reg else 0.) \
                      + ((m.TimePeriodLengthMinutes/m.SpinningReserveMinutes)*m.SpinningReserveDispatched[g,t] if add_spinning_reserve else 0.) \
                      + ((m.TimePeriodLengthMinutes/m.FlexRampMinutes)*m.FlexUpProvided[g,t] if add_flexi_ramp_reserve else 0.) \
                      + ((m.TimePeriodLengthMinutes/m.SupplementalReserveMinutes)*m.SupplementalSpinReserveDispatched[g,t] if add_supplemental_reserve else 0.) \
                   <= \
-                    m.AS_ScaledNominalRampUpLimit[g]*m.UnitOn[g,t] + \
-    		    (m.AS_ScaledStartupRampLessMin[g] - m.AS_ScaledNominalRampUpLimit[g])*m.UnitStart[g,t] 
+                    (m.AS_ScaledNominalRampUpLimit[g] + 0 - m.MinimumPowerOutput[g,t])*m.UnitOn[g,t] + \
+    		    (m.AS_ScaledStartupRamp[g,t] - 0 - m.AS_ScaledNominalRampUpLimit[g])*m.UnitStart[g,t] 
         else: ## average the regulation and spin over the two time periods, which is what is done in CAISO
             return m.MaximumPowerAvailableAboveMinimum[g, t] - m.PowerGeneratedAboveMinimum[g, t-1] \
                      + ((m.TimePeriodLengthMinutes/m.RegulationMinutes)*(m.RegulationReserveUp[g,t]+m.RegulationReserveUp[g,t-1])/2. if reg else 0.) \
@@ -391,8 +396,8 @@ def ancillary_services(model):
                      + ((m.TimePeriodLengthMinutes/m.FlexRampMinutes)*m.FlexUpProvided[g,t] if add_flexi_ramp_reserve else 0.) \
                      + ((m.TimePeriodLengthMinutes/m.SupplementalReserveMinutes)*(m.SupplementalSpinReserveDispatched[g,t]+m.SupplementalSpinReserveDispatched[g,t-1])/2. if add_supplemental_reserve else 0.) \
                   <= \
-                    m.AS_ScaledNominalRampUpLimit[g]*m.UnitOn[g,t] + \
-    		    (m.AS_ScaledStartupRampLessMin[g] - m.AS_ScaledNominalRampUpLimit[g])*m.UnitStart[g,t] 
+                    (m.AS_ScaledNominalRampUpLimit[g] + m.MinimumPowerOutput[g,t-1] - m.MinimumPowerOutput[g,t])*m.UnitOn[g,t] + \
+    		    (m.AS_ScaledStartupRamp[g,t] - m.MinimumPowerOutput[g,t-1] - m.AS_ScaledNominalRampUpLimit[g])*m.UnitStart[g,t] 
     model.AncillaryServiceRampUpLimit = Constraint(model.ThermalGenerators, model.TimePeriods, rule=ancillary_service_ramp_up_limit)
 
     ## NOTE: for the regulation and flexible down services, these subtract from power generated at t, so they get added here
@@ -404,19 +409,19 @@ def ancillary_services(model):
             if not m.enforce_t1_ramp_rates:
                 return Constraint.Skip
             else:
-                return (m.PowerGeneratedT0[g] - m.MinimumPowerOutput[g]*m.UnitOnT0[g]) - m.PowerGeneratedAboveMinimum[g, t] \
+                return m.PowerGeneratedT0[g] - m.PowerGeneratedAboveMinimum[g, t] \
                           + ((m.TimePeriodLengthMinutes/m.RegulationMinutes)*m.RegulationReserveDn[g,t] if reg else 0.) \
                           + ((m.TimePeriodLengthMinutes/m.FlexRampMinutes)*m.FlexDnProvided[g,t] if add_flexi_ramp_reserve else 0.) \
                        <= \
-                         m.AS_ScaledNominalRampDownLimit[g]*m.UnitOnT0[g] + \
-                         (m.AS_ScaledShutdownRampLessMin[g] - m.AS_ScaledNominalRampDownLimit[g])*m.UnitStop[g,t]
+                         (m.AS_ScaledNominalRampDownLimit[g] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g] + \
+                         (m.AS_ScaledShutdownRampT0[g] - m.MinimumPowerOutput[g,t] - m.AS_ScaledNominalRampDownLimit[g])*m.UnitStop[g,t]
         else:
             return m.PowerGeneratedAboveMinimum[g, t-1] - m.PowerGeneratedAboveMinimum[g, t] \
                      + ((m.TimePeriodLengthMinutes/m.RegulationMinutes)*(m.RegulationReserveDn[g,t]+m.RegulationReserveDn[g,t-1])/2. if reg else 0.) \
                      + ((m.TimePeriodLengthMinutes/m.FlexRampMinutes)*m.FlexDnProvided[g,t] if add_flexi_ramp_reserve else 0.) \
                   <= \
-                    m.AS_ScaledNominalRampDownLimit[g]*m.UnitOn[g,t-1] + \
-                    (m.AS_ScaledShutdownRampLessMin[g] - m.AS_ScaledNominalRampDownLimit[g])*m.UnitStop[g,t]
+                    (m.AS_ScaledNominalRampDownLimit[g] + m.MinimumPowerOutput[g,t] - m.MinimumPowerOutput[g,t-1])*m.UnitOn[g,t-1] + \
+                    (m.AS_ScaledShutdownRamp[g,t-1] - m.MinimumPowerOutput[g,t] - m.AS_ScaledNominalRampDownLimit[g])*m.UnitStop[g,t]
     model.AncillaryServiceRampDnLimit = Constraint(model.ThermalGenerators, model.TimePeriods, rule=ancillary_service_ramp_dn_limit)
 
 
@@ -452,27 +457,27 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     
     # When units are selected for regulation, their limits are bounded by the RegulationHighLimit and RegulationLowLimit
     # I'll refer to it as the "regulation band"
-    def regulation_high_limit_validator(m, v, g):
+    def regulation_high_limit_validator(m, v, g, t):
         return v <= value(m.MaximumPowerOutput[g,t])
-    model.RegulationHighLimit = Param(model.AGC_Generators, within=NonNegativeReals, validate=regulation_high_limit_validator, initialize=agc_gen_attrs['p_max_agc'])
+    model.RegulationHighLimit = Param(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, validate=regulation_high_limit_validator, initialize=TimeMapper(agc_gen_attrs['p_max_agc']))
     
-    def regulation_low_limit_validator(m, v, g):
-        return (v <= value(m.RegulationHighLimit[g]) and v >= value(m.MinimumPowerOutput[g]))
-    model.RegulationLowLimit = Param(model.AGC_Generators, within=NonNegativeReals, validate=regulation_low_limit_validator, initialize=agc_gen_attrs['p_min_agc'])
+    def regulation_low_limit_validator(m, v, g, t):
+        return (v <= value(m.RegulationHighLimit[g,t]) and v >= value(m.MinimumPowerOutput[g,t]))
+    model.RegulationLowLimit = Param(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, validate=regulation_low_limit_validator, initialize=TimeMapper(agc_gen_attrs['p_min_agc']))
     
     # Regulation capacity is calculated as the min of "regulation band" and RegulationMinutes*AutomaticResponseRate
     model.AutomaticResponseRate = Param(model.AGC_Generators, within=NonNegativeReals, initialize=agc_gen_attrs['ramp_agc'])
     
-    def calculate_regulation_capability_rule(m, g):
+    def calculate_regulation_capability_rule(m, g, t):
         temp1 = value(m.RegulationMinutes * m.AutomaticResponseRate[g])
-        temp2 = value(m.RegulationHighLimit[g] - m.RegulationLowLimit[g])/2.
+        temp2 = value(m.RegulationHighLimit[g,t] - m.RegulationLowLimit[g,t])/2.
         if temp1 > temp2:
             return temp2
         else:
             return temp1
     
-    model.RegulationUpCapability = Param(model.AGC_Generators, within=NonNegativeReals, initialize=calculate_regulation_capability_rule)
-    model.RegulationDnCapability = Param(model.AGC_Generators, within=NonNegativeReals, initialize=calculate_regulation_capability_rule)
+    model.RegulationUpCapability = Param(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, initialize=calculate_regulation_capability_rule)
+    model.RegulationDnCapability = Param(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, initialize=calculate_regulation_capability_rule)
 
     model.ZonalRegulationUpRequirement = Param(model.RegulationZones, model.TimePeriods, within=NonNegativeReals, 
                                                     initialize=zone_requirement_getter('regulation_up_requirement'))
@@ -507,8 +512,8 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     model.SystemRegulationDnShortfall = Var(model.TimePeriods, within=NonNegativeReals, bounds=system_dn_bounds)
     
     # regulation cost for
-    model.RegulationOfferFixedCost = Param(model.AGC_Generators, within=NonNegativeReals, default=0.0, initialize=agc_gen_attrs.get('agc_fixed_cost', dict()))
-    model.RegulationOfferMarginalCost = Param(model.AGC_Generators, within=NonNegativeReals, default=0.0, initialize=agc_gen_attrs.get('agc_marginal_cost', dict()))
+    model.RegulationOfferFixedCost = Param(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, default=0.0, initialize=TimeMapper(agc_gen_attrs.get('agc_fixed_cost', dict())))
+    model.RegulationOfferMarginalCost = Param(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, default=0.0, initialize=TimeMapper(agc_gen_attrs.get('agc_marginal_cost', dict())))
 
     if _is_relaxed(model):
         model.RegulationOn = Var(model.AGC_Generators, model.TimePeriods, within=UnitInterval)
@@ -516,9 +521,9 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
         model.RegulationOn = Var(model.AGC_Generators, model.TimePeriods, within=Binary)
 
     def reg_up_bounds(m,g,t):
-        return (0, m.RegulationUpCapability[g])
+        return (0, m.RegulationUpCapability[g,t])
     def reg_dn_bounds(m,g,t):
-        return (0, m.RegulationDnCapability[g])
+        return (0, m.RegulationDnCapability[g,t])
     model.RegulationReserveUp = Var(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, bounds=reg_up_bounds)
     model.RegulationReserveDn = Var(model.AGC_Generators, model.TimePeriods, within=NonNegativeReals, bounds=reg_dn_bounds)
 
@@ -534,12 +539,12 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     model.EnforceRegulationOnWhenUnitOn = Constraint(model.AGC_Generators, model.TimePeriods, rule=provide_regulation_when_unit_on_rule)
 
     def reg_up_rule(m,g,t):
-        reg_up_limit = min(value(m.RegulationUpCapability[g]), value(m.NominalRampUpLimit[g]/60.*m.RegulationMinutes))
+        reg_up_limit = min(value(m.RegulationUpCapability[g,t]), value(m.NominalRampUpLimit[g]/60.*m.RegulationMinutes))
         return m.RegulationReserveUp[g,t] <= reg_up_limit*m.RegulationOn[g,t]
     model.EnforceRegulationUpBound = Constraint(model.AGC_Generators, model.TimePeriods, rule=reg_up_rule)
 
     def reg_dn_rule(m,g,t):
-        reg_dn_limit = min(value(m.RegulationDnCapability[g]), value(m.NominalRampDownLimit[g]/60.*m.RegulationMinutes))
+        reg_dn_limit = min(value(m.RegulationDnCapability[g,t]), value(m.NominalRampDownLimit[g]/60.*m.RegulationMinutes))
         return m.RegulationReserveDn[g,t] <= reg_dn_limit*m.RegulationOn[g,t]
     model.EnforceRegulationDnBound = Constraint(model.AGC_Generators, model.TimePeriods, rule=reg_dn_rule)
 
@@ -573,11 +578,11 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
     model.EnforceSystemRegulationDnRequirement = Constraint(model.TimePeriods, rule=enforce_system_regulation_dn_requirement_rule)
 
     def regulation_cost_commitment(m,g,t):
-        return m.RegulationOfferFixedCost[g] * m.RegulationOn[g, t]*m.TimePeriodLengthHours
+        return m.RegulationOfferFixedCost[g,t] * m.RegulationOn[g, t]*m.TimePeriodLengthHours
     model.RegulationCostCommitment = Expression(model.AGC_Generators, model.TimePeriods, rule=regulation_cost_commitment)
 
     def regulation_cost_generation(m,g,t):
-        return m.RegulationOfferMarginalCost[g]*m.TimePeriodLengthHours*(m.RegulationReserveUp[g,t] + m.RegulationReserveDn[g,t])
+        return m.RegulationOfferMarginalCost[g,t]*m.TimePeriodLengthHours*(m.RegulationReserveUp[g,t] + m.RegulationReserveDn[g,t])
     model.RegulationCostGeneration = Expression(model.AGC_Generators, model.TimePeriods, rule=regulation_cost_generation)
 
     def regulation_cost_slacks(m,t):
@@ -614,9 +619,9 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
 
     # limit,  cost of spinning reserves
     # NOTE: This is here in case the user wants to limit this beyond the ramping limits
-    model.SpinningReserveCapability = Param(model.ThermalGenerators, within=NonNegativeReals, default=float('inf'),
-                                                initialize=thermal_gen_attrs.get('spinning_capacity', dict()))
-    model.SpinningReservePrice = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0, initialize=thermal_gen_attrs.get('spinning_cost', dict()))
+    model.SpinningReserveCapability = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, default=float('inf'),
+                                                initialize=TimeMapper(thermal_gen_attrs.get('spinning_capacity', dict())))
+    model.SpinningReservePrice = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, default=0.0, initialize=TimeMapper(thermal_gen_attrs.get('spinning_cost', dict())))
     
     # spinning reserve requirements
     model.ZonalSpinningReserveRequirement = Param(model.SpinningReserveZones, model.TimePeriods, within=NonNegativeReals,
@@ -632,12 +637,12 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
 
     # spinning reserve
     def spin_bounds(m,g,t):
-        return (0,m.SpinningReserveCapability[g])
+        return (0,m.SpinningReserveCapability[g,t])
     model.SpinningReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=spin_bounds)
 
     regup_reserves = hasattr(model, 'regulation_service')
     def spinning_reserve_available(m, g, t):
-        spin_limit = min(value(m.SpinningReserveCapability[g]), value(m.NominalRampUpLimit[g]/60.*m.SpinningReserveMinutes))
+        spin_limit = min(value(m.SpinningReserveCapability[g,t]), value(m.NominalRampUpLimit[g]/60.*m.SpinningReserveMinutes))
         if regup_reserves and g in m.AGC_Generators:
             return m.RegulationReserveUp[g,t] + m.SpinningReserveDispatched[g, t] <= spin_limit*m.UnitOn[g,t]
         else:
@@ -672,7 +677,7 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
     model.EnforceSystemSpinningReserveRequirement = Constraint(model.TimePeriods, rule=enforce_system_spinning_reserve_requirement)
 
     def compute_spinning_reserve_cost(m, g, t):
-        return m.SpinningReserveDispatched[g, t] * m.SpinningReservePrice[g] * m.TimePeriodLengthHours
+        return m.SpinningReserveDispatched[g, t] * m.SpinningReservePrice[g,t] * m.TimePeriodLengthHours
     model.SpinningReserveCostGeneration = Expression(model.ThermalGenerators, model.TimePeriods, rule=compute_spinning_reserve_cost)
 
     def spinning_reserve_cost_slacks(m,t):
@@ -709,11 +714,11 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
     
     # Non-spinning reserves are assumed to be fast -- Supplemental reserves are slow (30 minutes)
 
-    def validate_nonspin_bid(m,v,g):
+    def validate_nonspin_bid(m,v,g,t):
         return v <= value(m.MaximumPowerOutput[g,t])
-    model.NonSpinningReserveCapability = Param(model.NonSpinGenerators, within=NonNegativeReals, default=0.0, validate=validate_nonspin_bid,
-                                                    initialize=nspin_gen_attrs['non_spinning_capacity'])
-    model.NonSpinningReservePrice = Param(model.NonSpinGenerators, within=NonNegativeReals, default=0.0, initialize=nspin_gen_attrs.get('non_spinning_cost', dict()))
+    model.NonSpinningReserveCapability = Param(model.NonSpinGenerators, model.TimePeriods, within=NonNegativeReals, default=0.0, validate=validate_nonspin_bid,
+                                                    initialize=TimeMapper(nspin_gen_attrs['non_spinning_capacity']))
+    model.NonSpinningReservePrice = Param(model.NonSpinGenerators, model.TimePeriods, within=NonNegativeReals, default=0.0, initialize=TimeMapper(nspin_gen_attrs.get('non_spinning_cost', dict())))
     
     model.ZonalNonSpinningReserveRequirement = Param(model.NonSpinReserveZones, model.TimePeriods, within=NonNegativeReals, default=0.0,
                                                         initialize=zone_requirement_getter('non_spinning_reserve_requirement'))
@@ -728,12 +733,12 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.SystemNonSpinningReserveShortfall = Var(model.TimePeriods, within=NonNegativeReals, bounds=system_fast_bounds)
 
     def nspin_bounds(m,g,t):
-        return (0,m.NonSpinningReserveCapability[g])
+        return (0,m.NonSpinningReserveCapability[g,t])
     model.NonSpinningReserveDispatched = Var(model.NonSpinGenerators, model.TimePeriods, within=NonNegativeReals, bounds=nspin_bounds)
 
     # non-spinning reserve
     def calculate_non_spinning_reserve_limit_rule(m, g, t):
-        return m.NonSpinningReserveDispatched[g, t] <= m.NonSpinningReserveCapability[g] * (1 - m.UnitOn[g, t])
+        return m.NonSpinningReserveDispatched[g, t] <= m.NonSpinningReserveCapability[g,t] * (1 - m.UnitOn[g, t])
     model.CalculateNonSpinningReserveLimit = Constraint(model.NonSpinGenerators, model.TimePeriods, rule=calculate_non_spinning_reserve_limit_rule)
 
     def nspin_zonal_reserves_provided(m,rz,t):
@@ -771,7 +776,7 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.EnforceSystemNonSpinningReserveRequirement = Constraint(model.TimePeriods, rule=enforce_system_non_spinning_reserve_requirement)
 
     def calculate_non_spinning_reserve_cost(m, g, t):
-        return m.NonSpinningReserveDispatched[g, t] * m.NonSpinningReservePrice[g] * m.TimePeriodLengthHours
+        return m.NonSpinningReserveDispatched[g, t] * m.NonSpinningReservePrice[g,t] * m.TimePeriodLengthHours
     model.NonSpinningReserveCostGeneration = Expression(model.NonSpinGenerators, model.TimePeriods, rule=calculate_non_spinning_reserve_cost)
 
     def non_spinning_reserve_cost_penalty(m,t):
@@ -808,16 +813,16 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
     ## begin supplemental reserve
 
     # Thirty-minute supplemental reserves, for generators which can start in 30 minutes
-    def validate_nonspin_bid(m,v,g):
+    def validate_nonspin_bid(m,v,g,t):
         return v <= value(m.MaximumPowerOutput[g,t])
-    model.SupplementalReserveCapabilityNonSpin = Param(model.SupplementalNonSpinGenerators, within=NonNegativeReals, default=0.0, 
-                                                        validate=validate_nonspin_bid, initialize=supplemental_nspin_gen_attrs.get('supplemental_non_spinning_capacity', dict()))
+    model.SupplementalReserveCapabilityNonSpin = Param(model.SupplementalNonSpinGenerators, model.TimePeriods, within=NonNegativeReals, default=0.0, 
+                                                        validate=validate_nonspin_bid, initialize=TimeMapper(supplemental_nspin_gen_attrs.get('supplemental_non_spinning_capacity', dict())))
 
     ## NOTE: this param is here if the user wants to limit this beyond the nominal ramping limits
-    model.SupplementalReserveCapabilitySpin = Param(model.ThermalGenerators, within=NonNegativeReals, default=float('inf'),
-                                                        initialize=thermal_gen_attrs.get('supplemental_spinning_capacity', dict()))
+    model.SupplementalReserveCapabilitySpin = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, default=float('inf'),
+                                                        initialize=TimeMapper(thermal_gen_attrs.get('supplemental_spinning_capacity', dict())))
 
-    model.SupplementalReservePrice = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0, initialize=thermal_gen_attrs.get('supplemental_cost', dict()))
+    model.SupplementalReservePrice = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, default=0.0, initialize=TimeMapper(thermal_gen_attrs.get('supplemental_cost', dict())))
     model.SupplementalReserveMinutes = Param(within=PositiveReals, default=30.)
 
     # Supplemental reserve requirement
@@ -835,26 +840,26 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.SystemSupplementalReserveShortfall = Var(model.TimePeriods, within=NonNegativeReals, bounds=system_op_bounds)
     
     def op_bounds_nspin(m,g,t):
-        return (0,m.SupplementalReserveCapabilityNonSpin[g])
+        return (0,m.SupplementalReserveCapabilityNonSpin[g,t])
     model.SupplementalNonSpinReserveDispatched = Var(model.SupplementalNonSpinGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds_nspin)
 
     def op_bounds_spin(m,g,t):
-        return (0,m.SupplementalReserveCapabilitySpin[g])
+        return (0,m.SupplementalReserveCapabilitySpin[g,t])
     model.SupplementalSpinReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds_spin)
 
     nspin_reserves = hasattr(model, 'non_spinning_reserve')
     # thirty-minute supplemental reserve, for units which are off
     def calculate_supplemental_reserve_limit_rule_nonspin(m, g, t):
         if nspin_reserves and g in m.NonSpinGenerators:
-            return m.SupplementalNonSpinReserveDispatched[g, t] + m.NonSpinningReserveDispatched[g, t] <= m.SupplementalReserveCapabilityNonSpin[g] * (1 - m.UnitOn[g, t])
+            return m.SupplementalNonSpinReserveDispatched[g, t] + m.NonSpinningReserveDispatched[g, t] <= m.SupplementalReserveCapabilityNonSpin[g,t] * (1 - m.UnitOn[g, t])
         else:
-            return m.SupplementalNonSpinReserveDispatched[g, t] <= m.SupplementalReserveCapabilityNonSpin[g] * (1 - m.UnitOn[g, t])
+            return m.SupplementalNonSpinReserveDispatched[g, t] <= m.SupplementalReserveCapabilityNonSpin[g,t] * (1 - m.UnitOn[g, t])
     model.CalculateSupplementalReserveLimits = Constraint(model.SupplementalNonSpinGenerators, model.TimePeriods, rule=calculate_supplemental_reserve_limit_rule_nonspin)
 
     regup_reserves = hasattr(model, 'regulation_service')
     spin_reserves = hasattr(model, 'spinning_reserve')
     def calculate_supplemental_reserve_limit_rule_spin(m, g, t):
-        spin_limit = min(value(m.SupplementalReserveCapabilitySpin[g]), value(m.NominalRampUpLimit[g]/60.*m.SupplementalReserveMinutes))
+        spin_limit = min(value(m.SupplementalReserveCapabilitySpin[g,t]), value(m.NominalRampUpLimit[g]/60.*m.SupplementalReserveMinutes))
         regup = (regup_reserves and (g in m.AGC_Generators))
         return m.SupplementalSpinReserveDispatched[g,t] \
                  + (m.SpinningReserveDispatched[g, t] if spin_reserves else 0.) \
@@ -906,7 +911,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
     model.EnforceSystemSupplementalReserveRequirement = Constraint(model.TimePeriods, rule=enforce_system_supplemental_reserve_requirement)
 
     def calculate_supplemental_reserve_cost_rule(m, g, t):
-        return m.SupplementalReserveDispatched[g, t] * m.SupplementalReservePrice[g] * m.TimePeriodLengthHours
+        return m.SupplementalReserveDispatched[g, t] * m.SupplementalReservePrice[g,t] * m.TimePeriodLengthHours
     model.SupplementalReserveCostGeneration = Expression(model.ThermalGenerators, model.TimePeriods, rule=calculate_supplemental_reserve_cost_rule)
 
     def supplemental_reserve_cost_penalty(m,t):

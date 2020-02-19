@@ -94,11 +94,12 @@ def _damcikurt_basic_ramping(model):
             ## assume m.MinimumPowerOutput[g,T0] == 0
             return m.PowerGeneratedT0[g] - m.PowerGeneratedAboveMinimum[g, t] <= \
                     (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] + 0)*m.UnitOnT0[g] + \
-                    (m.ScaledShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
+                    (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
+                    ## TODO: figure out ScaledShutdownRampLimitT0[g]
         else:
             return m.PowerGeneratedAboveMinimum[g, t-1] - m.PowerGeneratedAboveMinimum[g, t] <= \
                         (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - m.MinimumPowerOutput[g,t-1])*m.UnitOn[g,t-1] + \
-                        (m.ScaledShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
+                        (m.ScaledShutdownRampLimit[g,t-1] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
     
     model.EnforceScaledNominalRampDownLimits = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_ramp_down_limits_rule)
 
@@ -329,11 +330,11 @@ def arroyo_conejo_ramping(model):
         if t == m.InitialTime:
             return m.PowerGeneratedT0[g] - m.PowerGenerated[g, t] <= \
                  m.ScaledNominalRampDownLimit[g,t] * m.UnitOn[g, t] + \
-                 m.ScaledShutdownRampLimit[g,t]  * m.UnitStop[g, t]
+                 m.ScaledShutdownRampLimitT0[g]  * m.UnitStop[g, t]
         else:
             return m.PowerGenerated[g, t-1] - m.PowerGenerated[g, t] <= \
                  m.ScaledNominalRampDownLimit[g,t]  * m.UnitOn[g, t] + \
-                 m.ScaledShutdownRampLimit[g,t]  * m.UnitStop[g, t]
+                 m.ScaledShutdownRampLimit[g,t-1]  * m.UnitStop[g, t]
     
     model.EnforceScaledNominalRampDownLimits = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_ramp_down_limits_rule)
 
@@ -593,12 +594,12 @@ def CA_ramping_limits(model):
         if t == m.InitialTime:
             return m.PowerGeneratedT0[g] - m.PowerGenerated[g, t] <= \
                  m.ScaledNominalRampDownLimit[g,t] * m.UnitOn[g, t] + \
-                 m.ScaledShutdownRampLimit[g,t]  * (m.UnitOnT0[g] - m.UnitOn[g, t]) + \
+                 m.ScaledShutdownRampLimitT0[g]  * (m.UnitOnT0[g] - m.UnitOn[g, t]) + \
                  m.MaximumPowerOutput[g,t] * (1 - m.UnitOnT0[g])
         else:
             return m.PowerGenerated[g, t-1] - m.PowerGenerated[g, t] <= \
                  m.ScaledNominalRampDownLimit[g,t]  * m.UnitOn[g, t] + \
-                 m.ScaledShutdownRampLimit[g,t]  * (m.UnitOn[g, t-1] - m.UnitOn[g, t]) + \
+                 m.ScaledShutdownRampLimit[g,t-1]  * (m.UnitOn[g, t-1] - m.UnitOn[g, t]) + \
                  m.MaximumPowerOutput[g,t] * (1 - m.UnitOn[g, t-1])
     
     model.EnforceScaledNominalRampDownLimits = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_ramp_down_limits_rule)
