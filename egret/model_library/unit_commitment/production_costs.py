@@ -23,8 +23,8 @@ component_name = 'production_costs'
 
 # a function for use in piecewise linearization of the cost function.
 @lru_cache()
-def _production_cost_function(m, g, t, x):
-    return m.TimePeriodLengthHours * m.PowerGenerationPiecewiseCostValues[g,t][x]
+def _production_cost_function(m, g, t, i):
+    return m.TimePeriodLengthHours * m.PowerGenerationPiecewiseCostValues[g,t][i]
 
 def _compute_total_production_cost(model):
 
@@ -45,7 +45,7 @@ def _compute_total_production_cost(model):
                 break
     
                 #slope * production
-        return sum( (_production_cost_function(m,g,t,piecewise_points[l+1]) - _production_cost_function(m,g,t,piecewise_points[l])) / (piecewise_points[l+1] - piecewise_points[l]) * piecewise_eval[l] for l in range(len(piecewise_eval))) 
+        return sum( (_production_cost_function(m,g,t,l+1) - _production_cost_function(m,g,t,l)) / (piecewise_points[l+1] - piecewise_points[l]) * piecewise_eval[l] for l in range(len(piecewise_eval))) 
     
     model.ComputeProductionCosts = compute_production_costs_rule
 
@@ -94,11 +94,11 @@ def _basic_production_costs_constr(model):
 
     def piecewise_production_costs_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1]) - _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i]))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) *
+            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) *
            m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1)) 
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i = 0
-            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1]) - _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i]))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
+            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
         else:
             return m.ProductionCost[g,t] == 0.
     
@@ -127,11 +127,11 @@ def _rescaled_basic_production_costs_constr(model):
 
     def piecewise_production_costs_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1]) - _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i])) *
+            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i)) *
            m.UnitPiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1)) 
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i = 0
-            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1]) - _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i]))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
+            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
         else:
             return m.ProductionCost[g,t] == 0.
     
@@ -443,7 +443,7 @@ def _CW_production_costs_garver(model):
     model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
-        return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, m.PowerGenerationPiecewisePoints[g,t][i]))*m.PiecewiseProductionFrac[g,t,i] for i in range(1, len(m.PowerGenerationPiecewisePoints[g,t])))
+        return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, i))*m.PiecewiseProductionFrac[g,t,i] for i in range(1, len(m.PowerGenerationPiecewisePoints[g,t])))
 
     model.ProductionCostConst = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
@@ -515,7 +515,7 @@ def _SLL_production_costs(model, ideal=True):
     model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
-        return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, m.PowerGenerationPiecewisePoints[g,t][i]))*m.PiecewiseProductionFrac[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])))
+        return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, i))*m.PiecewiseProductionFrac[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])))
 
     model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
@@ -640,8 +640,8 @@ def basic_production_costs_envelope(model):
 
         x0 = m.PowerGenerationPiecewisePoints[g,t][i]
         x1 = m.PowerGenerationPiecewisePoints[g,t][i+1]
-        y0 = _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i])
-        y1 = _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1])
+        y0 = _production_cost_function(m,g,t,i)
+        y1 = _production_cost_function(m,g,t,i+1)
         slope = (y1 - y0)/ (x1 - x0) 
         intercept = -slope*x0 + y0
         return m.ProductionCost[g,t] >= slope*m.PowerGeneratedAboveMinimum[g,t] + intercept
@@ -671,8 +671,8 @@ def HB_production_costs(model):
 
         x0 = m.PowerGenerationPiecewisePoints[g,t][i]
         x1 = m.PowerGenerationPiecewisePoints[g,t][i+1]
-        y0 = _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i])
-        y1 = _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1])
+        y0 = _production_cost_function(m,g,t,i)
+        y1 = _production_cost_function(m,g,t,i+1)
         slope = (y1 - y0)/ (x1 - x0) 
         intercept = -slope*x0 + y0
 

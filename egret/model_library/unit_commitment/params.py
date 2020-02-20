@@ -751,8 +751,6 @@ def load_params(model, model_data):
     ## BEGIN PRODUCTION COST
     ## NOTE: For better or worse, we handle scaling this to the time period length in the objective function.
     ##       In particular, this is done in objective.py.
-
-    _warn_piecewise_approx = False
     
     def _check_curve(m, g, curve, curve_type):
 
@@ -822,9 +820,10 @@ def load_params(model, model_data):
     _check_curve.warn_piecewise_approx = False
     
     def validate_cost_rule(m, g):
-        cost = thermal_gens[g].get('p_cost')
-        fuel = thermal_gens[g].get('p_fuel')
-        fuel_cost = thermal_gens[g].get('fuel_cost')
+        gen_dict = thermal_gens[g]
+        cost = gen_dict.get('p_cost')
+        fuel = gen_dict.get('p_fuel')
+        fuel_cost = gen_dict.get('fuel_cost')
 
         if cost is None and fuel is None:
             logger.warning("WARNING: Generator {} has no cost information associated with it".format(g))
@@ -841,10 +840,6 @@ def load_params(model, model_data):
             _check_curve(m, g, fuel, 'fuel_curve')
             for i, t in enumerate(m.TimePeriods):
                 if fuel_cost is dict:
-                    if fuel_cost < 0:
-                        raise Exception(nn_msg)
-                    else:
-                        break
                     if fuel_cost['data_type'] != 'time_series':
                         raise Exception("fuel_cost must be either numeric or time_series")
                     fuel_cost_t = fuel_cost['values'][i]
@@ -891,15 +886,88 @@ def load_params(model, model_data):
     _minimum_production_cost = {}
     _minimum_fuel_consumption = {}
 
-    ## FIXME: DO SOMETHING SMARTER WITH TIME-INDICES
-    _fuel_curves = TimeMapper(thermal_gen_attrs.get('p_fuel'))
-    _cost_curves = TimeMapper(thermal_gen_attrs.get('p_cost'))
-    _fuel_costs = TimeMapper(thermal_gen_attrs.get('fuel_cost'))
-    _non_fuel_costs = TimeMapper(thermal_gen_attrs.get('non_fuel_no_load_cost'))
+    def _much_less_than(v1, v2):
+        return v1 < v2 and not math.isclose(v1,v2)
 
-    def _piecewise_adjustment_helper(m, p_min, p_max, input_points, input_vals):
+    def _piecewise_adjustment_helper(m, p_min, p_max, input_func):
 
-        raise NotImplementedError("TODO: implement _piecewise_adjustment_helper")
+        minimum_val = 0.
+        new_points = []
+        new_vals = []
+
+        set_p_min = False
+
+        # NOTE: this implicitly inserts a (0.,0.)
+        #       into every cost array
+        prior_output, prior_cost = 0., 0. 
+
+        for output, cost in input_func:
+            ## catch this case
+            if math.isclose(output, p_min) and math.isclose(output, p_max):
+                new_points.append(0.)
+                new_vals.append(0.)
+                minimum_val = cost
+                break
+
+            ## output < p_min
+            elif _much_less_than(output, p_min):
+                pass
+
+            ## p_min == output
+            elif math.isclose(output, p_min):
+                assert set_p_min is False
+                new_points.append(0.)
+                new_vals.append(0.)
+                minimum_val = cost
+                set_p_min = True
+
+            ## p_min < output
+            elif _much_less_than(p_min, output) and _much_less_than(output, p_max):
+                if not set_p_min:
+                    new_points.append(0.)
+                    new_vals.append(0.)
+
+                    price = ((cost-prior_cost)/(output-prior_output))
+                    minimum_val = (pmin - prior_output) * price + prior_cost
+                    
+                    new_points.append( output - p_min )
+                    new_vals.append( (output - p_min) * price )
+
+                    set_p_min = True
+                else:
+                    new_points.append( output - p_min )
+                    new_vals.append( cost - minimum_val )
+
+            elif math.isclose(output, p_max) or _much_less_than(p_max, output):
+                if not set_p_min:
+                    new_points.append(0.)
+                    new_vals.append(0.)
+
+                    price = ((cost-prior_cost)/(output-prior_output))
+                    minimum_val = (pmin - prior_output) * price + prior_cost
+                    
+                    new_points.append( p_max - p_min )
+
+                    if math.isclose(output, p_max):
+                        new_vals.append( cost - minimum_val )
+                    else:
+                        new_vals.append( (p_max - p_min) * price )
+                    set_p_min = True
+
+                else:
+                    new_points.append( p_max - p_min )
+                    if math.isclose(output, p_max):
+                        new_vals.append( cost - minimum_val )
+                    else:
+                        new_vals.append( (pmax - prior_output) * price + prior_cost - minimum_val )
+
+                break
+
+            else:
+                raise Exception("Unexpected case in _piecewise_adjustment_helper, "
+                                "p_min={}, p_max={}, output={}".format(p_min, p_max, output))
+            
+            prior_output, prior_cost = output, cost
 
         return new_points, new_vals, minimum_val
 
@@ -940,54 +1008,135 @@ def load_params(model, model_data):
     def _piecewise_helper(m, p_min, p_max, curve, curve_type):
         if curve_type not in curve or \
                 curve[curve_type] == 'piecewise':
-            return _piecewise_adjustment_helper(m, p_min, p_max, *zip(*curve['values'])) 
+            return _piecewise_adjustment_helper(m, p_min, p_max, curve['values']) 
         else:
             assert curve[curve_type] == 'polynomial'
             return _polynomial_to_piecewise_helper(m, p_min, p_max, curve['values']) 
+
     
-    def power_generation_piecewise_points_rule(m, g, t):
+    def power_generation_piecewise_points_rule(m, g):
 
-        ## TODO: in here, we can index over time, doing smart things
-        ##       if the cost curves, p_min, and p_max are identical
+        ## NOTE: it is often (usually) the case that cost curves
+        ##       are the same in every time period, This function
+        ##       is optimized to avoid data redunancy and recalculation
+        ##       for that case
 
-        p_min = value(m.MinimumPowerOutput[g,t])
-        p_max = value(m.MaximumPowerOutput[g,t])
-        no_load_cost = _non_fuel_costs.get((g,t),0)
+        gen_dict = thermal_gens[g]
 
-        if (g,t) in _fuel_curves:
-            fuel_curve = _fuel_curves[g,t]
-            fuel_cost = _fuel_costs.get((g,t),0)
+        fuel_curve = gen_dict.get('p_fuel')
+        cost_curve = gen_dict.get('p_cost')
+        fuel_cost = gen_dict.get('fuel_cost', 0.)
+        no_load_cost = gen_dict.get('non_fuel_no_load_cost', 0.)
 
-            points, values, minimum_val = _piecewise_helper(m, p_min, p_max, fuel_curve, 'fuel_curve_type')
+        if isinstance(fuel_cost,dict):
+            fuel_costs = fuel_cost['values']
+        else:
+            fuel_costs = ( fuel_cost for t in m.TimePeriods )
+        if isinstance(no_load_cost,dict):
+            no_load_costs = no_load_cost['values']
+        else:
+            no_load_costs = ( no_load_cost for t in m.TimePeriods )
+
+        _curve_cache = dict()
+
+        if fuel_curve is not None:
+
+            g_in_fuel_supply_generators = g in m.FuelSupplyGenerators
+            g_in_single_fuel_generators = g in m.SingleFuelGenerators
+
+            if isinstance(fuel_curve,dict) and fuel_curve['data_type'] == 'time_series':
+                fuel_curves = fuel_curve['values']
+                one_fuel_curve = False
+            else:
+                fuel_curves = ( fuel_curve for t in m.TimePeriods )
+                one_fuel_curve = True
+
+            for fuel_curve, fuel_cost, nlc, t in zip(fuel_curves, fuel_costs, no_load_costs, m.TimePeriods):
+                p_min = value(m.MinimumPowerOutput[g,t])
+                p_max = value(m.MaximumPowerOutput[g,t])
+
+                if (p_min, p_max, fuel_cost, nlc) in _curve_cache:
+                    curve = _curve_cache[p_min, p_max, fuel_cost, nlc]
+                    if one_fuel_curve or curve['fuel_curve'] == fuel_curve:
+                        m.PowerGenerationPiecewisePoints[g,t] = curve['points']
+                        if g_in_fuel_supply_generators:
+                            _minimum_fuel_consumption[g,t] = curve['min_fuel_consumption']
+                            m.PowerGenerationPiecewiseFuelValues[g,t] = curve['fuel_values']
+                        if g_in_single_fuel_generators:
+                            _minimum_production_cost[g,t] = curve['min_production_cost']
+                            m.PowerGenerationPiecewiseCostValues[g,t] = curve['cost_values']
+                        continue
+                    
+                points, values, minimum_val = _piecewise_helper(m, p_min, p_max, fuel_curve, 'fuel_curve_type')
+                
+                curve = { 'points' : points }
+
+                if not one_fuel_curve:
+                    curve['fuel_curve'] = fuel_curve
+
+                m.PowerGenerationPiecewisePoints[g,t] = points
+                if g_in_fuel_supply_generators:
+                    _minimum_fuel_consumption[g,t] = minimum_val
+                    curve['min_fuel_consumption'] = minimum_val
+
+                    m.PowerGenerationPiecewiseFuelValues[g,t] = values
+                    curve['fuel_values'] = values
+
+                if g_in_single_fuel_generators:
+                    
+                    min_production_cost = minimum_val*fuel_cost + no_load_cost
+                    _minimum_production_cost[g,t] = min_production_cost
+                    curve['min_production_cost'] = min_production_cost
+
+                    cost_values = [ fuel_cost*val for val in values ]
+                    m.PowerGenerationPiecewiseCostValues[g,t] = cost_values
+                    curve['cost_values'] = cost_values
+
+                _curve_cache[p_min, p_max, fuel_cost, nlc] = curve
+
+            return ## we can assume below that we don't have a fuel curve
+
+        if isinstance(cost_curve,dict) and cost_curve['data_type'] == 'time_series':
+            cost_curves = cost_curve['values']
+            one_cost_curve = False
+        else:
+            cost_curves = ( cost_curve for t in m.TimePeriods )
+            one_cost_curve = True
+
+        for cost_curve, nlc, t in zip(cost_curves, no_load_costs, m.TimePeriods):
+            p_min = value(m.MinimumPowerOutput[g,t])
+            p_max = value(m.MaximumPowerOutput[g,t])
+
+            if (p_min, p_max, nlc) in _curve_cache:
+                curve = _curve_cache[p_min, p_max, nlc]
+                if one_cost_curve or curve['cost_curve'] == cost_curve:
+                    m.PowerGenerationPiecewisePoints[g,t] = curve['points']
+                    m.PowerGenerationPiecewiseValues[g,t] = curve['cost_values']
+                    _minimum_production_cost[g,t] = curve['min_production']
+                    continue
+
+            if cost_curve is None:
+                if p_min >= p_max: ## only one point
+                    points = [0.]
+                    values = [0.]
+                else:
+                    points = [0., p_max - p_min]
+                    values = [0., 0.]
+                min_production = nlc
+            else:
+                points, values, minimum_val = _piecewise_helper(m, p_min, p_max, cost_curve, 'cost_curve_type')
+                min_production = minimum_val + nlc
+    
+            curve = {'points':points, 'cost_values':values, 'min_production':min_production}
+            if not one_cost_curve:
+                curve['cost_curve'] = cost_curve
+            _curve_cache[p_min, p_max, min_production] = curve
 
             m.PowerGenerationPiecewisePoints[g,t] = points
-            if g in m.FuelSupplyGenerators:
-                _minimum_fuel_consumption[g,t] = minimum_val
-                m.PowerGenerationPiecewiseFuelValues[g,t] = { pnt : val for pnt, val in zip(points, values) }
-            if g in m.SingleFuelGenerators:
-                _minimum_production_cost[g,t] = minimum_val*fuel_cost + no_load_cost
-                m.PowerGenerationPiecewiseCostValues[g,t] = { pnt : fuel_cost*val for pnt, val in zip(points, values) }
+            m.PowerGenerationPiecewiseCostValues[g,t] = values
+            _minimum_production_cost[g,t] = min_production 
 
-            return
-
-        ## remainder is purely cost, no fuel considerations
-        elif (g,t) in _cost_curves:
-            cost_curve = _cost_curves[g,t]
-            points, values, minimum_val = _piecewise_helper(m, p_min, p_max, cost_curve, 'cost_curve_type')
-        else: ## no marignal cost, this should generate a warning above
-            minimum_val = 0.
-            if p_min >= p_max: ## only one point
-                points = [0.]
-                values = [0.]
-            else:
-                points = [0., p_max - p_min]
-                values = [0., 0.]
-
-        m.PowerGenerationPiecewisePoints[g,t] = points
-        m.PowerGenerationPiecewiseCostValues[g,t] = { pnt : val for pnt, val in zip(points, values) }
-        _minimum_production_cost[g,t] = minimum_val + no_load_cost
-
-    model.CreatePowerGenerationPiecewisePoints = BuildAction(model.ThermalGenerators, model.TimePeriods, rule=power_generation_piecewise_points_rule)
+    model.CreatePowerGenerationPiecewisePoints = BuildAction(model.ThermalGenerators, rule=power_generation_piecewise_points_rule)
 
     # Minimum production cost (needed because Piecewise constraint on ProductionCost 
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
@@ -997,29 +1146,24 @@ def load_params(model, model_data):
 
     model.MinimumFuelConsumption = Param(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals, initialize=_minimum_fuel_consumption, mutable=True)
 
-
-    ModeratelyBigPenalty = 1e3*system['baseMVA']
-    
-    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
+    ## END PRODUCTION COST CALCULATIONS
 
     #########################################
     # penalty costs for constraint violation #
     #########################################
+
+    ModeratelyBigPenalty = 1e3*system['baseMVA']
+    
+    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
     
     BigPenalty = 1e4*system['baseMVA']
     
     model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
     model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
 
-    ## END PRODUCTION COST CALCULATIONS
-
-
     #
     # STORAGE parameters
     #
-    
-
-
     
     model.Storage = Set(initialize=storage_attrs['names'])
     model.StorageAtBus = Set(model.Buses, initialize=storage_by_bus)

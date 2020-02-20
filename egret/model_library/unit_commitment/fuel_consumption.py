@@ -42,15 +42,15 @@ def fuel_consumption_model(model):
     model.FuelConsumedCommitment = Var(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
     model.FuelConsumedProduction = Var(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
 
-    def _fuel_consumed_function(m, g, i):
-        return m.PowerGenerationPiecewiseFuelValues[g,t][x] * m.TimePeriodLengthHours
+    def _fuel_consumed_function(m, g, t, i):
+        return m.PowerGenerationPiecewiseFuelValues[g,t][i] * m.TimePeriodLengthHours
 
     def production_fuel_consumed_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return sum( (_fuel_consumed_function(m,g,i+1) - _fuel_consumed_function(m,g,i))/(m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i]) * m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1))
+            return sum( (_fuel_consumed_function(m,g,t,i+1) - _fuel_consumed_function(m,g,t,i))/(m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i]) * m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1))
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i=0
-            return (_fuel_consumed_function(m,g,i+1) - _fuel_consumed_function(m,g,i))/(m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
+            return (_fuel_consumed_function(m,g,t,i+1) - _fuel_consumed_function(m,g,t,i))/(m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
         else:
             return 0.
 
