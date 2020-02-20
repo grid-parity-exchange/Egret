@@ -707,294 +707,6 @@ def load_params(model, model_data):
     ##################################################################################
     
     model.ShutdownFixedCost = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0, initialize=thermal_gen_attrs.get('shutdown_cost', dict())) # units are $.
-    
-    ## BEGIN PRODUCTION COST
-    ## NOTE: For better or worse, we handle scaling this to the time period length in the objective function.
-    ##       In particular, this is done in objective.py.
-
-    ##################################################################################################################
-    # production cost coefficients (for the quadratic) a0=constant, a1=linear coefficient, a2=quadratic coefficient. #
-    ##################################################################################################################
-
-    def _init_A(coeff):
-        def _init(m,g):
-            cost = thermal_gens[g].get('p_cost')
-            if cost is None:
-                return 0.
-            elif cost['data_type'] != 'cost_curve':
-                raise Exception("p_cost must be of data_type cost_curve.")
-            elif cost['cost_curve_type'] == 'piecewise':
-                return 0.
-            elif cost['cost_curve_type'] == 'polynomial':
-                values = cost['values']
-                if set(values.keys()) <= {0,1,2}:
-                    if coeff in values:
-                        return values[coeff]
-                    else:
-                        return 0.
-                else:
-                    raise Exception("Polynomial cost curves must be quatric.")
-            else:
-                raise Exception("Unexpected cost_curve_type")
-        return _init
-    
-    model.ProductionCostA0 = Param(model.ThermalGenerators, default=0.0, initialize=_init_A(0)) # units are $/hr (or whatever the time unit is).
-    model.ProductionCostA1 = Param(model.ThermalGenerators, default=0.0, initialize=_init_A(1)) # units are $/MWhr.
-    model.ProductionCostA2 = Param(model.ThermalGenerators, default=0.0, initialize=_init_A(2)) # units are $/(MWhr^2).
-    
-    # the parameters below are populated if cost curves are specified as linearized heat rate increment segments.
-    #
-    # CostPiecewisePoints represents the power output levels defining the segment boundaries.
-    # these *must* include the minimum and maximum power output points - a validation check
-    # if performed below.
-    # 
-    # CostPiecewiseValues are the absolute costs associated with the corresponding
-    # power output levels.
-    
-    # there are many ways to interpret the cost piecewise point/value data, when translating into
-    # an actual piecewise construct for the model. this interpretation is controlled by the following
-    # string parameter, whose legal values are: NoPiecewise (no data provided) and Absolute.
-    # NoPiecewise means that we're using quadraic cost curves, and will 
-    # construct the piecewise data ourselves directly from that cost curve. 
-    
-    def piecewise_type_validator(m, v):
-       return (v == "NoPiecewise") or (v == "Absolute")
-    
-    def piecewise_type_init(m):
-        boo = False
-        for g in m.ThermalGenerators:
-            if not (m.ProductionCostA0[g] == 0.0 and m.ProductionCostA1[g] == 0.0 and m.ProductionCostA2[g] == 0.0):
-                boo = True
-                break
-        if boo:
-            return "NoPiecewise"
-        else:
-            return "Absolute"
-    
-    model.PiecewiseType = Param(validate=piecewise_type_validator,initialize=piecewise_type_init, mutable=True)  #irios: default="Absolute" initialize=piecewise_type_init
-
-    def get_piecewise_tuple_index(g, tuple_index):
-        cost = thermal_gens[g].get('p_cost')
-        fuel = thermal_gens[g].get('p_fuel')
-        fuel_cost = thermal_gens[g].get('fuel_cost')
-        fixed_no_load = thermal_gens[g].get('non_fuel_no_load_cost')
-        if cost is None and fuel is None and fixed_no_load is None:
-            return list()
-        if fixed_no_load is None or (tuple_index == 0): ## don't add for cost piecewise points
-            fixed_no_load = 0.
-        if cost is not None and fuel is not None:
-            logger.warning("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
-        if fuel is None:
-            if cost['data_type'] != 'cost_curve':
-                raise Exception("p_cost must be of data_type cost_curve.")
-            elif cost['cost_curve_type'] == 'polynomial':
-                return list()
-            elif cost['cost_curve_type'] == 'piecewise':
-                return (fixed_no_load + i[tuple_index] for i in cost['values'])
-            else:
-                raise Exception("Unexpected cost_curve type")
-        else:
-            if fuel['data_type'] != 'fuel_curve':
-                raise Exception("p_cost must be of data_type fuel_curve for generator {}".format(g))
-            if fuel_cost is None:
-                raise Exception("must supply fuel costs for generator {} with p_fuel".format(g))
-            if tuple_index == 0: ## don't multiply for cost piecewise points
-                return (i[tuple_index] for i in fuel['values'])
-            return (fixed_no_load + fuel_cost*i[tuple_index] for i in fuel['values'])
-
-
-    
-    def piecewise_points_init(m, g):
-        return get_piecewise_tuple_index(g, 0)
-
-    def piecewise_values_init(m, g):
-        return get_piecewise_tuple_index(g, 1)
-    
-    model.CostPiecewisePoints = Set(model.ThermalGenerators, initialize=piecewise_points_init, ordered=True, within=NonNegativeReals)
-    model.CostPiecewiseValues = Set(model.ThermalGenerators, initialize=piecewise_values_init, ordered=True, within=NonNegativeReals)
-    
-    # a check to ensure that the cost piecewise point parameter was correctly populated.
-    # these are global checks, which cannot be performed as a set validation (which 
-    # operates on a single element at a time).
-    
-    # irios: When the check fails, I add the missing PiecewisePoints and Values in order to make it work.
-    # I did this in an arbitrary way, but you can change it. In particular, I erased those values which are not 
-    # between the minimum power output and the maximum power output. Also, I added those values if they are not in
-    # the input data. Finally, I added values (0 and this_generator_piecewise_values[-1] + 1) to end with the same 
-    # number of points and values.
-    
-    def validate_cost_piecewise_points_and_values_rule(m, g):
-    
-        if value(m.PiecewiseType) == "NoPiecewise":
-            # if there isn't any piecewise data specified, we shouldn't find any.
-            if len(m.CostPiecewisePoints[g]) > 0:
-                print("DATA ERROR: The PiecewiseType parameter was set to NoPiecewise, but piecewise point data was specified!")
-                return False
-            # if there isn't anything to validate and we didn't expect piecewise 
-            # points, we can safely skip the remaining validation steps.
-            return True
-        else:
-            # if the user said there was going to be piecewise data and none was 
-            # supplied, they should be notified as to such.
-            if len(m.CostPiecewisePoints[g]) == 0:
-                print("DATA ERROR: The PiecewiseType parameter was set to something other than NoPiecewise, but no piecewise point data was specified!")
-                return False
-    
-        # per the requirement below, there have to be at least two piecewise points if there are any.
-    
-        min_output = min(value(m.MinimumPowerOutput[g,t]) for t in m.TimePeriods)
-        max_output = max(value(m.MaximumPowerOutput[g,t]) for t in m.TimePeriods)
-    
-        points = list(m.CostPiecewisePoints[g])
-    
-        if min_output not in points:
-            for pnt in points:
-                if math.isclose(pnt, min_output):
-                    break
-            else:
-                raise Exception("Cost piecewise points for generator g="+str(g)+
-                                " must contain the minimum output level="+str(min_output))
-    
-        if max_output not in points:
-            for pnt in points:
-                if math.isclose(pnt, max_output):
-                    break
-            else:
-                raise Exception("Cost piecewise points for generator g="+str(g)+
-                                " must contain the maximum output level="+str(max_output))
-        return True
-
-    model.ValidateCostPiecewisePoints = BuildCheck(model.ThermalGenerators, rule=validate_cost_piecewise_points_and_values_rule)
-    
-    # Minimum production cost (needed because Piecewise constraint on ProductionCost 
-    # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
-    # back in to the objective if a unit is on
-    def minimum_production_cost(m, g, t):
-        if len(m.CostPiecewisePoints[g]) >= 1:
-            return m.CostPiecewiseValues[g].first()
-        else:
-            return (m.ProductionCostA0[g] + \
-                    m.ProductionCostA1[g] * m.MinimumPowerOutput[g,t] + \
-                    m.ProductionCostA2[g] * (m.MinimumPowerOutput[g,t]**2))
-    model.MinimumProductionCost = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=minimum_production_cost, mutable=True)
-    
-    ##############################################################################################
-    # number of pieces in the linearization of each generator's quadratic cost production curve. #
-    ##############################################################################################
-    
-    model.NumGeneratorCostCurvePieces = Param(within=PositiveIntegers, default=2, mutable=True)
-
-
-    #######################################################################
-    # points for piecewise linearization of power generation cost curves. #
-    #######################################################################
-    
-    # BK -- changed to reflect that the generator's power output variable is always above minimum in the ME model
-    #       this simplifies things quite a bit..
-    
-    # maps a (generator, time-index) pair to a list of points defining the piecewise cost linearization breakpoints.
-    # the time index is redundant, but required - in the current implementation of the Piecewise construct, the 
-    # breakpoints must be indexed the same as the Piecewise construct itself.
-    
-    # the points are expected to be on the interval [0, maxpower-minpower], and must contain both endpoints. 
-    # power generated can always be 0, and piecewise expects the entire variable domain to be represented.
-    model.PowerGenerationPiecewisePoints = {}
-    
-    # NOTE: the values are relative to the minimum production cost, i.e., the values represent
-    # incremental costs relative to the minimum production cost.
-    
-    model.PowerGenerationPiecewiseValues = {}
-    
-    def power_generation_piecewise_points_rule(m, g, t):
-    
-        # factor out the fuel cost here, as the piecewise approximation is scaled by fuel cost
-        # elsewhere in the model (i.e., in the Piecewise construct below).
-        minimum_production_cost = value(m.MinimumProductionCost[g,t])
-    
-        # minimum output
-        minimum_power_output = value(m.MinimumPowerOutput[g,t])
-        
-        piecewise_type = value(m.PiecewiseType)
-    
-        if piecewise_type == "Absolute":
-    
-           piecewise_values = list(m.CostPiecewiseValues[g])
-           piecewise_points = list(m.CostPiecewisePoints[g])
-           m.PowerGenerationPiecewiseValues[g,t] = {}
-           m.PowerGenerationPiecewisePoints[g,t] = [] 
-           for i in range(len(piecewise_points)):
-              this_point = piecewise_points[i] - minimum_power_output
-              m.PowerGenerationPiecewisePoints[g,t].append(this_point)
-              m.PowerGenerationPiecewiseValues[g,t][this_point] = piecewise_values[i] - minimum_production_cost
-    
-        else: # piecewise_type == "NoPiecewise"
-    
-           if value(m.ProductionCostA2[g]) == 0:
-              # If cost is linear, we only need two points -- (0,0) and (MaxOutput-MinOutput, MaxCost-MinCost))
-              min_power = value(m.MinimumPowerOutput[g,t])
-              max_power = value(m.MaximumPowerOutput[g,t])
-              if min_power == max_power:
-                 m.PowerGenerationPiecewisePoints[g, t] = [0.0]
-              else:
-                 m.PowerGenerationPiecewisePoints[g, t] = [0.0, max_power-min_power]
-    
-              m.PowerGenerationPiecewiseValues[g,t] = {}
-    
-              m.PowerGenerationPiecewiseValues[g,t][0.0] = 0.0
-    
-              if min_power != max_power:
-                 m.PowerGenerationPiecewiseValues[g,t][max_power-min_power] = \
-                     value(m.ProductionCostA0[g]) + \
-                     value(m.ProductionCostA1[g]) * max_power \
-                     - minimum_production_cost
-    
-           else:
-               min_power = value(m.MinimumPowerOutput[g,t])
-               max_power = value(m.MaximumPowerOutput[g,t])
-               n = value(m.NumGeneratorCostCurvePieces)
-               width = (max_power - min_power) / float(n)
-               if width == 0:
-                   m.PowerGenerationPiecewisePoints[g, t] = [0]
-               else:
-                   m.PowerGenerationPiecewisePoints[g, t] = []
-                   m.PowerGenerationPiecewisePoints[g, t].extend([0 + i*width for i in range(0,n+1)])
-                   # NOTE: due to numerical precision limitations, the last point in the x-domain
-                   #       of the generation piecewise cost curve may not be precisely equal to the 
-                   #       maximum power output level of the generator. this can cause Piecewise to
-                   #       sqawk, as it would like the upper bound of the variable to be represented
-                   #       in the domain. so, we will make it so.
-                   m.PowerGenerationPiecewisePoints[g, t][-1] = max_power - min_power
-               m.PowerGenerationPiecewiseValues[g,t] = {}
-               for i in range(len(m.PowerGenerationPiecewisePoints[g, t])):
-                   m.PowerGenerationPiecewiseValues[g,t][m.PowerGenerationPiecewisePoints[g,t][i]] = \
-                              value(m.ProductionCostA0[g]) + \
-                              value(m.ProductionCostA1[g]) * (m.PowerGenerationPiecewisePoints[g, t][i] + min_power) + \
-                              value(m.ProductionCostA2[g]) * (m.PowerGenerationPiecewisePoints[g, t][i] + min_power)**2 \
-                              - minimum_production_cost
-               assert(m.PowerGenerationPiecewisePoints[g, t][0] == 0)
-        
-        # validate the computed points, independent of the method used to generate them.
-        # nothing should be negative, and the costs should be monotonically non-decreasing.
-        for i in range(0, len(m.PowerGenerationPiecewisePoints[g, t])):
-           this_level = m.PowerGenerationPiecewisePoints[g, t][i]
-           assert this_level >= 0.0
-    
-    model.CreatePowerGenerationPiecewisePoints = BuildAction(model.ThermalGenerators * model.TimePeriods, rule=power_generation_piecewise_points_rule)
-
-    ModeratelyBigPenalty = 1e3*system['baseMVA']
-    
-    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
-
-    #########################################
-    # penalty costs for constraint violation #
-    #########################################
-    
-    BigPenalty = 1e4*system['baseMVA']
-    
-    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
-    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
-
-    ## END PRODUCTION COST CALCULATIONS
 
     ## FUEL-SUPPLY Sets
 
@@ -1035,6 +747,272 @@ def load_params(model, model_data):
     ## This set is for modeling elements that are exhanged
     ## in whole for the dual-fuel model
     model.SingleFuelGenerators = model.ThermalGenerators - model.DualFuelGenerators
+    
+    ## BEGIN PRODUCTION COST
+    ## NOTE: For better or worse, we handle scaling this to the time period length in the objective function.
+    ##       In particular, this is done in objective.py.
+
+    _warn_piecewise_approx = False
+    
+    def _check_curve(m, g, curve, curve_type):
+
+        for i, t in enumerate(m.TimePeriods):
+            ## first, get a cost_curve out of time series
+            if curve['data_type'] == 'time_series':
+                curve_t = curve[i]
+            else:
+                curve_t = curve 
+
+            ## validate that what we have is a cost_curve
+            if curve_t['data_type'] != curve_type:
+                raise Exception("p_cost must be of data_type cost_curve.")
+
+            ## get the values, check against something empty
+            values = curve_t['values']
+            if len(values) == 0:
+                if curve_t == curve:
+                    logger.warning("WARNING: Generator {} has no cost information associated with it".format(g))
+                    return True
+                else:
+                    logger.warning("WARNING: Generator {} has no cost information associated with it at time {}".format(g,t))
+
+            ## if we have a piecewise cost curve, ensure its convexity past p_min
+            ## if no curve_type+'_type' is specified, we assume piecewise (for backwards 
+            ## compatibility with no 'fuel_curve_type')
+            if curve_type+'_type' not in curve_t or \
+                    curve_t[curve_type+'_type'] == 'piecewise':
+                p_min = value(m.MinimumPowerOutput[g,t])
+                last_slope = None
+                for (o1, c1), (o2, c2) in zip(values, values[1:]):
+                    if o2 <= p_min or math.isclose(p_min, o2):
+                        continue
+                    ## else p_min > o2
+                    if last_slope is None:
+                        last_slope = (c2-c1)/(o2-o1)
+                        continue
+                    this_slope = (c2-c1)/(o2-o1)
+                    if this_slope < last_slope and not math.isclose(this_slope, last_slope):
+                        raise Exception("Piecewise {} must be convex above p_min. ".format(curve_type) + \
+                                        "Found non-convex piecewise {} for generator {} at time {}".format(curve_type,g,t))
+                ## verify the last output value is at least p_max
+                o_last = values[-1][0]
+                if value(m.MaximumPowerOutput[g,t]) > o_last and \
+                        not math.isclose(value(m.MaximumPowerOutput[g,t]), o_last):
+                    raise Exception("{} does not contain p_max for generator {} at time {}".format(curve_type,g,t))
+
+            ## if we have a quadratic cost curve, ensure its convexity
+            elif curve_t[curve_type+'_type'] == 'polynomial':
+                if not _check_curve.warn_piecewise_approx:
+                    logger.warning("WARNING: Polynomial cost curves will be approximated using piecewise segments")
+                    _check_curve.warn_piecewise_approx = True
+                values = curve_t['values']
+                if set(values.keys()) <= {0,1,2}:
+                    if 2 in values and values[2] < 0:
+                        raise Exception("Polynomial {}s must be convex. ".format(curve_type) + \
+                                        "Found non-convex {} for generator {} at time {}.".format(curve_type,g,t))
+                    if curve_t == curve: ## in this case, no need to check the other time periods
+                        return
+                else:
+                    raise Exception("Polynomial {}s must be quatric. ".format(curve_type) + \
+                                    "Found non-quatric {} for generator {} at time {}.".format(curve_type,g,t))
+            else:
+                raise Exception("Unexpected {}_type".format(curve_type))
+
+    ## set "static" variable for this function
+    _check_curve.warn_piecewise_approx = False
+    
+    def validate_cost_rule(m, g):
+        cost = thermal_gens[g].get('p_cost')
+        fuel = thermal_gens[g].get('p_fuel')
+        fuel_cost = thermal_gens[g].get('fuel_cost')
+
+        if cost is None and fuel is None:
+            logger.warning("WARNING: Generator {} has no cost information associated with it".format(g))
+            return True
+        if cost is not None and fuel is not None:
+            logger.warning("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
+
+        ## look at p_cost through time
+        if fuel is None:
+            _check_curve(m, g, cost, 'cost_curve')
+        else:
+            if fuel_cost is None:
+                raise Exception("Found fuel_curve but not fuel_cost for generator {}".format(g))
+            _check_curve(m, g, fuel, 'fuel_curve')
+            for i, t in enumerate(m.TimePeriods):
+                if fuel_cost is dict:
+                    if fuel_cost < 0:
+                        raise Exception(nn_msg)
+                    else:
+                        break
+                    if fuel_cost['data_type'] != 'time_series':
+                        raise Exception("fuel_cost must be either numeric or time_series")
+                    fuel_cost_t = fuel_cost['values'][i]
+                else:
+                    fuel_cost_t = fuel_cost
+                if fuel_cost_t < 0:
+                    raise Exception("fuel_cost must be non-negative, found negative fuel_cost for generator {}".format(g))
+                if fuel_cost_t == fuel_cost:
+                    break
+        return True
+
+    model.ValidateGeneratorCost = BuildCheck(model.ThermalGenerators, rule=validate_cost_rule)
+    
+
+    ##############################################################################################
+    # number of pieces in the linearization of each generator's quadratic cost production curve. #
+    ##############################################################################################
+    ## TODO: option-drive with Egret, either globally or per-generator
+    
+    model.NumGeneratorCostCurvePieces = Param(within=PositiveIntegers, default=2, mutable=True)
+
+    #######################################################################
+    # points for piecewise linearization of power generation cost curves. #
+    #######################################################################
+    
+    # BK -- changed to reflect that the generator's power output variable is always above minimum in the ME model
+    #       this simplifies things quite a bit..
+    
+    # maps a (generator, time-index) pair to a list of points defining the piecewise cost linearization breakpoints.
+    # the time index is redundant, but required - in the current implementation of the Piecewise construct, the 
+    # breakpoints must be indexed the same as the Piecewise construct itself.
+    
+    # the points are expected to be on the interval [0, maxpower-minpower], and must contain both endpoints. 
+    # power generated can always be 0, and piecewise expects the entire variable domain to be represented.
+    model.PowerGenerationPiecewisePoints = {}
+    
+    # NOTE: the values are relative to the minimum production cost, i.e., the values represent
+    # incremental costs relative to the minimum production cost.
+    model.PowerGenerationPiecewiseCostValues = {}
+
+    # NOTE; these values are relative to the minimum fuel conumption
+    model.PowerGenerationPiecewiseFuelValues = {}
+    
+    _minimum_production_cost = {}
+    _minimum_fuel_consumption = {}
+
+    ## FIXME: DO SOMETHING SMARTER WITH TIME-INDICES
+    _fuel_curves = TimeMapper(thermal_gen_attrs.get('p_fuel'))
+    _cost_curves = TimeMapper(thermal_gen_attrs.get('p_cost'))
+    _fuel_costs = TimeMapper(thermal_gen_attrs.get('fuel_cost'))
+    _non_fuel_costs = TimeMapper(thermal_gen_attrs.get('non_fuel_no_load_cost'))
+
+    def _piecewise_adjustment_helper(m, p_min, p_max, input_points, input_vals):
+
+        raise NotImplementedError("TODO: implement _piecewise_adjustment_helper")
+
+        return new_points, new_vals, minimum_val
+
+    def _polynomial_to_piecewise_helper(m, p_min, p_max, input_func):
+        segment_max = value(m.NumGeneratorCostCurvePieces)
+
+        for key in {0,1,2}:
+            if key not in input_func:
+                input_func[key] = 0.
+
+        poly_func = lambda x : input_func[0] + input_func[1]*x + input_func[2]*x*x
+
+        if p_min >= p_max:
+            minimum_val = poly_func(p_min)
+            new_points = [0.]
+            new_vals = [0.]
+            return new_points, new_vals, minimum_val
+
+        elif input_func[2] == 0.: ## not actually quadratic 
+            minimum_val = poly_func(p_min)
+            new_points = [0., p_max - p_min]
+            new_vals = [0., poly_func(p_max) - minimum_val]
+            return new_points, new_vals, minimum_val
+
+        ## actually quadratic
+        width = (p_max - p_min)/float(segment_max)
+
+        new_points = [i*width for i in range(0, segment_max+1)]
+
+        ## replace the last with (p_max - p_min)
+        new_points[-1] = p_max - p_min
+
+        minimum_val = poly_func(p_min)
+        new_vals = [ poly_func(pnt+p_min) - minimum_val for pnt in new_points ]
+
+        return new_points, new_vals, minimum_val
+
+    def _piecewise_helper(m, p_min, p_max, curve, curve_type):
+        if curve_type not in curve or \
+                curve[curve_type] == 'piecewise':
+            return _piecewise_adjustment_helper(m, p_min, p_max, *zip(*curve['values'])) 
+        else:
+            assert curve[curve_type] == 'polynomial'
+            return _polynomial_to_piecewise_helper(m, p_min, p_max, curve['values']) 
+    
+    def power_generation_piecewise_points_rule(m, g, t):
+
+        ## TODO: in here, we can index over time, doing smart things
+        ##       if the cost curves, p_min, and p_max are identical
+
+        p_min = value(m.MinimumPowerOutput[g,t])
+        p_max = value(m.MaximumPowerOutput[g,t])
+        no_load_cost = _non_fuel_costs.get((g,t),0)
+
+        if (g,t) in _fuel_curves:
+            fuel_curve = _fuel_curves[g,t]
+            fuel_cost = _fuel_costs.get((g,t),0)
+
+            points, values, minimum_val = _piecewise_helper(m, p_min, p_max, fuel_curve, 'fuel_curve_type')
+
+            m.PowerGenerationPiecewisePoints[g,t] = points
+            if g in m.FuelSupplyGenerators:
+                _minimum_fuel_consumption[g,t] = minimum_val
+                m.PowerGenerationPiecewiseFuelValues[g,t] = { pnt : val for pnt, val in zip(points, values) }
+            if g in m.SingleFuelGenerators:
+                _minimum_production_cost[g,t] = minimum_val*fuel_cost + no_load_cost
+                m.PowerGenerationPiecewiseCostValues[g,t] = { pnt : fuel_cost*val for pnt, val in zip(points, values) }
+
+            return
+
+        ## remainder is purely cost, no fuel considerations
+        elif (g,t) in _cost_curves:
+            cost_curve = _cost_curves[g,t]
+            points, values, minimum_val = _piecewise_helper(m, p_min, p_max, cost_curve, 'cost_curve_type')
+        else: ## no marignal cost, this should generate a warning above
+            minimum_val = 0.
+            if p_min >= p_max: ## only one point
+                points = [0.]
+                values = [0.]
+            else:
+                points = [0., p_max - p_min]
+                values = [0., 0.]
+
+        m.PowerGenerationPiecewisePoints[g,t] = points
+        m.PowerGenerationPiecewiseCostValues[g,t] = { pnt : val for pnt, val in zip(points, values) }
+        _minimum_production_cost[g,t] = minimum_val + no_load_cost
+
+    model.CreatePowerGenerationPiecewisePoints = BuildAction(model.ThermalGenerators, model.TimePeriods, rule=power_generation_piecewise_points_rule)
+
+    # Minimum production cost (needed because Piecewise constraint on ProductionCost 
+    # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
+    # back in to the objective if a unit is on
+
+    model.MinimumProductionCost = Param(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals, initialize=_minimum_production_cost, mutable=True)
+
+    model.MinimumFuelConsumption = Param(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals, initialize=_minimum_fuel_consumption, mutable=True)
+
+
+    ModeratelyBigPenalty = 1e3*system['baseMVA']
+    
+    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
+
+    #########################################
+    # penalty costs for constraint violation #
+    #########################################
+    
+    BigPenalty = 1e4*system['baseMVA']
+    
+    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
+
+    ## END PRODUCTION COST CALCULATIONS
+
 
     #
     # STORAGE parameters

@@ -24,7 +24,7 @@ component_name = 'production_costs'
 # a function for use in piecewise linearization of the cost function.
 @lru_cache()
 def _production_cost_function(m, g, t, x):
-    return m.TimePeriodLengthHours * m.PowerGenerationPiecewiseValues[g,t][x]
+    return m.TimePeriodLengthHours * m.PowerGenerationPiecewiseCostValues[g,t][x]
 
 def _compute_total_production_cost(model):
 
@@ -59,7 +59,7 @@ def _get_piecewise_production_generators(model):
                     yield g,t
     model.PiecewiseGeneratorTimeIndexSet = Set(dimen=2, initialize=piecewise_generators_time_set)
 
-    # two points -> not linear
+    # two points -> linear
     def linear_generators_time_set(m):
         for g in m.ThermalGenerators:
             for t in m.TimePeriods:

@@ -43,7 +43,7 @@ def fuel_consumption_model(model):
     model.FuelConsumedProduction = Var(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
 
     def _fuel_consumed_function(m, g, i):
-        return thermal_gen_attrs['p_fuel'][g]['values'][i][1]*m.TimePeriodLengthHours
+        return m.PowerGenerationPiecewiseFuelValues[g,t][x] * m.TimePeriodLengthHours
 
     def production_fuel_consumed_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
@@ -87,7 +87,7 @@ def fuel_consumption_model(model):
     model.StartupFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=startup_fuel_consumed_rule)
 
     def fuel_commitment_consumed_rule(m,g,t):
-        return _fuel_consumed_function(m,g,0)*m.UnitOn[g,t] 
+        return m.MinimumFuelConsumption[g,t]*m.TimePeriodLengthHours*m.UnitOn[g,t] 
     model.CommitmentFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=fuel_commitment_consumed_rule)
 
     def commitment_fuel_consumed_constr(m,g,t):
