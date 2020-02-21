@@ -34,14 +34,21 @@ solver_list = ['gurobi_persistent', 'cplex_persistent', 'gurobi', 'cplex']
 test_solver = None
 comm_mip_avail = False
 for solver in solver_list:
-    if SolverFactory(solver).available():
-        test_solver = solver
-        comm_mip_avail = True
-        break
-if test_solver is None: 
-    for solver in ['cbc', 'glpk']:
+    try:
         if SolverFactory(solver).available():
             test_solver = solver
+            comm_mip_avail = True
+            break
+    except:
+        continue
+if test_solver is None: 
+    for solver in ['cbc', 'glpk']:
+        try:
+            if SolverFactory(solver).available():
+                test_solver = solver
+                break
+        except:
+            continue
 if test_solver is None:
     raise RuntimeError("No MIP/LP solver found for unit commitment tests")
 
