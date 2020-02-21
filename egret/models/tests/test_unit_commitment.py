@@ -27,6 +27,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 test_cases = [os.path.join(current_dir,'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1,6)]
 test_int_objvals = [4201915.017320504, 5454367.7670904165, 5999272.361123627, 5461120.3231092375, 6062406.32677043]
 
+## for FP comparisons
+rel_tol = 1e-08
+
 solver_list = ['gurobi_persistent', 'cplex_persistent', 'gurobi', 'cplex']
 test_solver = None
 comm_mip_avail = False
@@ -59,7 +62,7 @@ def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
         result = opt.solve(model, tee=False)
 
         assert result.solver.termination_condition == TerminationCondition.optimal
-        assert math.isclose(ref_objval, result.problem.upper_bound)
+        assert math.isclose(ref_objval, result.problem.upper_bound, rel_tol=rel_tol)
 
 def _make_get_dcopf_uc_model(network):
     def get_dcopf_uc_model(model_data, relaxed=False, **kwargs):
@@ -134,15 +137,15 @@ def test_CA_uc_model():
     _test_uc_model(create_CA_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_uc_runner():
-    test_names = ['tiny_uc_{}'.format(i) for i in range(1,6+1)]
+    test_names = ['tiny_uc_{}'.format(i) for i in range(1,8+1)]
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
         md_in = ModelData(json.load(open(input_json_file_name, 'r')))
-        md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0)
+        md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0)
 
         reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
         md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-        assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+        assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_transmission_models():
 
@@ -160,14 +163,14 @@ def test_uc_transmission_models():
                 md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(tc), **kwargs)
                 reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
                 md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-                assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+                assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
     ## test copperplate
     test_name = 'tiny_uc_1'
     md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(no_network))
     reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
     md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_relaxation():
     test_name = 'tiny_uc_tc'
@@ -178,7 +181,7 @@ def test_uc_relaxation():
     md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True)
     reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_relaxed_results.json')
     md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_lazy_ptdf_thresholding():
     test_name = 'tiny_uc_tc'
@@ -209,7 +212,7 @@ def test_uc_lazy_ptdf_thresholding():
                        ]
     for c, ptdf_opt in ptdf_sol_options:
         md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, ptdf_options=ptdf_opt)
-        assert math.isclose(c, md_results.data['system']['total_cost'])
+        assert math.isclose(c, md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_ptdf_termination():
     test_name = 'tiny_uc_tc_3'
@@ -240,4 +243,4 @@ def test_uc_ptdf_serialization_deserialization():
     kwargs = {'ptdf_options' : {'load_from': ptdf_file_name}}
     md_deserialization = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
 
-    assert math.isclose(md_serialization.data['system']['total_cost'], md_deserialization.data['system']['total_cost'])
+    assert math.isclose(md_serialization.data['system']['total_cost'], md_deserialization.data['system']['total_cost'], rel_tol=rel_tol)
