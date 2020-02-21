@@ -757,7 +757,7 @@ def load_params(model, model_data):
         for i, t in enumerate(m.TimePeriods):
             ## first, get a cost_curve out of time series
             if curve['data_type'] == 'time_series':
-                curve_t = curve[i]
+                curve_t = curve['values'][i]
             else:
                 curve_t = curve 
 
@@ -928,7 +928,7 @@ def load_params(model, model_data):
                     new_vals.append(0.)
 
                     price = ((cost-prior_cost)/(output-prior_output))
-                    minimum_val = (pmin - prior_output) * price + prior_cost
+                    minimum_val = (p_min - prior_output) * price + prior_cost
                     
                     new_points.append( output - p_min )
                     new_vals.append( (output - p_min) * price )
@@ -944,7 +944,7 @@ def load_params(model, model_data):
                     new_vals.append(0.)
 
                     price = ((cost-prior_cost)/(output-prior_output))
-                    minimum_val = (pmin - prior_output) * price + prior_cost
+                    minimum_val = (p_min - prior_output) * price + prior_cost
                     
                     new_points.append( p_max - p_min )
 
@@ -959,7 +959,8 @@ def load_params(model, model_data):
                     if math.isclose(output, p_max):
                         new_vals.append( cost - minimum_val )
                     else:
-                        new_vals.append( (pmax - prior_output) * price + prior_cost - minimum_val )
+                        price = ((cost-prior_cost)/(output-prior_output))
+                        new_vals.append( (p_max - prior_output) * price + prior_cost - minimum_val )
 
                 break
 
