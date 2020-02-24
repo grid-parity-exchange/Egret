@@ -130,6 +130,9 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
                                          vj_init[to_bus], y_matrix)
         pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
 
+    # need to include variable references on subproblem to variables, which exist on the master block
+    bi.varref(model.subproblem)
+
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],
                              initialize=pf_init,
@@ -261,3 +264,19 @@ def solve_bilevel_nk(model_data,
     elif return_results:
         return md, results
     return md
+
+
+if __name__ == '__main__': pass
+#     import os
+#     from egret.parsers.matpower_parser import create_ModelData
+#
+#     path = os.path.dirname(__file__)
+#     print(path)
+#     filename = 'pglib_opf_case30_ieee.m'
+#     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
+#     md_dict = create_ModelData(test_case)
+#
+#     kwargs = {'ptdf_options': {'save_to': test_case + '.pickle'}}
+#     md_serialization, results = solve_dcopf(md_dict, "ipopt", solver_tee=False,
+#                                             return_results=True, **kwargs)
+
