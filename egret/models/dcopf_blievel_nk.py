@@ -40,6 +40,9 @@ def create_master(model_data, k=1):
 
     model = pe.ConcreteModel()
 
+    ### declare (and fix) the loads at the buses
+    bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+
     relay_branches = utils.dict_of_relay_branches(relays, branches)
     branch_relays = utils.dict_of_branch_relays(relays, branches)
     relay_branch_tuple = utils.relay_branch_tuple(relay_branches)
@@ -50,7 +53,7 @@ def create_master(model_data, k=1):
     load_relays = utils.dict_of_load_relays(relays, loads)
     relay_load_tuple = utils.relay_branch_tuple(relay_loads)
 
-    decl.declare_var('z', model, None, initialize=0.0, domain=pe.NonNegativeReals)
+    decl.declare_var('load_shed', model, loads, initialize=0.0, domain=pe.NonNegativeReals)
     decl.declare_var('delta', model, relays, domain=pe.Binary) # relays compromised
     decl.declare_var('u', model, loads, domain=pe.Binary) # load available
     decl.declare_var('v', model, branches, domain=pe.Binary) # generator available
@@ -63,6 +66,7 @@ def create_master(model_data, k=1):
     cons.declare_branch_uncompromised(model, branches, branch_relays)
 
     model.obj = pe.Objective(expr=model.z, sense=pe.maximize)
+    model.obj = pe.Objective(expr=sum(model.load_shed[l] for l in bus_p_loads), sense=pe.maximize)
 
     return model, md
 
@@ -130,23 +134,24 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
                                          vj_init[to_bus], y_matrix)
         pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
 
-    # need to include variable references on subproblem to variables, which exist on the master block
-    bi.varref(model.subproblem)
-
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],
                              initialize=pf_init,
                              bounds=pf_bounds
                              )
 
+    # need to include variable references on subproblem to variables, which exist on the master block
+    bi.varref(model.subproblem)
+
+
     ### declare the branch power flow approximation constraints
-    libbranch.declare_eq_branch_power_btheta_approx(model=model,
+    libbranch.declare_eq_branch_power_btheta_approx(model=model.subproblem,
                                                     index_set=branch_attrs['names'],
                                                     branches=branches
                                                     )
 
     ### declare the p balance
-    libbus.declare_eq_p_balance_dc_approx(model=model,
+    libbus.declare_eq_p_balance_dc_approx(model=model.subproblem,
                                           index_set=bus_attrs['names'],
                                           bus_p_loads=bus_p_loads,
                                           gens_by_bus=gens_by_bus,
@@ -157,7 +162,7 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
                                           )
 
     ### declare the real power flow limits
-    libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
+    libbranch.declare_ineq_p_branch_thermal_lbub(model=model.subproblem,
                                                  index_set=branch_attrs['names'],
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
@@ -166,21 +171,19 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
 
     ### declare angle difference limits on interconnected buses
     if include_angle_diff_limits:
-        libbranch.declare_ineq_angle_diff_branch_lbub(model=model,
+        libbranch.declare_ineq_angle_diff_branch_lbub(model=model.subproblem,
                                                       index_set=branch_attrs['names'],
                                                       branches=branches,
                                                       coordinate_type=CoordinateType.POLAR
                                                       )
 
     ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
+    libgen.declare_expression_pgqg_operating_cost(model=model.subproblem,
                                                   index_set=gen_attrs['names'],
                                                   p_costs=gen_attrs['p_cost']
                                                   )
 
-    obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
-
-    model.obj = pe.Objective(expr=obj_expr)
+    model.subproblem.obj = pe.Objective(expr=sum(model.load_shed[l] for l in bus_p_loads), sense=pe.minimize)
 
     return model, md
 
