@@ -76,8 +76,9 @@ def uc_time_helper(model_time_periods):
                             values = att['values']
                             for i,t in enumerate(TimePeriods):
                                 return_dict[key,t] = values[i]
-                        else:
-                            raise Exception("Unexpected dictionary {}".format(att))
+                        else: ## assume we know what to do with it, not copying
+                            for t in TimePeriods:
+                                return_dict[key,t] = att
                     else:
                         for t in TimePeriods:
                             return_dict[key,t] = att
