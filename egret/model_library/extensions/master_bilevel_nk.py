@@ -32,8 +32,8 @@ def declare_load_compromised(model, index_set):
 
     m.load_compromised = pe.Constraint(con_set)
 
-    for (l,r) in con_set:
-        m.load_compromised[(l,r)] = m.u[l] <= 1 - m.delta[r]
+    for (r,l) in con_set:
+        m.load_compromised[(r,l)] = m.u[l] <= 1 - m.delta[r]
 
 
 def declare_load_uncompromised(model, index_set, load_relays):
@@ -54,8 +54,8 @@ def declare_branch_compromised(model, index_set):
 
     m.branch_compromised = pe.Constraint(con_set)
 
-    for (b,r) in con_set:
-        m.branch_compromised[(b,r)] = m.u[b] <= 1 - m.delta[r]
+    for (r,b) in con_set:
+        m.branch_compromised[(r,b)] = m.w[b] <= 1 - m.delta[r]
 
 
 def declare_branch_uncompromised(model, index_set, branch_relays):
@@ -66,26 +66,26 @@ def declare_branch_uncompromised(model, index_set, branch_relays):
     m.branch_uncompromised = pe.Constraint(con_set)
 
     for b in con_set:
-        m.load_uncompromised[b] = sum((1 - m.delta[r]) for r in branch_relays[b]) - len(branch_relays[b]) + 1 <= m.u[b]
+        m.branch_uncompromised[b] = sum((1 - m.delta[r]) for r in branch_relays[b]) - len(branch_relays[b]) + 1 <= m.w[b]
 
 
-def declare_branch_compromised(model, index_set):
-
-    m = model
-    con_set = decl.declare_set("_con_branch_compromised", model=model, index_set=index_set)
-
-    m.branch_compromised = pe.Constraint(con_set)
-
-    for (b,r) in con_set:
-        m.branch_compromised[(b,r)] = m.u[b] <= 1 - m.delta[r]
-
-
-def declare_branch_uncompromised(model, index_set, branch_relays):
+def declare_gen_compromised(model, index_set):
 
     m = model
-    con_set = decl.declare_set("_con_branch_uncompromised", model=model, index_set=index_set)
+    con_set = decl.declare_set("_con_gen_compromised", model=model, index_set=index_set)
 
-    m.branch_uncompromised = pe.Constraint(con_set)
+    m.gen_compromised = pe.Constraint(con_set)
 
-    for b in con_set:
-        m.load_uncompromised[b] = sum((1 - m.delta[r]) for r in branch_relays[b]) - len(branch_relays[b]) + 1 <= m.u[b]
+    for (r,g) in con_set:
+        m.gen_compromised[(r,g)] = m.v[g] <= 1 - m.delta[r]
+
+
+def declare_gen_uncompromised(model, index_set, gen_relays):
+
+    m = model
+    con_set = decl.declare_set("_con_gen_uncompromised", model=model, index_set=index_set)
+
+    m.gen_uncompromised = pe.Constraint(con_set)
+
+    for g in con_set:
+        m.gen_uncompromised[g] = sum((1 - m.delta[r]) for r in gen_relays[g]) - len(gen_relays[g]) + 1 <= m.v[g]

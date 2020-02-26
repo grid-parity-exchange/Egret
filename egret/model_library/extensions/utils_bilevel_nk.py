@@ -49,7 +49,7 @@ def relay_branch_tuple(relay_branches):
     """
     relay_branch_tuple = list()
 
-    for r, branches in relay_branches:
+    for r, branches in relay_branches.items():
         for b in branches:
             relay_branch_tuple.append((r,b))
     return relay_branch_tuple
@@ -92,7 +92,7 @@ def relay_gen_tuple(relay_gens):
     """
     relay_gen_tuple = list()
 
-    for r, gens in relay_gens:
+    for r, gens in relay_gens.items():
         for g in gens:
             relay_gen_tuple.append((r,g))
     return relay_gen_tuple
@@ -135,7 +135,7 @@ def relay_load_tuple(relay_loads):
     """
     relay_load_tuple = list()
 
-    for r, loads in relay_loads:
+    for r, loads in relay_loads.items():
         for l in loads:
             relay_load_tuple.append((r,l))
     return relay_load_tuple

@@ -22,6 +22,7 @@ import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 import egret.model_library.extensions.utils_bilevel_nk as utils
 import egret.model_library.extensions.master_bilevel_nk as cons
+import egret.model_library.extensions.subproblem_bilevel_nk as subcons
 import egret.model_library.decl as decl
 
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
@@ -38,10 +39,17 @@ def create_master(model_data, k=1):
     loads = dict(md.elements(element_type='load'))
     branches = dict(md.elements(element_type='branch'))
 
+    relay_attrs = md.attributes(element_type='relay')
+    gen_attrs = md.attributes(element_type='generator')
+    load_attrs = md.attributes(element_type='load')
+    branch_attrs = md.attributes(element_type='branch')
+
+
     model = pe.ConcreteModel()
 
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
+    buses_with_loads = bus_p_loads.keys()
 
     relay_branches = utils.dict_of_relay_branches(relays, branches)
     branch_relays = utils.dict_of_branch_relays(relays, branches)
@@ -53,19 +61,20 @@ def create_master(model_data, k=1):
     load_relays = utils.dict_of_load_relays(relays, loads)
     relay_load_tuple = utils.relay_branch_tuple(relay_loads)
 
-    decl.declare_var('load_shed', model, loads, initialize=0.0, domain=pe.NonNegativeReals)
-    decl.declare_var('delta', model, relays, domain=pe.Binary) # relays compromised
-    decl.declare_var('u', model, loads, domain=pe.Binary) # load available
-    decl.declare_var('v', model, branches, domain=pe.Binary) # generator available
-    decl.declare_var('w', model, gens, domain=pe.Binary) # line available
+    decl.declare_var('load_shed', model, buses_with_loads, initialize=0.0, domain=pe.NonNegativeReals)
+    decl.declare_var('delta', model, relay_attrs['names'], domain=pe.Binary) # relays compromised
+    decl.declare_var('u', model, load_attrs['names'], domain=pe.Binary) # load available
+    decl.declare_var('v', model, gen_attrs['names'], domain=pe.Binary) # generator available
+    decl.declare_var('w', model, branch_attrs['names'], domain=pe.Binary) # line available
 
     cons.declare_budget(model, k, relays)
     cons.declare_load_compromised(model, relay_load_tuple)
-    cons.declare_load_uncompromised(model, loads, load_relays)
+    cons.declare_load_uncompromised(model, load_attrs['names'], load_relays)
     cons.declare_branch_compromised(model, relay_branch_tuple)
-    cons.declare_branch_uncompromised(model, branches, branch_relays)
+    cons.declare_branch_uncompromised(model, branch_attrs['names'], branch_relays)
+    cons.declare_gen_compromised(model, relay_gen_tuple)
+    cons.declare_gen_uncompromised(model, gen_attrs['names'], gen_relays)
 
-    model.obj = pe.Objective(expr=model.z, sense=pe.maximize)
     model.obj = pe.Objective(expr=sum(model.load_shed[l] for l in bus_p_loads), sense=pe.maximize)
 
     return model, md
@@ -94,6 +103,8 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
 
+    buses_with_loads = bus_p_loads.keys()
+
     libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
     model.pl.fix()
 
@@ -113,9 +124,7 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
 
     ### declare the generator real power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
-    libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init,
-                          bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
-                          )
+    libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init)
 
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -141,16 +150,54 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
                              )
 
     # need to include variable references on subproblem to variables, which exist on the master block
-    bi.varref(model.subproblem)
+    bi.components.varref(model.subproblem)
 
-
-    ### declare the branch power flow approximation constraints
+    ### declare the branch power flow disjuncts (LHS is status quo, RHS is compromised)
     libbranch.declare_eq_branch_power_btheta_approx(model=model.subproblem,
                                                     index_set=branch_attrs['names'],
                                                     branches=branches
                                                     )
+    subcons.declare_eq_branch_power_off(model=model.subproblem,
+                                        index_set=branch_attrs['names'],
+                                        branches=branches
+                                        )
+    subcons.disjunctify(model=model.subproblem,
+                        indicator_name='pf_branch_indicator',
+                        disjunct_name='pf_branch_disjunct',
+                        LHS_disjunct_set=model.subproblem.eq_pf_branch,
+                        RHS_disjunct_set=model.subproblem.eq_pf_branch_off
+                        )
+
+    ### declare the load shed disjuncts (LHS is status quo, RHS is compromised)
+    subcons.declare_ineq_load_shed_ub(model=model.subproblem,
+                                      index_set=bus_attrs['names'])
+    subcons.declare_ineq_load_shed_lb(model=model.subproblem,
+                                      index_set=bus_attrs['names'])
+    subcons.declare_ineq_load_shed_lb_off(model=model.subproblem,
+                                      index_set=bus_attrs['names'])
+    subcons.disjunctify(model=model.subproblem,
+                        indicator_name='load_shed_indicator',
+                        disjunct_name='load_shed_disjunct',
+                        LHS_disjunct_set=model.subproblem.ineq_load_shed_lb,
+                        RHS_disjunct_set=model.subproblem.ineq_load_shed_lb_off
+                        )
+
+    ### declare the generator disjuncts (LHS is status quo, RHS is compromised)
+    subcons.declare_ineq_gen(model=model.subproblem,
+                             index_set=gen_attrs['names'],
+                             gens=gens)
+    subcons.declare_ineq_gen_off(model=model.subproblem,
+                                 index_set=gen_attrs['names'],
+                                 gens=gens)
+    subcons.disjunctify(model=model.subproblem,
+                        indicator_name='gen_indicator',
+                        disjunct_name='gen_disjunct',
+                        LHS_disjunct_set=model.subproblem.ineq_gen,
+                        RHS_disjunct_set=model.subproblem.ineq_gen_off
+                        )
 
     ### declare the p balance
+    rhs_kwargs = {'include_feasibility_slack_neg':'load_shed'}
     libbus.declare_eq_p_balance_dc_approx(model=model.subproblem,
                                           index_set=bus_attrs['names'],
                                           bus_p_loads=bus_p_loads,
@@ -158,7 +205,8 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
                                           bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                           inlet_branches_by_bus=inlet_branches_by_bus,
                                           outlet_branches_by_bus=outlet_branches_by_bus,
-                                          approximation_type=ApproximationType.BTHETA
+                                          approximation_type=ApproximationType.BTHETA,
+                                          **rhs_kwargs
                                           )
 
     ### declare the real power flow limits
@@ -176,12 +224,6 @@ def create_subproblem(model, model_data, include_angle_diff_limits=False):
                                                       branches=branches,
                                                       coordinate_type=CoordinateType.POLAR
                                                       )
-
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model.subproblem,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
 
     model.subproblem.obj = pe.Objective(expr=sum(model.load_shed[l] for l in bus_p_loads), sense=pe.minimize)
 
@@ -237,8 +279,13 @@ def solve_bilevel_nk(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,solver_options=options, return_solver=True)
+    pe.TransformationFactory('gdp.bigm').apply_to(m)
+
+    opt = pe.SolverFactory('pao.bilevel.ld', solver=solver, symbolic_solver_labels=symbolic_solver_labels)
+    results = opt.solve(m, tee=solver_tee)
+
+    import pdb
+    pdb.set_trace()
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -269,17 +316,58 @@ def solve_bilevel_nk(model_data,
     return md
 
 
-if __name__ == '__main__': pass
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     print(path)
-#     filename = 'pglib_opf_case30_ieee.m'
-#     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
-#     md_dict = create_ModelData(test_case)
-#
-#     kwargs = {'ptdf_options': {'save_to': test_case + '.pickle'}}
-#     md_serialization, results = solve_dcopf(md_dict, "ipopt", solver_tee=False,
-#                                             return_results=True, **kwargs)
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    print(path)
+    filename = 'pglib_opf_case14_ieee.m'
+    test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
+    md_dict = create_ModelData(test_case)
+
+    relays = dict()
+
+    buses = dict(md_dict.elements(element_type='bus'))
+    for bus_name, bus in buses.items():
+        relay_name = bus_name
+        relays[relay_name] = dict()
+        relays[relay_name]['branch'] = list()
+        relays[relay_name]['gen'] = list()
+        relays[relay_name]['load'] = list()
+
+    branches = dict(md_dict.elements(element_type='branch'))
+    for branch_name, branch in branches.items():
+        relay_name = branch['from_bus']
+        relay = relays[relay_name]
+        relay['branch'].append(branch_name)
+        branch['relay'] = list()
+        branch['relay'].append(relay_name)
+
+        relay_name = branch['to_bus']
+        relay = relays[relay_name]
+        relay['branch'].append(branch_name)
+        branch['relay'].append(relay_name)
+
+    gens = dict(md_dict.elements(element_type='generator'))
+    for gen_name, gen in gens.items():
+        relay_name = gen['bus']
+        relay = relays[relay_name]
+        relay['gen'].append(gen_name)
+        gen['relay'] = list()
+        gen['relay'].append(relay_name)
+
+    loads = dict(md_dict.elements(element_type='load'))
+    for load_name, load in loads.items():
+        relay_name = load['bus']
+        relay = relays[relay_name]
+        relay['load'].append(load_name)
+        load['relay'] = list()
+        load['relay'].append(relay_name)
+
+    md_dict.data['elements']['relay'] = relays
+
+    kwargs = {'ptdf_options': {'save_to': test_case + '.pickle'}}
+    md_serialization, results = solve_bilevel_nk(md_dict, "gurobi", solver_tee=False,
+                                            return_results=True, **kwargs)
 
