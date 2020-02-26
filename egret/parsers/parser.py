@@ -787,9 +787,9 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             MIN_DN_TIME = float(row['Min Down Time Hr'])
 
             # Startup types and costs
-            COLD_HEAT = float(row['Start Heat Cold MMBTU'])
-            WARM_HEAT = float(row['Start Heat Warm MMBTU'])
-            HOT_HEAT = float(row['Start Heat Hot MMBTU'])
+            COLD_HEAT = float(row['Start Heat Cold MBTU'])
+            WARM_HEAT = float(row['Start Heat Warm MBTU'])
+            HOT_HEAT = float(row['Start Heat Hot MBTU'])
 
             COLD_TIME = float(row['Start Time Cold Hr'])
             WARM_TIME = float(row['Start Time Warm Hr'])
@@ -929,7 +929,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    rts_gmlc_dir = os.path.join(current_dir, '..', '..', 'input',
+    rts_gmlc_dir = os.path.join(current_dir, '..', '..', '..', 'RTS-GMLC',
                                 'RTS_Data')  # This is just the root of the RTS-GMLC data set.
 
     # This converts the load data (in RTS-GMLC format) such that individual loads have their own time series explicitly specified (instead of one system-wide time series).
@@ -950,7 +950,7 @@ if __name__ == '__main__':
     )
 
     solved_md = solve_unit_commitment(md,
-                                      'gurobi',
+                                      'gurobi_persistent',
                                       mipgap=0.001,
                                       timelimit=None,
                                       solver_tee=True,
