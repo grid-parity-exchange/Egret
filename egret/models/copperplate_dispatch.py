@@ -155,7 +155,7 @@ def solve_copperplate_dispatch(model_data,
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+                              symbolic_solver_labels=symbolic_solver_labels,solver_options=options)
 
     md = model_data.clone_in_service()
 

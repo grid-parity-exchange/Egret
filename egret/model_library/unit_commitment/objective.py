@@ -84,7 +84,7 @@ def basic_objective(model):
     #############################################
     
     def compute_no_load_cost_rule(m,g,t):
-        return m.MinimumProductionCost[g]*m.UnitOn[g,t]*m.TimePeriodLengthHours
+        return m.MinimumProductionCost[g,t]*m.UnitOn[g,t]*m.TimePeriodLengthHours
     
     model.NoLoadCost = Expression(model.SingleFuelGenerators, model.TimePeriods, rule=compute_no_load_cost_rule)
     

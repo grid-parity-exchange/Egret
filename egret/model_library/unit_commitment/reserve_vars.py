@@ -50,14 +50,14 @@ def garver_power_avail_vars(model):
 
     # amount of power produced by each generator above minimum, at each time period.
     def garver_power_bounds_rule(m, g, t):
-        return (0, m.MaximumPowerOutput[g]-m.MinimumPowerOutput[g])
+        return (0, m.MaximumPowerOutput[g,t]-m.MinimumPowerOutput[g,t])
 
     # maximum power output above minimum for each generator, at each time period.
     model.MaximumPowerAvailableAboveMinimum = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=garver_power_bounds_rule)
     
     ## Note: thes only get used in system balance constraints
     def maximum_power_avaiable_expr_rule(m, g, t):
-        return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g]*m.UnitOn[g,t]
+        return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
     model.MaximumPowerAvailable = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_avaiable_expr_rule)
 
 
@@ -102,13 +102,13 @@ def rescaled_power_avail_vars(model):
 
 
     def power_available_above_min_expr_rule(m, g, t):
-        return (m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g])*m.UnitMaximumPowerAvailableAboveMinimum[g,t]
+        return (m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t])*m.UnitMaximumPowerAvailableAboveMinimum[g,t]
     # maximum power output above minimum for each generator, at each time period.
     model.MaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=power_available_above_min_expr_rule)
     
     ## Note: thes only get used in system balance constraints
     def maximum_power_avaiable_expr_rule(m, g, t):
-        return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g]*m.UnitOn[g,t]
+        return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
     model.MaximumPowerAvailable = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_avaiable_expr_rule)
 
 
@@ -147,7 +147,7 @@ def MLR_reserve_vars(model):
 
     # amount of power produced by each generator above minimum, at each time period.
     def garver_power_bounds_rule(m, g, t):
-        return (0, m.MaximumPowerOutput[g]-m.MinimumPowerOutput[g])
+        return (0, m.MaximumPowerOutput[g,t]-m.MinimumPowerOutput[g,t])
 
     # variable for reserves offered
     model.ReserveProvided = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=garver_power_bounds_rule)
@@ -185,14 +185,14 @@ def CA_power_avail_vars(model):
 
     # amount of power produced by each generator, at each time period.
     def power_bounds_rule(m, g, t):
-        return (0, m.MaximumPowerOutput[g])
+        return (0, m.MaximumPowerOutput[g,t])
     model.MaximumPowerAvailable = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=power_bounds_rule) 
 
     # this is useful for the damci_kurt ramping inequality
     # I think this seemlessly handles many cases when this expression is on the LHS,
     # including a variant of the state transition formulation
     def maximum_power_available_above_minimum_expr_rule(m, g, t):
-        return m.MaximumPowerAvailable[g,t] - m.MinimumPowerOutput[g]*m.UnitOn[g,t]
+        return m.MaximumPowerAvailable[g,t] - m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
     model.MaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_available_above_minimum_expr_rule)
 
     # m.MinimumPowerOutput[g] * m.UnitOn[g, t] <= m.PowerGenerated[g,t] <= m.MaximumPowerAvailable[g, t] <= m.MaximumPowerOutput[g] * m.UnitOn[g, t]

@@ -432,7 +432,7 @@ def solve_dcopf(model_data,
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
+                              symbolic_solver_labels=symbolic_solver_labels,solver_options=options, return_solver=True)
 
     if dcopf_model_generator == create_ptdf_dcopf_model and m._ptdf_options['lazy']:
         iter_limit = m._ptdf_options['iteration_limit']

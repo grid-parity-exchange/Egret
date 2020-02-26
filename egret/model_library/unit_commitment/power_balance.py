@@ -39,9 +39,7 @@ def _setup_egret_network_model(block, tm):
     ### declare (and fix) the loads at the buses
     bus_p_loads = {b: value(m.Demand[b,tm]) for b in m.Buses}
 
-    ## index of net injections from the UC model
-    libbus.declare_var_pl(block, m.Buses, initialize=bus_p_loads)
-    block.pl.fix()
+    block.pl = Param(m.Buses, initialize=bus_p_loads)
 
     bus_gs_fixed_shunts = m._bus_gs_fixed_shunts
 
@@ -368,9 +366,9 @@ def _add_load_mismatch(model):
     over_gen_maxes = {}
     over_gen_times_per_bus = {b: list() for b in model.Buses}
     for b in model.Buses:
-        gen = sum(value(model.MaximumPowerOutput[g]) for g in model.ThermalGeneratorsAtBus[b])
         for t in model.TimePeriods:
-            total_gen = gen + sum(value(model.MinNondispatchablePower[n,t]) for n in model.NondispatchableGeneratorsAtBus[b])
+            total_gen = sum(value(model.MaximumPowerOutput[g,t]) for g in model.ThermalGeneratorsAtBus[b])
+            total_gen += sum(value(model.MinNondispatchablePower[n,t]) for n in model.NondispatchableGeneratorsAtBus[b])
             total_gen -= value(model.Demand[b,t])
             if total_gen > 0:
                 over_gen_maxes[b,t] = total_gen
@@ -568,7 +566,9 @@ def copperplate_relaxed_power_flow(model, slacks=True):
                                             'storage_service': None,
                                             })
 def ptdf_power_flow(model, slacks=True):
-    model._PTDFs = dict()
+    ## allow for this to already exist
+    if not hasattr(model, '_PTDFs'):
+        model._PTDFs = dict()
     _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
