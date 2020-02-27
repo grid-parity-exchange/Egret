@@ -20,6 +20,7 @@ from egret.data.data_utils import zip_items
 from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
 from collections import OrderedDict
+from pyomo.contrib.fbbt.fbbt import fbbt
 try:
     import coramin
     coramin_available = True
@@ -232,7 +233,7 @@ def declare_eq_c(model, index_set, coordinate_type=CoordinateType.POLAR):
     elif coordinate_type == CoordinateType.RECTANGULAR:
         for from_bus, to_bus in con_set:
             m.eq_c[(from_bus, to_bus)] = (m.c[(from_bus, to_bus)] ==
-                                          m.vr[from_bus] * m.m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus])
+                                          m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus])
     else:
         raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
 
@@ -252,7 +253,7 @@ def declare_eq_s(model, index_set, coordinate_type=CoordinateType.POLAR):
     elif coordinate_type == CoordinateType.RECTANGULAR:
         for from_bus, to_bus in con_set:
             m.eq_s[(from_bus, to_bus)] = (m.s[(from_bus, to_bus)] ==
-                                          m.vj[from_bus] * m.m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
+                                          m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
     else:
         raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
 
@@ -421,6 +422,8 @@ def declare_ineq_soc(model, index_set, use_outer_approximation=False):
         for from_bus, to_bus in con_set:
             m._eq_z1[from_bus, to_bus] = m._z1[from_bus, to_bus] == 0.5 * (m.vmsq[from_bus] - m.vmsq[to_bus])
             m._eq_z2[from_bus, to_bus] = m._z2[from_bus, to_bus] == 0.5 * (m.vmsq[from_bus] + m.vmsq[to_bus])
+            fbbt(m._eq_z1[from_bus, to_bus])
+            fbbt(m._eq_z2[from_bus, to_bus])
             m.ineq_soc_OA[from_bus, to_bus].build(aux_var=m._z2[from_bus, to_bus],
                                                   shape=coramin.utils.FunctionShape.CONVEX,
                                                   f_x_expr=(m.c[from_bus, to_bus]**2 +
@@ -811,9 +814,31 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
             m.ineq_pf_branch_thermal_bounds[branch_name] = \
                 (-limit, m.pf[branch_name], limit)
 
-def declare_ineq_angle_diff_branch_lbub(model, index_set,
-                                        branches,
-                                        coordinate_type=CoordinateType.POLAR):
+
+def declare_ineq_angle_diff_branch_lbub_c_s(model, index_set, branches):
+    """
+    Create the inequality constraints for the angle difference
+    bounds between interconnected buses.
+    """
+    m = model
+    con_set = decl.declare_set('_con_ineq_angle_diff_branch_lbub',
+                               model=model, index_set=index_set)
+
+    m.ineq_angle_diff_branch_lb = pe.Constraint(con_set)
+    m.ineq_angle_diff_branch_ub = pe.Constraint(con_set)
+
+    for branch_name in con_set:
+        from_bus = branches[branch_name]['from_bus']
+        to_bus = branches[branch_name]['to_bus']
+
+        m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
+                                                    m.c[(from_bus, to_bus)] <= m.s[(from_bus, to_bus)])
+        m.ineq_angle_diff_branch_ub[branch_name] = (m.s[(from_bus, to_bus)] <=
+                                                    math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
+                                                    m.c[(from_bus, to_bus)])
+
+
+def declare_ineq_angle_diff_branch_lbub(model, index_set, branches, coordinate_type=CoordinateType.POLAR):
     """
     Create the inequality constraints for the angle difference
     bounds between interconnected buses.
@@ -839,12 +864,12 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
             from_bus = branches[branch_name]['from_bus']
             to_bus = branches[branch_name]['to_bus']
 
-            m.ineq_angle_diff_branch_lb[branch_name] = \
-                math.radians(branches[branch_name]['angle_diff_min']) <= pe.atan(m.vj[from_bus]/m.vr[from_bus]) \
-                - pe.atan(m.vj[to_bus]/m.vr[to_bus])
-            m.ineq_angle_diff_branch_ub[branch_name] = \
-                pe.atan(m.vj[from_bus] / m.vr[from_bus]) \
-                - pe.atan(m.vj[to_bus] / m.vr[to_bus]) <= math.radians(branches[branch_name]['angle_diff_max'])
+            m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
+                                                        (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]) <=
+                                                        m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
+            m.ineq_angle_diff_branch_ub[branch_name] = (m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus] <=
+                                                        math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
+                                                        (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]))
 
 
 def declare_ineq_p_interface_bounds(model, index_set, interfaces,

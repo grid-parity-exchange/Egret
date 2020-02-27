@@ -174,7 +174,7 @@ def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     Create an equality constraint to enforce tan(\theta) = vj/vr at  the reference bus
     """
     m = model
-    m.eq_ref_bus_nonzero = pe.Constraint(expr = tan(radians(ref_angle)) == m.vj[ref_bus]/m.vr[ref_bus])
+    m.eq_ref_bus_nonzero = pe.Constraint(expr = tan(radians(ref_angle)) * m.vr[ref_bus] == m.vj[ref_bus])
 
 def declare_eq_i_aggregation_at_bus(model, index_set,
                                     bus_bs_fixed_shunts, bus_gs_fixed_shunts,
