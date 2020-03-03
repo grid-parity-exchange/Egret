@@ -225,8 +225,12 @@ def ancillary_services(model):
     
     ## check here and break if there's nothing to do
     no_reserves = not (add_spinning_reserve or add_non_spinning_reserve or add_regulation_reserve or add_supplemental_reserve or add_flexi_ramp_reserve)
+
+    ## add a flag for which brach we took here
     if no_reserves:
+        model.nonbasic_reserves = False
         return
+    model.nonbasic_reserves = True
 
     ## check this here to avoid exceptions when the model has no ancillary services
     if model.status_vars not in ['garver_3bin_vars','garver_2bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:

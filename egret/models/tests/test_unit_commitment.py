@@ -94,6 +94,7 @@ def test_int_all_uc_models():
     _test_uc_model(create_OAV_original_unit_commitment_model)
     _test_uc_model(create_OAV_up_downtime_unit_commitment_model)
     _test_uc_model(create_CA_unit_commitment_model)
+    _test_uc_model(create_CHP_unit_commitment_model)
 
 def test_tight_uc_model():
     lp_obj_list = [4194720.23424, 5441076.85034, 5988496.92621, 5453617.47912, 6055376.54656]
@@ -142,6 +143,10 @@ def test_OAV_up_downtime_uc_model():
 def test_CA_uc_model():
     lp_obj_list = [4185855.30972, 5423650.80043, 5965411.93718, 5439434.94733, 6029118.03019]
     _test_uc_model(create_CA_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
+def test_CHP_uc_model():
+    lp_obj_list = [4195062.031337061, 5441117.29937132, 5989325.835633724, 5454266.5169105325, 6055624.773215021]
+    _test_uc_model(create_CHP_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_uc_runner():
     test_names = ['tiny_uc_{}'.format(i) for i in range(1,8+1)]

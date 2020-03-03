@@ -22,21 +22,43 @@ generation_limits_w_startup_shutdown = ['MLR_generation_limits',
                                         'pan_guan_gentile_KOW_generation_limits',
                                        ]
 
-## For safety, we will always enforce ramping limits
-## at the initial time step
+## NOTE: These two functions control if constraints are even added to the model
+##       based on some state data. They will have to be re-visited if we ever 
+##       support presistence in a deeper way, just like the minimum up/down time
+##       constraints
 def _ramp_up_not_needed(m,g,t):
-    if t == m.InitialTime:
+    if m.generation_limits not in generation_limits_w_startup_shutdown:
         return False
-    if value(m.ScaledNominalRampUpLimit[g,t]) >= value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t-1]) and m.generation_limits in generation_limits_w_startup_shutdown:
+    if t == m.InitialTime:
+        ## no need for ramping constraints if the generator is off, and
+        ## we're enforcing startup/shutdown elsewhere
+        if not value(m.UnitOnT0[g]):
+            return True
+        if value(m.ScaledNominalRampUpLimit[g,t]) >= value(m.MaximumPowerOutput[g,t] - m.PowerGeneratedT0[g]):
+            ## the generator can get all the way to max at the first time period
+            return True
+        return False
+    if value(m.ScaledNominalRampUpLimit[g,t]) >= value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t-1]):
         return True
     return False
 
-## In the case of ramp down, just if specified to
-## by the model options
 def _ramp_down_not_needed(m,g,t):
     if t == m.InitialTime:
-        return not m.enforce_t1_ramp_rates
-    if value(m.ScaledNominalRampDownLimit[g,t]) >= value(m.MaximumPowerOutput[g,t-1] - m.MinimumPowerOutput[g,t]) and m.generation_limits in generation_limits_w_startup_shutdown:
+        if not m.enforce_t1_ramp_rates:
+            return True
+        ## if the unit is off, we don't need ramp down constraints
+        if not value(m.UnitOnT0[g]):
+            return True
+        if value(m.ScaledNominalRampDownLimit[g,t]) < value(m.PowerGeneratedT0[g] - m.MinimumPowerOutput[g,t]):
+            return False
+        ## if this and the opposite of the above condition are true, 
+        ## we don't need an inital ramp-down inequality
+        if value(m.ScaledShutdownRampLimit[g,t]) >= value(m.PowerGeneratedT0[g]):
+            return True
+        return False
+    if m.generation_limits not in generation_limits_w_startup_shutdown:
+        return False
+    if value(m.ScaledNominalRampDownLimit[g,t]) >= value(m.MaximumPowerOutput[g,t-1] - m.MinimumPowerOutput[g,t]):
         return True
     return False
 
@@ -93,7 +115,7 @@ def _damcikurt_basic_ramping(model):
         if t == m.InitialTime:
             ## assume m.MinimumPowerOutput[g,T0] == 0
             return m.PowerGeneratedT0[g] - m.PowerGeneratedAboveMinimum[g, t] <= \
-                    (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] + 0)*m.UnitOnT0[g] + \
+                    (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g] + \
                     (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
                     ## TODO: figure out ScaledShutdownRampLimitT0[g]
         else:
