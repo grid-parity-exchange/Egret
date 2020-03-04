@@ -551,7 +551,7 @@ def SLL_production_costs(model):
                                             })
 def SLL_production_costs_tightened(model):
     '''
-    Based on SOS2 mdodel S_2 from
+    Based on SOS2 model S_2 from
 
     Sridhar, S. Linderoth, J., and Luedtke, J. Locally ideal formulations with
     indicator variables. Operation Research Letters 41 (2013) 627-632
