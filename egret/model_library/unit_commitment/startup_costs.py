@@ -647,3 +647,110 @@ def MLR_startup_costs2(model, add_startup_cost_var=True):
 
     return
 
+@add_model_attr(component_name, requires = {'data_loader': None,
+                                            'status_vars': ['garver_3bin_vars','garver_2bin_vars','garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars'],
+                                            })
+def pochet_wolsey_startup_costs(model, add_startup_cost_var=True):
+    '''
+    Startup costs based on the network-flow formulation
+    Pochet & Wosley (2006), Production planning by mixed integer
+    programming. Springer Science & Business Media.
+    '''
+
+    if add_startup_cost_var:
+        model.StartupCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals)
+
+    def ShutdownTimePeriods_generator(m,g):
+        ## adds the necessary index for starting-up after a shutdown before the time horizon began
+        T0State = value(m.UnitOnT0State[g])
+        UT = value(m.ScaledMinimumUpTime[g])
+        DT = value(m.ScaledMinimumDownTime[g])
+        if T0State > 0:
+            first_off = max(0, UT-T0State)
+            shutdown_time_periods = list(m.TimePeriods)[first_off:]
+
+        elif T0State < 0:
+            first_on = max(0, DT+T0State)
+            shutdown_time_periods = [m.InitialTime+T0State] + list(m.TimePeriods)[first_on+UT:]
+        return (t for t in shutdown_time_periods)
+    model.ShutdownTimePeriods=Set(model.ThermalGenerators, initialize=ShutdownTimePeriods_generator)
+
+    def StartupTimePeriods_generator(m,g):
+        ## adds the necessary index for shutting-down after a startup before the time horizon began
+        T0State = value(m.UnitOnT0State[g])
+        UT = value(m.ScaledMinimumUpTime[g])
+        DT = value(m.ScaledMinimumDownTime[g])
+        if T0State > 0:
+            first_off = max(0, UT-T0State)
+            startup_time_periods = [m.InitialTime-T0State]+ list(m.TimePeriods)[first_off+DT:]
+
+        elif T0State < 0:
+            first_on = max(0, DT+T0State)
+            startup_time_periods = list(m.TimePeriods)[first_on:]
+        return (t for t in startup_time_periods) 
+    model.StartupTimePeriods=Set(model.ThermalGenerators, initialize=StartupTimePeriods_generator)
+
+    def ShutdownStartupPairs_generator(m,g):
+        DT = value(m.ScaledMinimumDownTime[g])
+        return ((t_prime, t) for t_prime in m.ShutdownTimePeriods[g] for t in (list(m.TimePeriods)+[m.TimePeriods.last()+DT]) if ( t >= t_prime + DT ))
+    model.ShutdownStartupPairs = Set(model.ThermalGenerators, initialize=ShutdownStartupPairs_generator, dimen=2)
+
+    def StartupShutdownPairs_generator(m,g):
+        UT = value(m.ScaledMinimumUpTime[g])
+        return ((t_prime, t) for t_prime in m.StartupTimePeriods[g] for t in (list(m.TimePeriods)+[m.TimePeriods.last()+UT]) if ( t >= t_prime + UT ))
+    model.StartupShutdownPairs = Set(model.ThermalGenerators, initialize=StartupShutdownPairs_generator, dimen=2)
+
+    # (g,t',t) will be an inidicator for g for shutting down at time t' and starting up at time t
+    def ShutdownStartupIndicator_index_generator(m):
+        return ((g,t_prime,t) for g in m.ThermalGenerators for t_prime,t in m.ShutdownStartupPairs[g]) 
+    model.ShutdownStartupIndicator_index=Set(initialize=ShutdownStartupIndicator_index_generator, dimen=3)
+
+    indicator_domain = (UnitInterval if _is_relaxed(model) else Binary)
+    model.ShutdownStartupIndicator=Var(model.ShutdownStartupIndicator_index, within=indicator_domain)
+
+    # (g,t',t) will be an inidicator for g for starting up at time t' and shutting down at time t
+    def StartupShutdownIndicator_index_generator(m):
+        return ((g,t_prime,t) for g in m.ThermalGenerators for t_prime,t in m.StartupShutdownPairs[g]) 
+    model.StartupShutdownIndicator_index=Set(initialize=StartupShutdownIndicator_index_generator, dimen=3)
+
+    model.StartupShutdownIndicator=Var(model.StartupShutdownIndicator_index, within=indicator_domain)
+
+    def startup_in_arcs_rule(m, g, t):
+        return sum(m.ShutdownStartupIndicator[g, t_prime, s] for (t_prime, s) in m.ShutdownStartupPairs[g] if s == t) == m.UnitStart[g,t]
+    model.StartupInArcs = Constraint(model.ThermalGenerators, model.TimePeriods, rule=startup_in_arcs_rule)
+
+    def startup_out_arcs_rule(m, g, t):
+        return sum(m.StartupShutdownIndicator[g, s, t_prime] for (s, t_prime) in m.StartupShutdownPairs[g] if s == t) == m.UnitStart[g,t]
+    model.StartupOutArcs = Constraint(model.ThermalGenerators, model.TimePeriods, rule=startup_out_arcs_rule)
+
+    def shutdown_in_arcs_rule(m, g, t):
+        return sum(m.StartupShutdownIndicator[g, t_prime, s] for (t_prime, s) in m.StartupShutdownPairs[g] if s == t) == m.UnitStop[g,t]
+    model.ShutdownInArcs = Constraint(model.ThermalGenerators, model.TimePeriods, rule=shutdown_in_arcs_rule)
+
+    def shutdown_out_arcs_rule(m, g, t):
+        return sum(m.ShutdownStartupIndicator[g, s, t_prime] for (s, t_prime) in m.ShutdownStartupPairs[g] if s == t) == m.UnitStop[g,t]
+    model.ShutdownOutArcs = Constraint(model.ThermalGenerators, model.TimePeriods, rule=shutdown_out_arcs_rule)
+
+    def unit_on_arcs_rule(m, g, t):
+        return sum(m.StartupShutdownIndicator[g, t_prime, s] for (t_prime, s) in m.StartupShutdownPairs[g] if t_prime <= t < s) == m.UnitOn[g,t]
+    model.UnitOnArcs = Constraint(model.ThermalGenerators, model.TimePeriods, rule=unit_on_arcs_rule)
+
+    def unit_init_arcs_rule(m, g):
+        return sum(m.ShutdownStartupIndicator[g, s, t_prime] for (s, t_prime) in m.ShutdownStartupPairs[g] if s < m.InitialTime) \
+             + sum(m.StartupShutdownIndicator[g, s, t_prime] for (s, t_prime) in m.StartupShutdownPairs[g] if s < m.InitialTime) \
+             == 1
+    model.UnitInitArcs = Constraint(model.ThermalGenerators, rule=unit_init_arcs_rule)
+
+    def unit_fin_arcs_rule(m, g):
+        return sum(m.ShutdownStartupIndicator[g, t_prime, s] for (t_prime, s) in m.ShutdownStartupPairs[g] if s > m.TimePeriods.last() ) \
+             + sum(m.StartupShutdownIndicator[g, t_prime, s] for (t_prime, s) in m.StartupShutdownPairs[g] if s > m.TimePeriods.last() ) \
+             == 1
+    model.UnitFinArcs = Constraint(model.ThermalGenerators, rule=unit_fin_arcs_rule)
+
+    def ComputeStartupCost_rule(m,g,t):
+        return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStart[g,t] + \
+                                      sum( (list(m.StartupCosts[g])[s-1] - m.StartupCosts[g].last()) * \
+                                         sum( m.ShutdownStartupIndicator[g,tp,t] for tp in m.ShutdownTimePeriods[g] \
+                                           if (list(m.StartupLags[g])[s-1] <= t - tp < (list(m.StartupLags[g])[s])) ) \
+                                         for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
+    model.ComputeStartupCost=Constraint(model.ThermalGenerators, model.TimePeriods, rule=ComputeStartupCost_rule)

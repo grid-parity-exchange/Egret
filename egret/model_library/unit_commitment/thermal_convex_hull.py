@@ -114,47 +114,56 @@ def ramping_polytope_block_rule(rp, g):
     P0 = model.PowerGeneratedT0[g]
     is_on = value(model.UnitOnT0[g])
 
-    if is_on:
-        start_stop_pairs = [(bt, et) for bt in timeperiods if (bt >= DT+timeperiods.first()) 
-                                for et in range(bt, timeperiods.last()+1) 
-                                if (bt+UT <= et) ] \
-                       + [ (timeperiods.first()-1, t) for t in timeperiods ] \
-                       + [ (t, timeperiods.last()+1) for t in timeperiods ] \
-                       + [ (timeperiods.first()-1, timeperiods.last()+1) ]
+    pochet_wolsey_startup = model.startup_costs in ['pochet_wolsey_startup_costs']
+    if pochet_wolsey_startup: 
+        ## in this case, we have some "y" variables to link back to
+        def get_y_expr(b, t, t_p):
+            return model.StartupShutdownIndicator[g,t,t_p]
+        rp.y = pe.Expression(model.StartupShutdownPairs[g], rule=get_y_expr)
+        start_stop_pairs = set(model.StartupShutdownPairs[g])
     else:
-        start_stop_pairs = [(bt, et) for bt in timeperiods for et in range(bt, timeperiods.last()+1) 
-                                if (bt+UT <= et) ] \
-                       + [ (t, timeperiods.last()+1) for t in timeperiods ] \
-                       + [ (timeperiods.first()-1, timeperiods.last()+1) ]
+        if is_on:
+            start_stop_pairs = [(bt, et) for bt in timeperiods if (bt >= DT+timeperiods.first()) 
+                                    for et in range(bt, timeperiods.last()+1) 
+                                    if (bt+UT <= et) ] \
+                           + [ (timeperiods.first()-1, t) for t in timeperiods ] \
+                           + [ (t, timeperiods.last()+1) for t in timeperiods ] \
+                           + [ (timeperiods.first()-1, timeperiods.last()+1) ]
+        else:
+            start_stop_pairs = [(bt, et) for bt in timeperiods for et in range(bt, timeperiods.last()+1) 
+                                    if (bt+UT <= et) ] \
+                           + [ (t, timeperiods.last()+1) for t in timeperiods ] \
+                           + [ (timeperiods.first()-1, timeperiods.last()+1) ]
 
-    start_stop_pairs = set(start_stop_pairs)
-    #print('gen: ', g, ' start_stop_pairs:', sorted(start_stop_pairs))
+        start_stop_pairs = set(start_stop_pairs)
+        #print('gen: ', g, ' start_stop_pairs:', sorted(start_stop_pairs))
 
-    ## putting upper bounds on these may cause some dual-degeneracy 
-    ## since there are implied bounds based on the UnitOn variables
-    ## Not a big deal when in a model, but as a cut subproblem we 
-    ## do not want this
-    if relaxed:
-        rp.y = pe.Var(start_stop_pairs, within=pe.NonNegativeReals)
-    else:
-        rp.y = pe.Var(start_stop_pairs, within=pe.NonNegativeIntegers)
+        ## putting upper bounds on these may cause some dual-degeneracy 
+        ## since there are implied bounds based on the UnitOn variables
+        ## Not a big deal when in a model, but as a cut subproblem we 
+        ## do not want this 
+        if relaxed:
+            rp.y = pe.Var(start_stop_pairs, within=pe.NonNegativeReals)
+        else:
+            rp.y = pe.Var(start_stop_pairs, within=pe.NonNegativeIntegers)
 
-    rp.downtime_y = pe.Constraint(timeperiods)
-    rp.on_link_y = pe.Constraint(timeperiods)
-    rp.start_link_y = pe.Constraint(timeperiods)
-    rp.stop_link_y = pe.Constraint(timeperiods)
-    for t in timeperiods:
-        rp.downtime_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et+DT) ) <= 1
-           
-        rp.on_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et) ) \
-                             == model.UnitOn[g,t]
-            
-        rp.start_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt == t) ) \
-                             == model.UnitStart[g,t]
-       
-        rp.stop_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (et == t) ) \
-                             == model.UnitStop[g,t]
-      
+        # equivalents to these constraints will have already been added
+        rp.downtime_y = pe.Constraint(timeperiods)
+        rp.on_link_y = pe.Constraint(timeperiods)
+        rp.start_link_y = pe.Constraint(timeperiods)
+        rp.stop_link_y = pe.Constraint(timeperiods)
+        for t in timeperiods:
+            rp.downtime_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et+DT) ) <= 1
+
+            rp.on_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et) ) \
+                                 == model.UnitOn[g,t]
+
+            rp.start_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt == t) ) \
+                                 == model.UnitStart[g,t]
+
+            rp.stop_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (et == t) ) \
+                                 == model.UnitStop[g,t]
+
     rp.p_ints = pe.Var(timeperiods, start_stop_pairs, within=pe.NonNegativeReals)
     rp.r_ints = pe.Var(timeperiods, start_stop_pairs, within=pe.NonNegativeReals)
 
@@ -249,7 +258,7 @@ def ramping_polytope_block_rule(rp, g):
                                                 'reserve_vars' : None,
                                                 'generation_limits' : ['gentile_generation_limits', 'pan_guan_gentile_generation_limits', 'pan_guan_gentile_KOW_generation_limits'],
                                                 'production_costs' : ['KOW_production_costs_super_tight', 'KOW_production_costs_tightened', 'rescaled_KOW_production_costs_tightened', ],
-                                                'startup_costs' : ['KOW_startup_costs'],
+                                                'startup_costs' : ['KOW_startup_costs', 'pochet_wolsey_startup_costs'],
                                                 'ancillary_service' : None,
                                                 })
 def add_convex_hull_for_all_units(model):

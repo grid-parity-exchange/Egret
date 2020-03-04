@@ -592,7 +592,7 @@ def create_CHP_unit_commitment_model(model_data,
                          'arroyo_conejo_ramping',
                          'KOW_production_costs_tightened',
                          'rajan_takriti_UT_DT_2bin',
-                         'KOW_startup_costs',
+                         'pochet_wolsey_startup_costs',
                          network_constraints,
                        ]
 
@@ -601,6 +601,49 @@ def create_CHP_unit_commitment_model(model_data,
     add_convex_hull_for_all_units(model)
 
     return model
+
+def create_super_tight_unit_commitment_model(model_data,
+                                             network_constraints='ptdf_power_flow',
+                                             relaxed=True,
+                                             **kwargs):
+    '''
+    Create a new unit commitment formulation based using the tightest formulation available
+    for each component, subject to avoiding quadratic (or worse) blow up in problem size
+
+    Used as the "master problem" pricing formulation in Knueven, Ostrowski, Castillo, 
+    and Watson (2019) "A computationally efficient algorithm for computing convex hull prices".
+    pre-print available: http://www.optimization-online.org/DB_FILE/2019/09/7370.pdf
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+        # TODO: describe the required and optional attributes
+    network_constraints : str (optional)
+        Set of network constraints to use. The default option uses a B-\\theta
+        "DC" network.
+    relaxed : bool (optional)
+        If True, creates a model with the binary variables relaxed to [0,1].
+        Default is False.
+
+    Returns
+    -------
+        pyomo.environ.ConcreteModel unit commitment model
+
+    '''
+    formulation_list = [
+                         'garver_3bin_vars',
+                         'garver_power_vars',
+                         'MLR_reserve_vars',
+                         'pan_guan_gentile_KOW_generation_limits',
+                         'damcikurt_ramping',
+                         'KOW_production_costs_super_tight',
+                         'rajan_takriti_UT_DT_2bin',
+                         'KOW_startup_costs',
+                         network_constraints,
+                       ]
+    return _get_uc_model(model_data, formulation_list, relaxed)
+
 
 def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, prepend_str):
     if len(t_subset) > 1:
