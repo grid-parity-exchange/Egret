@@ -1,13 +1,19 @@
 
+#  ___________________________________________________________________________
+#
+#  EGRET: Electrical Grid Research and Engineering Tools
+#  Copyright 2019 National Technology & Engineering Solutions of Sandia, LLC
+#  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+#  Government retains certain rights in this software.
+#  This software is distributed under the Revised BSD License.
+#  ___________________________________________________________________________
+
+## file for large thermal generator convex hull formulations
 
 import pyomo.environ as pe
 from .uc_utils import add_model_attr
 from .status_vars import _is_relaxed
 from .ramping_limits import _ramp_up_not_needed, _ramp_down_not_needed 
-
-## TODO: Should we add the wolsey start-up cost formulation to this??
-##       If so, the ramping generator logic should "grab on" to those
-#        variables, not create its own...
 
 ## used lots of places in this file
 value = pe.value
