@@ -1,4 +1,3 @@
-
 #  ___________________________________________________________________________
 #
 #  EGRET: Electrical Grid Research and Engineering Tools
