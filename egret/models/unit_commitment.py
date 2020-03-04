@@ -44,10 +44,10 @@ def create_tight_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -87,10 +87,10 @@ def create_compact_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -130,10 +130,10 @@ def create_KOW_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -173,10 +173,10 @@ def create_ALS_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -216,10 +216,10 @@ def create_MLR_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -258,10 +258,10 @@ def create_random1_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -301,10 +301,10 @@ def create_random2_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -344,10 +344,10 @@ def create_OAV_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -390,10 +390,10 @@ def create_OAV_tighter_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -433,10 +433,10 @@ def create_OAV_original_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -476,10 +476,10 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -519,10 +519,10 @@ def create_CA_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -566,10 +566,10 @@ def create_CHP_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -618,13 +618,15 @@ def create_super_tight_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
 
     Returns
     -------
