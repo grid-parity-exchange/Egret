@@ -107,6 +107,7 @@ def basic_objective(model):
     nspin = False
     supp = False
     flex = False
+    sc = False
     if hasattr(model, 'regulation_service'):
         regulation = True
     if hasattr(model, 'spinning_reserve'):
@@ -117,6 +118,8 @@ def basic_objective(model):
         supp = True
     if hasattr(model, 'flexible_ramping'):
         flex = True
+    if hasattr(model, 'security_constraints'):
+        sc = True
     
     def commitment_stage_cost_expression_rule(m, st):
         cc = sum(sum(m.NoLoadCost[g,t] + m.StartupCost[g,t] for g in m.SingleFuelGenerators) + \
@@ -144,6 +147,8 @@ def basic_objective(model):
               sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
         if m.reactive_power:
             cc += sum(m.LoadMismatchCostReactive[t] for t in m.GenerationTimeInStage[st])
+        if sc:
+            cc += sum(m.SecurityConstraintViolationCost[t] for t in m.GenerationTimeInStage[st])
         if regulation:
             cc += sum(m.RegulationCostGeneration[g,t] for g in m.AGC_Generators for t in m.GenerationTimeInStage[st]) \
                 + sum(m.RegulationCostPenalty[t] for t in m.GenerationTimeInStage[st])

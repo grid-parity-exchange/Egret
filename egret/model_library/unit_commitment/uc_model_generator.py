@@ -17,7 +17,7 @@ from egret.model_library.unit_commitment import \
         ramping_limits, production_costs, \
         uptime_downtime, startup_costs, \
         services, power_balance, reserve_requirement, \
-        objective, fuel_supply, fuel_consumption
+        objective, fuel_supply, fuel_consumption, security_constraints
 from egret.model_library.transmission.tx_utils import scale_ModelData_to_pu
 from collections import namedtuple
 import pyomo.environ as pe
@@ -122,6 +122,8 @@ def _generate_model( model_data,
     if 'fuel_supply' in model_data.data['elements'] and bool(model_data.data['elements']['fuel_supply']):
         fuel_consumption.fuel_consumption_model(model)
         fuel_supply.fuel_supply_model(model)
+    if 'security_constraint' in model_data.data['elements'] and bool(model_data.data['elements']['security_constraint']):
+        security_constraints.security_constraint_model(model)
 
     getattr(objective, _objective)(model)
 

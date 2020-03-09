@@ -1031,6 +1031,7 @@ def solve_unit_commitment(model_data,
     storage = dict(md.elements(element_type='storage'))
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
+    pg_security_constraints = dict(md.elements(element_type='security_constraint', security_constraint_type='pg'))
 
     data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
@@ -1215,6 +1216,20 @@ def solve_unit_commitment(model_data,
         s_dict['p_charge'] = _time_series_dict(p_charge_dict)
         s_dict['operational_cost'] = _time_series_dict(operational_cost_dict)
         s_dict['state_of_charge'] = _time_series_dict(state_of_charge_dict)
+
+    for sc, sc_dict in pg_security_constraints.items():
+        sc_violation = None
+        sc_flow = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
+            b = m.TransmissionBlock[mt]
+            sc_flow[dt] = value(b.pgSecurityExpression[sc])
+            if sc in b.pgRelaxedSecuritySet:
+                if sc_violation is None:
+                    sc_violation = _preallocated_list(data_time_periods)
+                sc_violation[dt] = value(b.pgSecuritySlackPos[sc] - b.pgSecuritySlackNeg[sc])
+        sc_dict['pf'] = _time_series_dict(sc_flow)
+        if sc_violation is not None:
+            sc_dict['pf_violation'] = _time_series_dict(sc_violation)
 
     ## NOTE: UC model currently has no notion of separate loads
 
