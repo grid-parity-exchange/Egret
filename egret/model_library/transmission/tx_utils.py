@@ -280,6 +280,8 @@ scaled_attributes = {
                                                         'qf',
                                                         'pt',
                                                         'qt',
+                                                        'violation_penalty',
+                                                        'pf_violation',
                                                         ],
                        ('element_type', 'shunt') : [
                                                       'bs',

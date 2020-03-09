@@ -139,6 +139,7 @@ def basic_objective(model):
                 for t in m.GenerationTimeInStage[st]) + \
               sum(m.LoadMismatchCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st]) + \
+              sum(m.BranchViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.InterfaceViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
         if m.reactive_power:

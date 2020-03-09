@@ -185,17 +185,17 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
     ## get the lines for which we've found a violation that's in the model
     viol_num = len(gt_viol)+len(lt_viol)+len(max_viol_int)+len(min_viol_int)
-    monitored_viol_num, mon_int_soft_viol_num =  _check_and_generate_flow_viol_warnings(
+    monitored_hard_viol_num, mon_soft_viol_num =  _check_and_generate_flow_viol_warnings(
                                                             mb, md, PTDF, PFV, PFV_I, prepend_str,
                                                             lt_viol, gt_viol, min_viol_int, max_viol_int,
                                                             time)
-    ## interfaces with slack that are
+    ## interfaces and branches with slack that are
     ## in the monitored set do not count
     ## toward the overall violation
     ## NOTE: This should probably be improved
     ## to see if the slack is measuring the
     ## violation correctly!
-    viol_num -= mon_int_soft_viol_num
+    viol_num -= mon_soft_viol_num
 
     ## since lb, ub are enforced as one constraint
     ## union these two sets.
@@ -325,7 +325,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
             else:
                 raise Exception("Unexpected sel_viol_type {}".format(sel_viol_type))
 
-    return PFV, PFV_I, viol_num, monitored_viol_num, viol_lazy, viol_int_lazy
+    return PFV, PFV_I, viol_num, monitored_hard_viol_num, viol_lazy, viol_int_lazy
 
 
 def _generate_flow_monitor_remove_message(flow_type, bn, slack, baseMVA, time):
@@ -407,18 +407,31 @@ def _check_and_generate_flow_viol_warnings(mb, md, PTDF, PFV, PFV_I, prepend_str
     max_viol_int_in_mb = max_viol_int.intersection(interfaces_monitored)
     min_viol_int_in_mb = min_viol_int.intersection(interfaces_monitored)
 
+    baseMVA = md.data['system']['baseMVA']
     ## print a warning for these lines
     ## check if the found violations are in the model and print warning
-    baseMVA = md.data['system']['baseMVA']
+    branches = md.data['elements']['branch']
+    branch_hard_violations = 0
+    branch_soft_violations = 0
     for i in lt_viol_in_mb:
         bn = PTDF.branches_keys_masked[i]
+        if 'violation_penalty' in branches[bn] \
+                and branches[bn]['violation_penalty'] is not None:
+            branch_soft_violations += 1
+            continue
         thermal_limit = PTDF.branch_limits_array_masked[i]
         logger.warning(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], -thermal_limit, baseMVA, time))
+        branch_hard_violations += 1
 
     for i in gt_viol_in_mb:
         bn = PTDF.branches_keys_masked[i]
+        if 'violation_penalty' in branches[bn] \
+                and branches[bn]['violation_penalty'] is not None:
+            branch_soft_violations += 1
+            continue
         thermal_limit = PTDF.branch_limits_array_masked[i]
         logger.warning(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], thermal_limit, baseMVA, time))
+        branch_hard_violations += 1
 
     ## break here if no interfaces
     if 'interface' not in md.data['elements']:
@@ -448,7 +461,7 @@ def _check_and_generate_flow_viol_warnings(mb, md, PTDF, PFV, PFV_I, prepend_str
         logger.warning(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time))
         interface_hard_violations += 1
 
-    return len(gt_viol_in_mb)+len(lt_viol_in_mb)+interface_hard_violations, interface_soft_violations
+    return branch_hard_violations+interface_hard_violations, branch_soft_violations+interface_soft_violations
 
 def _generate_flow_viol_warning(expr, e_type, bn, flow, limit, baseMVA, time):
     ret_str = "WARNING: {0} {1} is in the  monitored set".format(e_type,bn)
@@ -484,6 +497,22 @@ def _iter_over_int_viol_set(int_viol_set, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
             mb.pfi[i_n] = expr
         yield i, i_n
 
+def _generate_branch_thermal_bounds(mb, bn, thermal_limit, neg_slacks, pos_slacks):
+    neg_slack, pos_slack = None, None
+    if neg_slacks and bn in mb.pf_slack_neg:
+        neg_slack = mb.pf_slack_neg[bn]
+    if pos_slacks and bn in mb.pf_slack_pos:
+        pos_slack = mb.pf_slack_pos[bn]
+    return libbranch.generate_thermal_bounds(mb.pf[bn], -thermal_limit, thermal_limit, neg_slack, pos_slack)
+
+def _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit, neg_slacks, pos_slacks):
+    neg_slack, pos_slack = None, None
+    if neg_slacks and i_n in mb.pfi_slack_neg:
+        neg_slack = mb.pfi_slack_neg[i_n]
+    if pos_slacks and i_n in mb.pfi_slack_pos:
+        pos_slack = mb.pfi_slack_pos[i_n]
+    return libbranch.generate_thermal_bounds(mb.pfi[i_n], minimum_limit, maximum_limit, neg_slack, pos_slack)
+
 ## violation adder
 def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_options,
                     PTDF, time=None, prepend_str=""):
@@ -500,13 +529,16 @@ def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_op
 
     constr = mb.ineq_pf_branch_thermal_bounds
     viol_in_mb = mb._idx_monitored
+    pos_slacks = hasattr(mb, 'pf_slack_pos')
+    neg_slacks = hasattr(mb, 'pf_slack_neg')
     for i, bn in _iter_over_viol_set(viol_lazy, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
         thermal_limit = PTDF.branch_limits_array_masked[i]
         if PFV is None:
             logger.debug(prepend_str+_generate_flow_monitor_message('branch', bn, time=time))
         else:
             logger.debug(prepend_str+_generate_flow_monitor_message('branch', bn, PFV[i], -thermal_limit, thermal_limit, baseMVA, time))
-        constr[bn] = (-thermal_limit, mb.pf[bn], thermal_limit)
+
+        constr[bn] = _generate_branch_thermal_bounds(mb, bn, thermal_limit, neg_slacks, pos_slacks) 
         viol_in_mb.append(i)
         if persistent_solver:
             solver.add_constraint(constr[bn])
@@ -516,6 +548,8 @@ def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_op
         return
     constr = mb.ineq_pf_interface_bounds
     int_viol_in_mb = mb._interfaces_monitored
+    pos_slacks = hasattr(mb, 'pfi_slack_pos')
+    neg_slacks = hasattr(mb, 'pfi_slack_neg')
     for i, i_n in _iter_over_int_viol_set(int_viol_lazy, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
         minimum_limit = PTDF.interface_min_limits[i]
         maximum_limit = PTDF.interface_max_limits[i]
@@ -523,7 +557,7 @@ def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_op
             logger.debug(prepend_str+_generate_flow_monitor_message('interface', i_n, time=time))
         else:
             logger.debug(prepend_str+_generate_flow_monitor_message('interface', i_n, PFV_I[i], minimum_limit, maximum_limit, baseMVA, time))
-        constr[i_n] = (minimum_limit, mb.pfi[i_n], maximum_limit)
+        constr[i_n] = _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit, neg_slacks, pos_slacks)
         int_viol_in_mb.append(i)
         if persistent_solver:
             solver.add_constraint(constr[i_n])
@@ -548,10 +582,12 @@ def add_initial_monitored_branches(mb, branches, branches_in_service, ptdf_optio
 
     constr = mb.ineq_pf_branch_thermal_bounds
     viol_in_mb = mb._idx_monitored
+    pos_slacks = hasattr(mb, 'pf_slack_pos')
+    neg_slacks = hasattr(mb, 'pf_slack_neg')
     for i, bn in _iter_over_initial_set(branches, branches_in_service, PTDF):
         thermal_limit = PTDF.branch_limits_array_masked[i]
         mb.pf[bn] = libbranch.get_power_flow_expr_ptdf_approx(mb, bn, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
-        constr[bn] = (-thermal_limit, mb.pf[bn], thermal_limit)
+        constr[bn] = _generate_branch_thermal_bounds(mb, bn, thermal_limit, neg_slacks, pos_slacks) 
         viol_in_mb.append(i)
 
 def _iter_over_initial_set_interfaces(interfaces, PTDF):
@@ -568,11 +604,13 @@ def add_initial_monitored_interfaces(mb, interfaces, ptdf_options, PTDF):
 
     constr = mb.ineq_pf_interface_bounds
     int_viol_in_mb = mb._interfaces_monitored
+    pos_slacks = hasattr(mb, 'pfi_slack_pos')
+    neg_slacks = hasattr(mb, 'pfi_slack_neg')
     for i, i_n in _iter_over_initial_set_interfaces(interfaces, PTDF):
         minimum_limit = PTDF.interface_min_limits[i]
         maximum_limit = PTDF.interface_max_limits[i]
         mb.pfi[i_n] = libbranch.get_power_flow_interface_expr_ptdf(mb, i_n, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
-        constr[i_n] = (minimum_limit, mb.pfi[i_n], maximum_limit)
+        constr[i_n] = _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit, neg_slacks, pos_slacks)
         int_viol_in_mb.append(i)
 
 def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I):

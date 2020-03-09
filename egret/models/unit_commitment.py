@@ -861,10 +861,14 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
                 vars_to_load.extend(b.p_nw.values())
                 vars_to_load.extend(b.pfi_slack_neg.values())
                 vars_to_load.extend(b.pfi_slack_pos.values())
+                vars_to_load.extend(b.pf_slack_neg.values())
+                vars_to_load.extend(b.pf_slack_pos.values())
                 if t in t_subset:
                     vars_to_load_t_subset.extend(b.p_nw.values())
                     vars_to_load_t_subset.extend(b.pfi_slack_neg.values())
                     vars_to_load_t_subset.extend(b.pfi_slack_pos.values())
+                    vars_to_load_t_subset.extend(b.pf_slack_neg.values())
+                    vars_to_load_t_subset.extend(b.pf_slack_pos.values())
             else:
                 vars_to_load = None
                 vars_to_load_t_subset = None
@@ -1220,6 +1224,11 @@ def solve_unit_commitment(model_data,
             for dt, mt in enumerate(m.TimePeriods):
                 pf_dict[dt] = value(m.TransmissionBlock[mt].pf[l])
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pf_slack_pos[l] - m.TransmissionBlock[mt].pf_slack_neg[l])
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
             va_dict = _preallocated_list(data_time_periods)
@@ -1318,6 +1327,11 @@ def solve_unit_commitment(model_data,
                 ## if the key doesn't exist, it is because that line was out
                 pf_dict[dt] = flows_dict[mt].get(l, 0.)
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pf_slack_pos[l] - m.TransmissionBlock[mt].pf_slack_neg[l])
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
             va_dict = _preallocated_list(data_time_periods)
@@ -1340,6 +1354,11 @@ def solve_unit_commitment(model_data,
             for dt, mt in enumerate(m.TimePeriods):
                 pf_dict[dt] = value(m.LinePower[l,mt])
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.BranchSlackPos[l,mt] - m.BranchSlackNeg[l,mt])
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
             va_dict = _preallocated_list(data_time_periods)
