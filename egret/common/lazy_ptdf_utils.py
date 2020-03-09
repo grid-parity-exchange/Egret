@@ -189,13 +189,8 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
                                                             mb, md, PTDF, PFV, PFV_I, prepend_str,
                                                             lt_viol, gt_viol, min_viol_int, max_viol_int,
                                                             time)
-    ## interfaces and branches with slack that are
-    ## in the monitored set do not count
-    ## toward the overall violation
-    ## NOTE: This should probably be improved
-    ## to see if the slack is measuring the
-    ## violation correctly!
-    viol_num -= mon_soft_viol_num
+
+    monitored_viol_num = monitored_hard_viol_num + mon_soft_viol_num
 
     ## since lb, ub are enforced as one constraint
     ## union these two sets.
@@ -325,7 +320,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
             else:
                 raise Exception("Unexpected sel_viol_type {}".format(sel_viol_type))
 
-    return PFV, PFV_I, viol_num, monitored_hard_viol_num, viol_lazy, viol_int_lazy
+    return PFV, PFV_I, viol_num, monitored_viol_num, viol_lazy, viol_int_lazy
 
 
 def _generate_flow_monitor_remove_message(flow_type, bn, slack, baseMVA, time):
@@ -415,23 +410,31 @@ def _check_and_generate_flow_viol_warnings(mb, md, PTDF, PFV, PFV_I, prepend_str
     branch_soft_violations = 0
     for i in lt_viol_in_mb:
         bn = PTDF.branches_keys_masked[i]
+        thermal_limit = PTDF.branch_limits_array_masked[i]
         if 'violation_penalty' in branches[bn] \
                 and branches[bn]['violation_penalty'] is not None:
             branch_soft_violations += 1
-            continue
-        thermal_limit = PTDF.branch_limits_array_masked[i]
-        logger.warning(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], -thermal_limit, baseMVA, time))
-        branch_hard_violations += 1
+            log_func = logger.info
+            slack = mb.pf_slack_neg
+        else:
+            branch_hard_violations += 1
+            log_func = logger.warning
+            slack = None
+        log_func(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], -thermal_limit, baseMVA, time, slack))
 
     for i in gt_viol_in_mb:
         bn = PTDF.branches_keys_masked[i]
+        thermal_limit = PTDF.branch_limits_array_masked[i]
         if 'violation_penalty' in branches[bn] \
                 and branches[bn]['violation_penalty'] is not None:
             branch_soft_violations += 1
-            continue
-        thermal_limit = PTDF.branch_limits_array_masked[i]
-        logger.warning(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], thermal_limit, baseMVA, time))
-        branch_hard_violations += 1
+            log_func = logger.info
+            slack = mb.pf_slack_pos
+        else:
+            branch_hard_violations += 1
+            log_func = logger.warning
+            slack = None
+        log_func(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], thermal_limit, baseMVA, time, slack))
 
     ## break here if no interfaces
     if 'interface' not in md.data['elements']:
@@ -443,32 +446,42 @@ def _check_and_generate_flow_viol_warnings(mb, md, PTDF, PFV, PFV_I, prepend_str
     interface_soft_violations = 0
     for i in min_viol_int_in_mb:
         i_n = PTDF.interface_keys[i]
+        limit = PTDF.interface_min_limits[i]
         if 'violation_penalty' in interfaces[i_n] \
                 and interfaces[i_n]['violation_penalty'] is not None:
             interface_soft_violations += 1
-            continue
-        limit = PTDF.interface_min_limits[i]
-        logger.warning(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time))
-        interface_hard_violations += 1
+            log_func = logger.info
+            slack = mb.pfi_slack_neg
+        else:
+            interface_hard_violations += 1
+            log_func = logger.warning
+            slack = None
+        log_func(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time, slack))
 
     for i in max_viol_int_in_mb:
         i_n = PTDF.interface_keys[i]
+        limit = PTDF.interface_max_limits[i]
         if 'violation_penalty' in interfaces[i_n] \
                 and interfaces[i_n]['violation_penalty'] is not None:
             interface_soft_violations += 1
-            continue
-        limit = PTDF.interface_max_limits[i]
-        logger.warning(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time))
-        interface_hard_violations += 1
+            log_func = logger.info
+            slack = mb.pfi_slack_pos
+        else:
+            interface_hard_violations += 1
+            log_func = logger.warning
+            slack = None
+        log_func(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time, slack))
 
     return branch_hard_violations+interface_hard_violations, branch_soft_violations+interface_soft_violations
 
-def _generate_flow_viol_warning(expr, e_type, bn, flow, limit, baseMVA, time):
+def _generate_flow_viol_warning(expr, e_type, bn, flow, limit, baseMVA, time, slack=None):
     ret_str = "WARNING: {0} {1} is in the  monitored set".format(e_type,bn)
     if time is not None:
         ret_str += " at time {}".format(time)
     ret_str += ", but flow exceeds limit!!\n\t flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA)
     ret_str += ", model_flow={}".format(pe.value(expr[bn])*baseMVA)
+    if slack is not None:
+        ret_str += ", model_slack={}".format(pe.value(slack[bn])*baseMVA)
     return ret_str
 
 def _generate_flow_monitor_message(e_type, bn, flow=None, lower_limit=None, upper_limit=None, baseMVA=None, time=None):
