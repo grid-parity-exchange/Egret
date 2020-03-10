@@ -277,6 +277,8 @@ def declare_eq_p_balance_dc_approx(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
+                if not hasattr(eval("m." + val),bus_name):
+                    continue
                 if idx == 'include_feasibility_slack_pos':
                     p_expr -= eval("m." + val)[bus_name]
                 if idx == 'include_feasibility_slack_neg':

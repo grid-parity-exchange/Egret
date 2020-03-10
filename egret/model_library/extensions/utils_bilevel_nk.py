@@ -98,7 +98,7 @@ def relay_gen_tuple(relay_gens):
     return relay_gen_tuple
 
 
-def dict_of_relay_loads(relays, loads):
+def dict_of_relay_loads(relays, loads, buses_with_loads):
     """
     Create dictionaries of the load keys from the
     relay elements
@@ -106,19 +106,20 @@ def dict_of_relay_loads(relays, loads):
     relay_loads = {k: list() for k in relays.keys()}
 
     for load_name, load in loads.items():
-        load_relay_mappings = load['relay']
-        for r in load_relay_mappings:
-            relay_loads[r].append(load_name)
+        if load['bus'] in buses_with_loads:
+            load_relay_mappings = load['relay']
+            for r in load_relay_mappings:
+                relay_loads[r].append(load['bus'])
 
     return relay_loads
 
 
-def dict_of_load_relays(relays, loads):
+def dict_of_load_relays(relays, buses_with_loads):
     """
     Create dictionaries of the relay keys from the
     load elements
     """
-    load_relays = {k: list() for k in loads.keys()}
+    load_relays = {k: list() for k in buses_with_loads}
 
     for relay_name, relay in relays.items():
         load_relay_mappings = relay['load']
