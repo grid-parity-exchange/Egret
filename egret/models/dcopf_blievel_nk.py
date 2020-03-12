@@ -118,32 +118,34 @@ def create_gdp_subproblem(model, model_data, include_angle_diff_limits=False):
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
-    model.subproblem = bi.SubModel(fixed=(model.delta, model.u, model.v, model.w))
+    model.subproblem = bi.SubModel(fixed=(model.u, model.v, model.w))
 
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
     buses_with_loads = list(k for k in bus_p_loads.keys() if bus_p_loads[k] != 0.)
 
-    libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
-    model.pl.fix()
+    libbus.declare_var_pl(model.subproblem, bus_attrs['names'], initialize=bus_p_loads)
+    model.subproblem.pl.fix()
 
     ### declare the fixed shunts at the buses
     _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
+    libbus.declare_var_va(model.subproblem, bus_attrs['names'], initialize=bus_attrs['va'],
                           bounds=va_bounds
                           )
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
     ref_angle = md.data['system']['reference_bus_angle']
-    model.va[ref_bus].fix(radians(ref_angle))
+    model.subproblem.va[ref_bus].fix(radians(ref_angle))
 
     ### declare the generator real power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
-    libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init)
+    libgen.declare_var_pg(model.subproblem, gen_attrs['names'], initialize=pg_init,
+                          bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
+                          )
 
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -162,7 +164,7 @@ def create_gdp_subproblem(model, model_data, include_angle_diff_limits=False):
                                          vj_init[to_bus], y_matrix)
         pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
 
-    libbranch.declare_var_pf(model=model,
+    libbranch.declare_var_pf(model=model.subproblem,
                              index_set=branch_attrs['names'],
                              initialize=pf_init,
                              bounds=pf_bounds
@@ -249,7 +251,7 @@ def create_gdp_subproblem(model, model_data, include_angle_diff_limits=False):
     return model, md
 
 
-def create_explicit_subproblem(model, model_data, include_angle_diff_limits=False):
+def create_explicit_subproblem(model, model_data, include_angle_diff_limits=False, include_bigm=False):
     md = model_data
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -267,32 +269,34 @@ def create_explicit_subproblem(model, model_data, include_angle_diff_limits=Fals
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
-    model.subproblem = bi.SubModel(fixed=(model.delta, model.u, model.v, model.w))
+    model.subproblem = bi.SubModel(fixed=(model.u, model.v, model.w))
 
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
     buses_with_loads = list(k for k in bus_p_loads.keys() if bus_p_loads[k] != 0.)
 
-    libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
-    model.pl.fix()
+    libbus.declare_var_pl(model.subproblem, bus_attrs['names'], initialize=bus_p_loads)
+    model.subproblem.pl.fix()
 
     ### declare the fixed shunts at the buses
     _, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
+    libbus.declare_var_va(model.subproblem, bus_attrs['names'], initialize=bus_attrs['va'],
                           bounds=va_bounds
                           )
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
     ref_angle = md.data['system']['reference_bus_angle']
-    model.va[ref_bus].fix(radians(ref_angle))
+    model.subproblem.va[ref_bus].fix(radians(ref_angle))
 
     ### declare the generator real power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
-    libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init)
+    libgen.declare_var_pg(model.subproblem, gen_attrs['names'], initialize=pg_init,
+                          bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
+                          )
 
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -311,7 +315,7 @@ def create_explicit_subproblem(model, model_data, include_angle_diff_limits=Fals
                                          vj_init[to_bus], y_matrix)
         pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
 
-    libbranch.declare_var_pf(model=model,
+    libbranch.declare_var_pf(model=model.subproblem,
                              index_set=branch_attrs['names'],
                              initialize=pf_init,
                              bounds=pf_bounds
@@ -320,14 +324,20 @@ def create_explicit_subproblem(model, model_data, include_angle_diff_limits=Fals
     # need to include variable references on subproblem to variables, which exist on the master block
     bi.components.varref(model.subproblem)
 
-    # create big-M
-    create_bigm(model.subproblem, md)
+    if include_bigm:
+        # create big-M
+        create_bigm(model.subproblem, md)
+        ### declare the branch power flow disjuncts
+        subcons.declare_eq_branch_power_btheta_approx_bigM(model=model.subproblem,
+                                                           index_set=branch_attrs['names'],
+                                                           branches=branches
+                                                           )
+    else:
+        subcons.declare_eq_branch_power_btheta_approx_nonlin(model=model.subproblem,
+                                                           index_set=branch_attrs['names'],
+                                                           branches=branches
+                                                           )
 
-    ### declare the branch power flow disjuncts
-    subcons.declare_eq_branch_power_btheta_approx_bigM(model=model.subproblem,
-                                                       index_set=branch_attrs['names'],
-                                                       branches=branches
-                                                       )
 
     ### declare the load shed disjuncts
     subcons.declare_ineq_load_shed(model=model.subproblem,
@@ -428,7 +438,7 @@ def solve_bilevel_nk(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    opt = pe.SolverFactory('pao.bilevel.ld', solver=solver, symbolic_solver_labels=symbolic_solver_labels)
+    opt = pe.SolverFactory('pao.bilevel.ld', solver=solver)#, symbolic_solver_labels=symbolic_solver_labels)
     results = opt.solve(m, tee=solver_tee)
 
     import pdb
@@ -469,7 +479,7 @@ if __name__ == '__main__':
 
     path = os.path.dirname(__file__)
     print(path)
-    filename = 'pglib_opf_case14_ieee.m'
+    filename = 'pglib_opf_case5_pjm.m'
     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md_dict = create_ModelData(test_case)
 

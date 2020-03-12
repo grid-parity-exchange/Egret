@@ -178,6 +178,35 @@ def declare_eq_branch_power_btheta_approx_bigM(model, index_set, branches):
         m.eq_pf_branch_lb[branch_name] = m.pf[branch_name] >= \
             b * (m.va[from_bus] - m.va[to_bus] + shift) - (1 - m.w[branch_name])*m.BIGM[branch_name]
 
+def declare_eq_branch_power_btheta_approx_nonlin(model, index_set, branches):
+    """
+    Create the equality constraints for power (from BTHETA approximation)
+    in the branch as a bigM
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_power_btheta_approx_bigM_set", model, index_set)
+
+    m.eq_pf_branch_ub = pe.Constraint(con_set)
+    m.eq_pf_branch_lb = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+
+        x = branch['reactance']
+        b = -1/(tau*x)
+
+        m.eq_pf_branch_ub[branch_name] = m.pf[branch_name] == \
+            b * (m.va[from_bus] - m.va[to_bus] + shift) * m.w[branch_name]
+
 
 def declare_ineq_load_shed(model, index_set):
     """
