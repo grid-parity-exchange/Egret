@@ -21,6 +21,12 @@ from egret.data.data_utils import _recurse_into_time_index
                                                     'power_balance' : None,
                                                     })
 def security_constraint_model(model):
+    '''
+    Add generic security constraints to the unit commitment model of 
+    the form lb <= \sum_{g \in Gens} \\alpha_g (real power generation) \
+                 + \sum_{s \in Storage} \\beta_s (net storage injection) <= ub, 
+    with optional slack
+    '''
     md = model.model_data
     time_keys = md.data['system']['time_keys']
 

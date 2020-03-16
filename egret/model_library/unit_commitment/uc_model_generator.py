@@ -122,8 +122,14 @@ def _generate_model( model_data,
     if 'fuel_supply' in model_data.data['elements'] and bool(model_data.data['elements']['fuel_supply']):
         fuel_consumption.fuel_consumption_model(model)
         fuel_supply.fuel_supply_model(model)
+    else:
+        model.fuel_supply = None
+        model.fuel_consumption = None
+
     if 'security_constraint' in model_data.data['elements'] and bool(model_data.data['elements']['security_constraint']):
         security_constraints.security_constraint_model(model)
+    else:
+        model.security_constraints = None
 
     getattr(objective, _objective)(model)
 

@@ -770,7 +770,8 @@ def declare_ineq_s_branch_thermal_limit(model, index_set,
 
 def declare_ineq_p_branch_thermal_lbub(model, index_set,
                                         branches, p_thermal_limits,
-                                        approximation_type=ApproximationType.BTHETA):
+                                        approximation_type=ApproximationType.BTHETA,
+                                        slacks=False):
     """
     Create the inequality constraints for the branch thermal limits
     based on the power variables or expressions.
@@ -780,8 +781,11 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
                                model=model, index_set=index_set)
 
     # flag for if slacks are on the model
-    pos_slacks = hasattr(model, 'pf_slack_pos')
-    neg_slacks = hasattr(model, 'pf_slack_neg')
+    if slacks:
+        if not hasattr(model, 'pf_slack_pos'):
+            raise Exception('No positive slack branch variables on model, but slacks=True')
+        if not hasattr(model, 'pf_slack_neg')
+            raise Exception('No negative slack branch variables on model, but slacks=True')
 
     m.ineq_pf_branch_thermal_lb = pe.Constraint(con_set)
     m.ineq_pf_branch_thermal_ub = pe.Constraint(con_set)
@@ -792,7 +796,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
             if p_thermal_limits[branch_name] is None:
                 continue
 
-            if neg_slacks and branch_name in m.pf_slack_neg:
+            if slacks and branch_name in m.pf_slack_neg:
                 pf_bn = m.pf[branch_name]
                 if hasattr(pf_bn, 'expr') and isinstance(pf_bn.expr, LinearExpression):
                     ## create a copy
@@ -810,7 +814,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
                 m.ineq_pf_branch_thermal_lb[branch_name] = \
                     (-p_thermal_limits[branch_name], m.pf[branch_name], None)
 
-            if pos_slacks and branch_name in m.pf_slack_pos:
+            if slacks and branch_name in m.pf_slack_pos:
                 pf_bn = m.pf[branch_name]
                 if hasattr(pf_bn, 'expr') and isinstance(pf_bn.expr, LinearExpression):
                     ## create a copy
@@ -828,6 +832,13 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
                     (None, m.pf[branch_name], p_thermal_limits[branch_name])
 
 def generate_thermal_bounds(pf, llimit, ulimit, neg_slack=None, pos_slack=None):
+    """
+    Create a constraint for thermal limits on a line given the power flow
+    expression or variable pf, a lower limit llimit, a uppder limit ulimit,
+    and the negative slack variable, neg_slack, (None if not needed) and
+    positive slack variable, pos_slack, (None if not needed) added to this 
+    constraint.
+    """
     if hasattr(pf, 'expr') and isinstance(pf.expr, LinearExpression):
         ## if necessary, copy again, so that m.pf[bn] **is** the flow
         add_vars = list()
@@ -857,7 +868,8 @@ def generate_thermal_bounds(pf, llimit, ulimit, neg_slack=None, pos_slack=None):
 
 def declare_ineq_p_branch_thermal_bounds(model, index_set,
                                         branches, p_thermal_limits,
-                                        approximation_type=ApproximationType.BTHETA):
+                                        approximation_type=ApproximationType.BTHETA,
+                                        slacks=False):
     """
     Create an inequality constraint for the branch thermal limits
     based on the power variables or expressions.
@@ -865,8 +877,12 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
     m = model
     con_set = decl.declare_set('_con_ineq_p_branch_thermal_lbub',
                                model=model, index_set=index_set)
-    pos_slacks = hasattr(model, 'pf_slack_pos')
-    neg_slacks = hasattr(model, 'pf_slack_neg')
+    # flag for if slacks are on the model
+    if slacks:
+        if not hasattr(model, 'pf_slack_pos'):
+            raise Exception('No positive slack branch variables on model, but slacks=True')
+        if not hasattr(model, 'pf_slack_neg')
+            raise Exception('No negative slack branch variables on model, but slacks=True')
 
     m.ineq_pf_branch_thermal_bounds = pe.Constraint(con_set)
 
@@ -877,12 +893,12 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
             if limit is None:
                 continue
 
-            if neg_slacks and branch_name in m.pf_slack_neg:
+            if slacks and branch_name in m.pf_slack_neg:
                 neg_slack = m.pf_slack_neg[branch_name]
             else:
                 neg_slack = None
 
-            if pos_slacks and branch_name in m.pf_slack_pos:
+            if slacks and branch_name in m.pf_slack_pos:
                 pos_slack = m.pf_slack_pos[branch_name]
             else:
                 pos_slack = None
@@ -948,7 +964,8 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set, branches, coordinate_t
 
 
 def declare_ineq_p_interface_bounds(model, index_set, interfaces,
-                                        approximation_type=ApproximationType.BTHETA):
+                                        approximation_type=ApproximationType.BTHETA,
+                                        slacks=False):
     """
     Create the inequality constraints for the interface limits
     based on the power variables or expressions.
@@ -961,8 +978,12 @@ def declare_ineq_p_interface_bounds(model, index_set, interfaces,
 
     m.ineq_pf_interface_bounds = pe.Constraint(con_set)
 
-    pos_slacks = hasattr(model, 'pfi_slack_pos')
-    neg_slacks = hasattr(model, 'pfi_slack_neg')
+    # flag for if slacks are on the model
+    if slacks:
+        if not hasattr(model, 'pfi_slack_pos'):
+            raise Exception('No positive slack interface variables on model, but slacks=True')
+        if not hasattr(model, 'pfi_slack_neg')
+            raise Exception('No negative slack interface variables on model, but slacks=True')
 
     if approximation_type == ApproximationType.BTHETA or \
             approximation_type == ApproximationType.PTDF:
@@ -971,12 +992,12 @@ def declare_ineq_p_interface_bounds(model, index_set, interfaces,
             if interface['minimum_limit'] is not None or \
                     interface['maximum_limit'] is not None:
 
-                if neg_slacks and interface_name in m.pfi_slack_neg:
+                if slacks and interface_name in m.pfi_slack_neg:
                     neg_slack = m.pfi_slack_neg[interface_name]
                 else:
                     neg_slack = None
 
-                if pos_slacks and interface_name in m.pfi_slack_pos:
+                if slacks and interface_name in m.pfi_slack_pos:
                     pos_slack = m.pfi_slack_pos[interface_name]
                 else:
                     pos_slack = None

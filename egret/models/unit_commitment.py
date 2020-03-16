@@ -1036,28 +1036,14 @@ def solve_unit_commitment(model_data,
     data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
 
-    regulation = False
-    spin = False
-    nspin = False
-    supp = False
-    flex = False
-    if hasattr(m, 'regulation_service'):
-        regulation = True
-    if hasattr(m, 'spinning_reserve'):
-        spin = True
-    if hasattr(m, 'non_spinning_reserve'):
-        nspin = True
-    if hasattr(m, 'supplemental_reserve'):
-        supp = True
-    if hasattr(m, 'flexible_ramping'):
-        flex = True
+    regulation = bool(m.regulation_service)
+    spin = bool(m.spinning_reserve)
+    nspin = bool(m.non_spinning_reserve)
+    supp = bool(m.supplemental_reserve)
+    flex = bool(m.flexible_ramping)
 
-    fs = False
-    if hasattr(m, 'fuel_supply'):
-        fs = True
-    fc = False
-    if hasattr(m, 'fuel_consumption'):
-        fc = True
+    fs = bool(m.fuel_supply)
+    fc = bool(m.fuel_consumption)
 
     for g,g_dict in thermal_gens.items():
         pg_dict = _preallocated_list(data_time_periods)

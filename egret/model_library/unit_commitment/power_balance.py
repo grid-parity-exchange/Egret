@@ -186,12 +186,14 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      branches=branches,
                                                      p_thermal_limits=None,
                                                      approximation_type=None,
+                                                     slacks=True,
                                                      )
         ### declare the "blank" interface flow limits
         libbranch.declare_ineq_p_interface_bounds(model=block,
                                                 index_set=interfaces.keys(),
                                                 interfaces=interfaces,
                                                 approximation_type=None,
+                                                slacks=True,
                                                 )
 
         ### add helpers for tracking monitored branches
@@ -218,7 +220,8 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      index_set=branches_in_service,
                                                      branches=branches,
                                                      p_thermal_limits=p_max,
-                                                     approximation_type=ApproximationType.PTDF
+                                                     approximation_type=ApproximationType.PTDF,
+                                                     slacks=True
                                                      )
 
         ### declare the branch power flow approximation constraints
@@ -233,7 +236,8 @@ def _ptdf_dcopf_network_model(block,tm):
         libbranch.declare_ineq_p_interface_bounds(model=block,
                                                 index_set=interfaces.keys(),
                                                 interfaces=interfaces,
-                                                approximation_type=ApproximationType.PTDF
+                                                approximation_type=ApproximationType.PTDF,
+                                                slacks=True
                                                 )
 
 def _btheta_dcopf_network_model(block,tm):
@@ -298,7 +302,8 @@ def _btheta_dcopf_network_model(block,tm):
                                                  index_set=branches_in_service,
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
-                                                 approximation_type=ApproximationType.BTHETA
+                                                 approximation_type=ApproximationType.BTHETA,
+                                                 slacks=True
                                                  )
 
     ### declare angle difference limits on interconnected buses
@@ -326,6 +331,7 @@ def _btheta_dcopf_network_model(block,tm):
     libbranch.declare_ineq_p_interface_bounds(model=block,
                                             index_set=interfaces.keys(),
                                             interfaces=interfaces,
+                                            slacks=True
                                             )
 
     return block
