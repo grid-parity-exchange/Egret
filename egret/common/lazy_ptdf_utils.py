@@ -511,19 +511,29 @@ def _iter_over_int_viol_set(int_viol_set, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
         yield i, i_n
 
 def _generate_branch_thermal_bounds(mb, bn, thermal_limit, neg_slacks, pos_slacks):
-    neg_slack, pos_slack = None, None
     if neg_slacks and bn in mb.pf_slack_neg:
         neg_slack = mb.pf_slack_neg[bn]
+    else:
+        neg_slack = None
+
     if pos_slacks and bn in mb.pf_slack_pos:
         pos_slack = mb.pf_slack_pos[bn]
+    else:
+        neg_slack = None
+
     return libbranch.generate_thermal_bounds(mb.pf[bn], -thermal_limit, thermal_limit, neg_slack, pos_slack)
 
 def _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit, neg_slacks, pos_slacks):
-    neg_slack, pos_slack = None, None
     if neg_slacks and i_n in mb.pfi_slack_neg:
         neg_slack = mb.pfi_slack_neg[i_n]
+    else:
+        neg_slack = None
+
     if pos_slacks and i_n in mb.pfi_slack_pos:
         pos_slack = mb.pfi_slack_pos[i_n]
+    else:
+        pos_slack = None
+
     return libbranch.generate_thermal_bounds(mb.pfi[i_n], minimum_limit, maximum_limit, neg_slack, pos_slack)
 
 ## violation adder
