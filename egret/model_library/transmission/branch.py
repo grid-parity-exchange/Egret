@@ -784,7 +784,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
     if slacks:
         if not hasattr(model, 'pf_slack_pos'):
             raise Exception('No positive slack branch variables on model, but slacks=True')
-        if not hasattr(model, 'pf_slack_neg')
+        if not hasattr(model, 'pf_slack_neg'):
             raise Exception('No negative slack branch variables on model, but slacks=True')
 
     m.ineq_pf_branch_thermal_lb = pe.Constraint(con_set)
@@ -881,7 +881,7 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
     if slacks:
         if not hasattr(model, 'pf_slack_pos'):
             raise Exception('No positive slack branch variables on model, but slacks=True')
-        if not hasattr(model, 'pf_slack_neg')
+        if not hasattr(model, 'pf_slack_neg'):
             raise Exception('No negative slack branch variables on model, but slacks=True')
 
     m.ineq_pf_branch_thermal_bounds = pe.Constraint(con_set)
@@ -982,7 +982,7 @@ def declare_ineq_p_interface_bounds(model, index_set, interfaces,
     if slacks:
         if not hasattr(model, 'pfi_slack_pos'):
             raise Exception('No positive slack interface variables on model, but slacks=True')
-        if not hasattr(model, 'pfi_slack_neg')
+        if not hasattr(model, 'pfi_slack_neg'):
             raise Exception('No negative slack interface variables on model, but slacks=True')
 
     if approximation_type == ApproximationType.BTHETA or \
