@@ -519,7 +519,7 @@ def _generate_branch_thermal_bounds(mb, bn, thermal_limit, neg_slacks, pos_slack
     if pos_slacks and bn in mb.pf_slack_pos:
         pos_slack = mb.pf_slack_pos[bn]
     else:
-        neg_slack = None
+        pos_slack = None
 
     return libbranch.generate_thermal_bounds(mb.pf[bn], -thermal_limit, thermal_limit, neg_slack, pos_slack)
 
