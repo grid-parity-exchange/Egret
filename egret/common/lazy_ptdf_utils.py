@@ -667,7 +667,7 @@ def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I):
     return None, None, viol_lazy, int_viol_lazy
 
 def _binary_var_generator(instance):
-    regulation =  hasattr(instance, 'regulation_service')
+    regulation =  bool(instance.regulation_service)
     if instance.status_vars in ['CA_1bin_vars', 'garver_3bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars']:
         yield instance.UnitOn
     if instance.status_vars in ['ALS_state_transition_vars']:
