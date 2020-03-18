@@ -237,6 +237,10 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
 
     # declare the polar voltages
+    libbranch.declare_var_dva(model=model,
+                              index_set=unique_bus_pairs,
+                              initialize=0,
+                              bounds=(-pi/2, pi/2))
     libbus.declare_var_vm(model,
                           bus_attrs['names'],
                           initialize=bus_attrs['vm'],
@@ -254,6 +258,8 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     model.va[ref_bus].fix(radians(ref_angle))
 
     # relate c, s, and vmsq to vm and va
+    libbranch.declare_eq_delta_va(model=model,
+                                  index_set=unique_bus_pairs)
     libbus.declare_eq_vmsq(model=model,
                            index_set=bus_attrs['names'],
                            coordinate_type=CoordinateType.POLAR)
