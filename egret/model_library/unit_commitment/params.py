@@ -200,6 +200,19 @@ def load_params(model, model_data):
     model.LineOutOfService = Param(model.TransmissionLines, model.TimePeriods, within=Boolean, default=False,
                                     initialize=TimeMapper(branch_attrs.get('planned_outage', dict())))
 
+    _branch_penalties = dict()
+    _md_violation_penalties = branch_attrs.get('violation_penalty')
+    if _md_violation_penalties is not None:
+        for i, val in _md_violation_penalties.items():
+            if val is not None:
+                _branch_penalties[i] = val
+                if val <= 0:
+                    logger.warning("Branch {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i,val))
+
+    model.BranchesWithSlack = Set(within=model.TransmissionLines, initialize=_branch_penalties.keys())
+
+    model.BranchLimitPenalty = Param(model.BranchesWithSlack, within=NonNegativeReals, initialize=_branch_penalties)
+
     ## Interfaces
     model.Interfaces = Set(initialize=interface_attrs['names'])
 

@@ -229,7 +229,13 @@ def ancillary_services(model):
     ## add a flag for which brach we took here
     if no_reserves:
         model.nonbasic_reserves = False
+        model.regulation_service = None
+        model.spinning_reserve = None
+        model.non_spinning_reserve = None
+        model.supplemental_reserve = None
+        model.flexible_ramping = None
         return
+
     model.nonbasic_reserves = True
 
     ## check this here to avoid exceptions when the model has no ancillary services
@@ -321,19 +327,33 @@ def ancillary_services(model):
     ## except flexiramp which is it's own thing
     if add_regulation_reserve:
         regulation_services(model, zone_initializer_builder, zone_requirement_getter, gens_in_reserve_zone_getter)
+    else:
+        model.regulation_service = None
+
     if add_spinning_reserve:
         spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, gens_in_reserve_zone_getter, thermal_gen_attrs)
+    else:
+        model.spinning_reserve = None
+
     if add_non_spinning_reserve:
         non_spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, gens_in_reserve_zone_getter)
+    else:
+        model.non_spinning_reserve = None
+
     if add_supplemental_reserve:
         supplemental_reserves(model, zone_initializer_builder, zone_requirement_getter, gens_in_reserve_zone_getter, thermal_gen_attrs)
+    else:
+        model.supplemental_reserve = None
+
     if add_flexi_ramp_reserve:
         flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_getter, gens_in_reserve_zone_getter, thermal_gen_attrs)
+    else:
+        model.flexible_ramping = None
 
     ## Ancillary service capacity limits (enhance for ramping, start-up/shutdown)
 
     def ancillary_service_capacity_limit_upper(m, g, t):
-        reg = (add_regulation_reserve and (g in m.AGC_Generators))
+        reg = (bool(m.regulation_service) and (g in m.AGC_Generators))
         return m.MaximumPowerAvailable[g,t] \
                     + (m.FlexUpProvided[g,t] if add_flexi_ramp_reserve else 0.) \
                     + (m.RegulationReserveUp[g,t] if reg else 0.) \
@@ -344,9 +364,9 @@ def ancillary_services(model):
     model.AncillaryServiceCapacityLimitUpper = Constraint(model.ThermalGenerators, model.TimePeriods, rule=ancillary_service_capacity_limit_upper)
 
     def ancillary_service_capacity_limit_lower(m, g, t):
-        if not (add_flexi_ramp_reserve or add_regulation_reserve):
+        if not (bool(m.flexible_ramping) or bool(m.regulation_service)):
             return Constraint.Feasible
-        reg = (add_regulation_reserve and (g in m.AGC_Generators))
+        reg = (bool(m.regulation_service) and (g in m.AGC_Generators))
         return m.PowerGeneratedAboveMinimum[g,t] \
                     - (m.FlexDnProvided[g,t] if add_flexi_ramp_reserve else 0.) \
                     - (m.RegulationReserveDn[g,t] if reg else 0.) \
@@ -383,7 +403,7 @@ def ancillary_services(model):
 
     ## These are formulated similarly to the damci-kurt ramp limits
     def ancillary_service_ramp_up_limit(m,g,t):
-        reg = (add_regulation_reserve and (g in m.AGC_Generators))
+        reg = (bool(m.regulation_service) and (g in m.AGC_Generators))
         if t == m.InitialTime:
             return m.MaximumPowerAvailableAboveMinimum[g, t] - m.PowerGeneratedT0[g]\
                      + ((m.TimePeriodLengthMinutes/m.RegulationMinutes)*m.RegulationReserveUp[g,t] if reg else 0.) \
@@ -406,9 +426,9 @@ def ancillary_services(model):
 
     ## NOTE: for the regulation and flexible down services, these subtract from power generated at t, so they get added here
     def ancillary_service_ramp_dn_limit(m,g,t):
-        if not (add_flexi_ramp_reserve or add_regulation_reserve):
+        if not (bool(m.flexible_ramping) or bool(m.regulation_service)):
             return Constraint.Feasible
-        reg = (add_regulation_reserve and (g in m.AGC_Generators))
+        reg = (bool(m.regulation_service) and (g in m.AGC_Generators))
         if t == m.InitialTime:
             if not m.enforce_t1_ramp_rates:
                 return Constraint.Skip
@@ -644,7 +664,7 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
         return (0,m.SpinningReserveCapability[g,t])
     model.SpinningReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=spin_bounds)
 
-    regup_reserves = hasattr(model, 'regulation_service')
+    regup_reserves = bool(model.regulation_service)
     def spinning_reserve_available(m, g, t):
         spin_limit = min(value(m.SpinningReserveCapability[g,t]), value(m.NominalRampUpLimit[g]/60.*m.SpinningReserveMinutes))
         if regup_reserves and g in m.AGC_Generators:
@@ -750,8 +770,8 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
                     + m.ZonalNonSpinningReserveShortfall[rz,t]
     model.NonSpinningZonalReservesProvided = Expression(model.NonSpinReserveZones, model.TimePeriods, rule=nspin_zonal_reserves_provided)
 
-    spin_reserves = hasattr(model, 'spinning_reserve')
-    regup_reserves = hasattr(model, 'regulation_service')
+    spin_reserves = bool(model.spinning_reserve)
+    regup_reserves = bool(model.regulation_service)
 
     def enforce_zonal_non_spinning_reserve_rule(m, rz, t):
         zonal_spin_reserves = (spin_reserves and rz in m.SpinningReserveZones)
@@ -851,7 +871,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return (0,m.SupplementalReserveCapabilitySpin[g,t])
     model.SupplementalSpinReserveDispatched = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=op_bounds_spin)
 
-    nspin_reserves = hasattr(model, 'non_spinning_reserve')
+    nspin_reserves = bool(model.non_spinning_reserve)
     # thirty-minute supplemental reserve, for units which are off
     def calculate_supplemental_reserve_limit_rule_nonspin(m, g, t):
         if nspin_reserves and g in m.NonSpinGenerators:
@@ -860,8 +880,8 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
             return m.SupplementalNonSpinReserveDispatched[g, t] <= m.SupplementalReserveCapabilityNonSpin[g,t] * (1 - m.UnitOn[g, t])
     model.CalculateSupplementalReserveLimits = Constraint(model.SupplementalNonSpinGenerators, model.TimePeriods, rule=calculate_supplemental_reserve_limit_rule_nonspin)
 
-    regup_reserves = hasattr(model, 'regulation_service')
-    spin_reserves = hasattr(model, 'spinning_reserve')
+    regup_reserves = bool(model.regulation_service)
+    spin_reserves = bool(model.spinning_reserve)
     def calculate_supplemental_reserve_limit_rule_spin(m, g, t):
         spin_limit = min(value(m.SupplementalReserveCapabilitySpin[g,t]), value(m.NominalRampUpLimit[g]/60.*m.SupplementalReserveMinutes))
         regup = (regup_reserves and (g in m.AGC_Generators))

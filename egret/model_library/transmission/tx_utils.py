@@ -205,7 +205,7 @@ ancillary_service_stack = [
 ## TODO?: break apart by data that needed to be scaled down (capacity limits, power),
 ## vs. scaled up (costs, prices, etc)
 scaled_attributes = {
-                         ('element_type','generator'): [
+                         ('element_type','generator', None): [
                                                           'p_min',
                                                           'p_max',
                                                           'p_min_agc',
@@ -251,7 +251,7 @@ scaled_attributes = {
                                                           'supplemental_spinning_capacity',
                                                           'supplemental_non_spinning_capacity',
                                                        ],
-                       ('element_type','storage'): [
+                       ('element_type','storage', None): [
                                                         'energy_capacity',
                                                         'max_discharge_rate',
                                                         'min_discharge_rate',
@@ -266,13 +266,13 @@ scaled_attributes = {
                                                         'charge_cost',
                                                         'discharge_cost',
                                                    ],
-                       ('element_type','load') : [
+                       ('element_type','load', None) : [
                                                       'p_load',
                                                       'q_load',
                                                       'p_load_shed',
                                                       'q_load_shed',
                                                      ],
-                       ('element_type','branch') : [
+                       ('element_type','branch', None) : [
                                                        'rating_long_term',
                                                         'rating_short_term',
                                                         'rating_emergency',
@@ -280,8 +280,10 @@ scaled_attributes = {
                                                         'qf',
                                                         'pt',
                                                         'qt',
+                                                        'violation_penalty',
+                                                        'pf_violation',
                                                         ],
-                       ('element_type', 'shunt') : [
+                       ('element_type', 'shunt', None) : [
                                                       'bs',
                                                       'gs',
                                                       'bs_min',
@@ -289,13 +291,13 @@ scaled_attributes = {
                                                       'gs_min',
                                                       'gs_max',
                                                      ],
-                       ('element_type', 'area') : [
+                       ('element_type', 'area', None) : [
                                                       ] + \
                                                   ancillary_service_stack,
-                       ('element_type', 'zone') : [
+                       ('element_type', 'zone', None) : [
                                                       ] + \
                                                   ancillary_service_stack,
-                       ('element_type', 'interface') : [ 
+                       ('element_type', 'interface', None) : [ 
                                                          'minimum_limit',
                                                          'maximum_limit',
                                                          'pf',
@@ -305,7 +307,7 @@ scaled_attributes = {
                                                          'violation_penalty',
                                                          'pf_violation',
                                                        ],
-                       ('element_type', 'bus') : [ 
+                       ('element_type', 'bus', None) : [ 
                                                     'p_balance_violation',
                                                     'q_balance_violation',
                                                     'lmp',
@@ -314,7 +316,13 @@ scaled_attributes = {
                                                     'pl',
                                                     'ql',
                                                  ],
-                       ('system_attributes', None ) : [
+                       ('element_type', 'security_constraint', 'pg') : [ 'lower_bound',
+                                                                         'upper_bound',
+                                                                         'violation_penalty',
+                                                                         'pf',
+                                                                         'pf_violation',
+                                                                       ],
+                       ('system_attributes', None, None ) : [
                                                         'load_mismatch_cost',
                                                         'reserve_shortfall_cost',
                                                      ] + \
@@ -391,10 +399,12 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
         md = model_data.clone()
     baseMVA = float(md.data['system']['baseMVA'])
 
-    for (attr_type, element_type), attributes in scaled_attributes.items():
+    for (attr_type, element_type, element_subtype), attributes in scaled_attributes.items():
 
         if attr_type == 'system_attributes':
             system_dict = md.data['system']
+            assert element_type is None
+            assert element_subtype is None
             for name, sys_attr in system_dict.items():
                 if name in attributes:
                     transform_func(system_dict, name, sys_attr, baseMVA)
@@ -403,10 +413,18 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
             if element_type not in md.data['elements']:
                 continue
             element_dict = md.data['elements'][element_type]
-            for name, element in element_dict.items():
-                for attr_name, attr in element.items():
-                    if attr_name in attributes:
-                        transform_func(element, attr_name, attr, baseMVA)
+            if element_subtype is None:
+                for name, element in element_dict.items():
+                    for attr_name, attr in element.items():
+                        if attr_name in attributes:
+                            transform_func(element, attr_name, attr, baseMVA)
+            else: ## allow for different actions depending on the subtype
+                for name, element in element_dict.items():
+                    element_subtype_key = element_type+'_type'
+                    if element_subtype == element[element_subtype_key]:
+                        for attr_name, attr in element.items():
+                            if attr_name in attributes:
+                                transform_func(element, attr_name, attr, baseMVA)
 
     if inplace:
         return

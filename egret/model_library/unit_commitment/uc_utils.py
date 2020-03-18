@@ -32,7 +32,7 @@ def add_model_attr(attr, requires = {}):
                 warnings.warn(msg)
             # this checks to see if the required components were already added
             for base_attr in requires:
-                if not hasattr(model, base_attr):
+                if (not hasattr(model, base_attr)) or (getattr(model, base_attr) is None):
                     msg = "Warning: adding %s! %s requires some %s to be added first!"%(func.__name__, func.__name__, base_attr)
                     logger.warning(msg)
                     warnings.warn(msg)
