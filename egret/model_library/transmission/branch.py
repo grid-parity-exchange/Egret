@@ -172,7 +172,7 @@ def declare_eq_branch_dva(model, index_set, branches):
             m.va[from_bus] - m.va[to_bus] + shift
 
 
-def declare_eq_delta_va(model, index_set, branches):
+def declare_eq_delta_va(model, index_set):
     """
     Create the equality constraints for the angle difference
     in the branch
@@ -183,7 +183,7 @@ def declare_eq_delta_va(model, index_set, branches):
     con_set = decl.declare_set("_con_eq_delta_va_set", model, index_set)
     m.eq_delta_va = pe.Constraint(con_set)
 
-    for for from_bus, to_bus in con_set:
+    for from_bus, to_bus in con_set:
         m.eq_delta_va[(from_bus, to_bus)] = m.dva[(from_bus, to_bus)] == m.va[from_bus] - m.va[to_bus]
 
 
