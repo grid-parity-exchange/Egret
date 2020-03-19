@@ -154,14 +154,14 @@ def test_super_tight_uc_model():
     _test_uc_model(create_super_tight_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_uc_runner():
-    test_names = ['tiny_uc_{}'.format(i) for i in range(1,8+1)]
+    test_names = ['tiny_uc_{}'.format(i) for i in range(1,9+1)]
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
-        md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+        md_in = ModelData.read(input_json_file_name)
         md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0)
 
         reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
-        md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
+        md_reference = ModelData.read(reference_json_file_name)
         assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_transmission_models():
