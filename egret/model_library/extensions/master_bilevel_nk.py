@@ -22,7 +22,7 @@ def declare_budget(model, k, relays):
     """
     m = model
 
-    m.budget = pe.Constraint(expr=(None, sum(m.delta[r] for r in relays), k))
+    m.budget = pe.Constraint(expr=sum(m.delta[r] for r in relays) <= k)
 
 
 def declare_load_compromised(model, index_set):

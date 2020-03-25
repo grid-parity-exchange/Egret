@@ -145,7 +145,6 @@ def declare_ineq_gen_off(model, index_set, gens):
             m.pg[gen_name] == 0.
 
 
-
 def declare_eq_branch_power_btheta_approx_bigM(model, index_set, branches):
     """
     Create the equality constraints for power (from BTHETA approximation)
@@ -177,6 +176,7 @@ def declare_eq_branch_power_btheta_approx_bigM(model, index_set, branches):
 
         m.eq_pf_branch_lb[branch_name] = m.pf[branch_name] >= \
             b * (m.va[from_bus] - m.va[to_bus] + shift) - (1 - m.w[branch_name])*m.BIGM[branch_name]
+
 
 def declare_eq_branch_power_btheta_approx_nonlin(model, index_set, branches):
     """
@@ -220,13 +220,10 @@ def declare_ineq_load_shed(model, index_set):
     m.ineq_load_shed_lb = pe.Constraint(con_set)
 
     for bus_name in index_set:
-        if m.pl[bus_name] != 0.:
-            continue
-
         m.ineq_load_shed_ub[bus_name] = \
             m.load_shed[bus_name] <= m.pl[bus_name]
         m.ineq_load_shed_lb[bus_name] = \
-            m.pl[bus_name]*m.u[bus_name] <= m.load_shed[bus_name]
+            m.pl[bus_name]*(1-m.u[bus_name]) <= m.load_shed[bus_name]
 
 
 def declare_ineq_gen(model, index_set, gens):
@@ -246,5 +243,6 @@ def declare_ineq_gen(model, index_set, gens):
         m.ineq_gen_ub[gen_name] = \
             m.pg[gen_name] <= m.v[gen_name]*gen['p_max']
         m.ineq_gen_lb[gen_name] = \
-            m.v[gen_name]*gen['p_min'] <= m.pg[gen_name]
+            m.v[gen_name]*0. <= m.pg[gen_name] # assumes LB is zero generation
+            #m.v[gen_name] * gen['p_min'] <= m.pg[gen_name] # TODO: implementation of feasible bilevel for when p_min > 0.
 
