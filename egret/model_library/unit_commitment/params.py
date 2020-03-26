@@ -1125,7 +1125,7 @@ def load_params(model, model_data):
                 curve = _curve_cache[p_min, p_max, nlc]
                 if one_cost_curve or curve['cost_curve'] == cost_curve:
                     m.PowerGenerationPiecewisePoints[g,t] = curve['points']
-                    m.PowerGenerationPiecewiseValues[g,t] = curve['cost_values']
+                    m.PowerGenerationPiecewiseCostValues[g,t] = curve['cost_values']
                     _minimum_production_cost[g,t] = curve['min_production']
                     continue
 
@@ -1144,7 +1144,7 @@ def load_params(model, model_data):
             curve = {'points':points, 'cost_values':values, 'min_production':min_production}
             if not one_cost_curve:
                 curve['cost_curve'] = cost_curve
-            _curve_cache[p_min, p_max, min_production] = curve
+            _curve_cache[p_min, p_max, nlc] = curve
 
             m.PowerGenerationPiecewisePoints[g,t] = points
             m.PowerGenerationPiecewiseCostValues[g,t] = values
