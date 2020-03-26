@@ -187,8 +187,8 @@ def load_params(model, model_data):
     
     model.TransmissionLines = Set(initialize=branch_attrs['names'])
     
-    model.BusFrom = Param(model.TransmissionLines, initialize=branch_attrs.get('from_bus', dict()))
-    model.BusTo   = Param(model.TransmissionLines, initialize=branch_attrs.get('to_bus', dict()))
+    model.BusFrom = Param(model.TransmissionLines, within=model.Buses, initialize=branch_attrs.get('from_bus', dict()))
+    model.BusTo   = Param(model.TransmissionLines, within=model.Buses, initialize=branch_attrs.get('to_bus', dict()))
 
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
