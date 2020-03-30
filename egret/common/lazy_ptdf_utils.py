@@ -88,7 +88,7 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
 
     if abs_flow_tol < lazy_rel_flow_tol:
         raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
-                        " abs_flow_tol={0}, lazy_flow_tol={1}, baseMVA={2}".format(abs_flow_tol*baseMVA, lazy_flow_tol, baseMVA))
+                        " abs_flow_tol={0}, lazy_rel_flow_tol={1}, baseMVA={2}".format(abs_flow_tol*baseMVA, lazy_rel_flow_tol, baseMVA))
 
     if ptdf_options['kv_threshold_type'] not in ['one', 'both']:
         raise Exception("kv_threshold_type must be either 'one' (for at least one end of the line"
