@@ -145,6 +145,29 @@ def declare_ineq_gen_off(model, index_set, gens):
             m.pg[gen_name] == 0.
 
 
+def declare_ineq_p_branch_thermal_lbub_switch(model, index_set, p_thermal_limits):
+    """
+    Create the inequality constraints for the branch thermal limits
+    based on the power variables or expressions.
+    """
+    m = model
+    con_set = decl.declare_set('_con_ineq_p_branch_thermal_lbub',
+                               model=model, index_set=index_set)
+
+    m.ineq_pf_branch_thermal_lb = pe.Constraint(con_set)
+    m.ineq_pf_branch_thermal_ub = pe.Constraint(con_set)
+
+    for branch_name in con_set:
+        if p_thermal_limits[branch_name] is None:
+            continue
+
+        m.ineq_pf_branch_thermal_lb[branch_name] = \
+            -p_thermal_limits[branch_name]*m.w[branch_name] <= m.pf[branch_name]
+
+        m.ineq_pf_branch_thermal_ub[branch_name] = \
+            m.pf[branch_name] <= p_thermal_limits[branch_name]*m.w[branch_name]
+
+
 def declare_eq_branch_power_btheta_approx_bigM(model, index_set, branches):
     """
     Create the equality constraints for power (from BTHETA approximation)

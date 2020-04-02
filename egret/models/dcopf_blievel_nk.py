@@ -46,7 +46,7 @@ def _create_bigm(model, md):
         x = branch['reactance']
         b = -1/(tau*x)
 
-        model.BIGM[branch_name] = b * (2*pi + shift) + 1.
+        model.BIGM[branch_name] = b * (2*pi + shift) + 1000.
 
 
 def create_master(model_data, k=1):
@@ -195,12 +195,29 @@ def create_explicit_subproblem(model, model_data, include_angle_diff_limits=Fals
                                                            index_set=branch_attrs['names'],
                                                            branches=branches
                                                            )
+
+        ### declare the real power flow limits
+        p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+        subcons.declare_ineq_p_branch_thermal_lbub_switch(model=model.subproblem,
+                                                          index_set=branch_attrs['names'],
+                                                          p_thermal_limits=p_max
+                                                          )
+
     else:
         ### declare the branch power flow with indicator variable in the bilinear term
         subcons.declare_eq_branch_power_btheta_approx_nonlin(model=model.subproblem,
-                                                           index_set=branch_attrs['names'],
-                                                           branches=branches
-                                                           )
+                                                             index_set=branch_attrs['names'],
+                                                             branches=branches
+                                                             )
+
+        ### declare the real power flow limits
+        p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+        libbranch.declare_ineq_p_branch_thermal_lbub(model=model.subproblem,
+                                                     index_set=branch_attrs['names'],
+                                                     branches=branches,
+                                                     p_thermal_limits=p_max,
+                                                     approximation_type=ApproximationType.BTHETA
+                                                     )
 
 
     ### declare the load shed
@@ -224,15 +241,6 @@ def create_explicit_subproblem(model, model_data, include_angle_diff_limits=Fals
                                           approximation_type=ApproximationType.BTHETA,
                                           **rhs_kwargs
                                           )
-
-    ### declare the real power flow limits
-    p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    libbranch.declare_ineq_p_branch_thermal_lbub(model=model.subproblem,
-                                                 index_set=branch_attrs['names'],
-                                                 branches=branches,
-                                                 p_thermal_limits=p_max,
-                                                 approximation_type=ApproximationType.BTHETA
-                                                 )
 
     ### declare angle difference limits on interconnected buses
     if include_angle_diff_limits:
@@ -287,7 +295,7 @@ def solve_bilevel_nk(model_data,
     ### create upper-level of the bilevel problem
     m, md = create_master(md,attack_budget_k)
     ### create lower-level of the bilevel problem
-    m, md = create_explicit_subproblem(m, md)
+    m, md = create_explicit_subproblem(m, md,include_bigm=False)
 
     ### use PAO (Pyomo-extension) to do the following:
     ### 1. Transform the lower-level primal problem into it's corresponding dual problem
