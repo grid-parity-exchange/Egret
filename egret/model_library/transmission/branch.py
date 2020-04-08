@@ -165,6 +165,8 @@ def declare_eq_branch_dva(model, index_set, branches):
     """
     Create the equality constraints for the angle difference
     in the branch
+
+    dva = va[from_bus] - va[to_bus] + transformer_phase_shift
     """
     m = model
 
@@ -184,6 +186,21 @@ def declare_eq_branch_dva(model, index_set, branches):
         m.eq_dva_branch[branch_name] = \
             m.dva[branch_name] == \
             m.va[from_bus] - m.va[to_bus] + shift
+
+
+def declare_eq_delta_va(model, index_set):
+    """
+    Create the equality constraints for the angle difference
+    in the branch
+
+    dva = va[from_bus] - va[to-bus]
+    """
+    m = model
+    con_set = decl.declare_set("_con_eq_delta_va_set", model, index_set)
+    m.eq_delta_va = pe.Constraint(con_set)
+
+    for from_bus, to_bus in con_set:
+        m.eq_delta_va[(from_bus, to_bus)] = m.dva[(from_bus, to_bus)] == m.va[from_bus] - m.va[to_bus]
 
 
 def declare_expr_c(model, index_set, coordinate_type=CoordinateType.POLAR):
@@ -245,7 +262,7 @@ def declare_eq_c(model, index_set, coordinate_type=CoordinateType.POLAR):
     if coordinate_type == CoordinateType.POLAR:
         for from_bus, to_bus in con_set:
             m.eq_c[(from_bus, to_bus)] = (m.c[(from_bus, to_bus)] ==
-                                          m.vm[from_bus] * m.vm[to_bus] * pe.cos(m.va[from_bus] - m.va[to_bus]))
+                                          m.vm[from_bus] * m.vm[to_bus] * pe.cos(m.dva[(from_bus, to_bus)]))
     elif coordinate_type == CoordinateType.RECTANGULAR:
         for from_bus, to_bus in con_set:
             m.eq_c[(from_bus, to_bus)] = (m.c[(from_bus, to_bus)] ==
@@ -265,7 +282,7 @@ def declare_eq_s(model, index_set, coordinate_type=CoordinateType.POLAR):
     if coordinate_type == CoordinateType.POLAR:
         for from_bus, to_bus in con_set:
             m.eq_s[(from_bus, to_bus)] = (m.s[(from_bus, to_bus)] ==
-                                          m.vm[from_bus] * m.vm[to_bus] * pe.sin(m.va[from_bus] - m.va[to_bus]))
+                                          m.vm[from_bus] * m.vm[to_bus] * pe.sin(m.dva[(from_bus, to_bus)]))
     elif coordinate_type == CoordinateType.RECTANGULAR:
         for from_bus, to_bus in con_set:
             m.eq_s[(from_bus, to_bus)] = (m.s[(from_bus, to_bus)] ==
