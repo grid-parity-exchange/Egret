@@ -13,7 +13,7 @@ different computations for transmission models
 """
 import math
 import numpy as np
-import scipy as sp
+import scipy.sparse as sp
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
@@ -322,7 +322,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         col.append(idx_col)
         data.append(-val)
 
-    J11 = sp.sparse.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
+    J11 = sp.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
     return J11.tocsr()
 
 
@@ -370,7 +370,7 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         col.append(idx_col)
         data.append(-val)
 
-    L11 = sp.sparse.coo_matrix((data,(row,col)),shape=(_len_branch,_len_bus))
+    L11 = sp.coo_matrix((data,(row,col)),shape=(_len_branch,_len_bus))
     return L11.tocsr()
 
 
@@ -413,8 +413,8 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
         col.append(idx_col)
         data.append(b)
 
-    phi_from = sp.sparse.coo_matrix((data,(row_from,col)), shape=(_len_bus,_len_branch))
-    phi_to = sp.sparse.coo_matrix((data,(row_to,col)), shape=(_len_bus,_len_branch))
+    phi_from = sp.coo_matrix((data,(row_from,col)), shape=(_len_bus,_len_branch))
+    phi_to = sp.coo_matrix((data,(row_to,col)), shape=(_len_bus,_len_branch))
 
     return phi_from.tocsr(), phi_to.tocsr()
 
@@ -458,8 +458,8 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
         col.append(idx_col)
         data.append(g)
 
-    phi_loss_from = sp.sparse.coo_matrix((data,(row_from,col)),shape=(_len_bus,_len_branch))
-    phi_loss_to = sp.sparse.coo_matrix((data,(row_to,col)),shape=(_len_bus,_len_branch))
+    phi_loss_from = sp.coo_matrix((data,(row_from,col)),shape=(_len_bus,_len_branch))
+    phi_loss_to = sp.coo_matrix((data,(row_to,col)),shape=(_len_bus,_len_branch))
 
     return phi_loss_from.tocsr(), phi_loss_to.tocsr()
 
@@ -588,10 +588,10 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
     M = A@J
 
-    ref_bus_row = sp.sparse.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
-    ref_bus_col = sp.sparse.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
+    ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
+    ref_bus_col = sp.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
  
-    J0 = sp.sparse.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
+    J0 = sp.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
 
     if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
         ## the resulting matrix after inversion will be fairly dense,
@@ -622,8 +622,8 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
             _tmp = np.vstack([_tmp,0])
             B = np.concatenate((B,_tmp), axis=1)
         row_idx = list(_sparse_mapping_branch.keys())
-        PTDF = sp.sparse.lil_matrix((_len_branch,_len_bus))
-        _ptdf = sp.sparse.linalg.spsolve(J0.transpose().tocsr(), B).T
+        PTDF = sp.lil_matrix((_len_branch,_len_bus))
+        _ptdf = sp.linalg.spsolve(J0.transpose().tocsr(), B).T
         PTDF[row_idx] = _ptdf[:,:-1]
 
     return PTDF
@@ -679,10 +679,10 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     M2 = AA@L
     M = M1 + 0.5 * M2
 
-    ref_bus_row = sp.sparse.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
-    ref_bus_col = sp.sparse.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
+    ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
+    ref_bus_col = sp.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
 
-    J0 = sp.sparse.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
+    J0 = sp.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
 
     if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
         ## the resulting matrix after inversion will be fairly dense,
@@ -719,12 +719,12 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
             B_L = np.concatenate((B_L, _tmp_L), axis=1)
 
         row_idx = list(_sparse_mapping_branch.keys())
-        PTDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
-        _ptdf = sp.sparse.linalg.spsolve(J0.transpose().tocsr(), B_J).T
+        PTDF = sp.lil_matrix((_len_branch, _len_bus))
+        _ptdf = sp.linalg.spsolve(J0.transpose().tocsr(), B_J).T
         PTDF[row_idx] = _ptdf[:, :-1]
 
-        LDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
-        _ldf = sp.sparselinalg.spsolve(J0.transpose().tocsr(), B_L).T
+        LDF = sp.lil_matrix((_len_branch, _len_bus))
+        _ldf = sp.linalg.spsolve(J0.transpose().tocsr(), B_L).T
         LDF[row_idx] = _ldf[:, :-1]
 
     M1 = A@Jc
@@ -811,7 +811,7 @@ def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus
         col.append(idx_col)
         data.append(1)
 
-    adjacency_matrix = sp.sparse.coo_matrix((data,(row,col)), shape=(_len_bus, _len_branch))
+    adjacency_matrix = sp.coo_matrix((data,(row,col)), shape=(_len_bus, _len_branch))
     return adjacency_matrix.tocsr()
 
 
@@ -819,7 +819,7 @@ def calculate_absolute_adjacency_matrix(adjacency_matrix):
     """
     Calculates the absolute value of the adjacency matrix
     """
-    return sp.absolute(adjacency_matrix)
+    return np.absolute(adjacency_matrix)
 
 def check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx):
     """
@@ -841,9 +841,9 @@ def check_network_connection(branches, index_set_branch, index_set_bus, mapping_
 
     data = np.ones((len(branches),), dtype=int)
 
-    graph = sp.sparse.coo_matrix((data,(row,col)), shape=(_len_bus, _len_bus)).tocsr()
+    graph = sp.coo_matrix((data,(row,col)), shape=(_len_bus, _len_bus)).tocsr()
 
-    n_components, labels = sp.sparse.csgraph.connected_components(csgraph=graph, directed=False, return_labels=True)
+    n_components, labels = sp.csgraph.connected_components(csgraph=graph, directed=False, return_labels=True)
 
     if n_components > 1:
         logger.warning("Network is disconnected. Number of components: {}".format(n_components))
