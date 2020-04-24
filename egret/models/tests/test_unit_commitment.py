@@ -14,17 +14,43 @@ import json
 import os
 import math
 
-import pytest
 import unittest
 from pyomo.opt import SolverFactory, TerminationCondition
 from pyomo.core.plugins.transform.relax_integrality \
         import RelaxIntegrality
+from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 from egret.models.unit_commitment import *
 from egret.data.model_data import ModelData
+from egret.common.solver_interface import _set_options
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 test_cases = [os.path.join(current_dir,'uc_test_instances', 'test_case_{}.json'.format(i)) for i in range(1,6)]
 test_int_objvals = [4201915.017320504, 5454367.7670904165, 5999272.361123627, 5461120.3231092375, 6062406.32677043]
+
+## for FP comparisons
+rel_tol = 1e-08
+
+solver_list = ['gurobi_persistent', 'cplex_persistent', 'gurobi', 'cplex']
+test_solver = None
+comm_mip_avail = False
+for solver in solver_list:
+    try:
+        if SolverFactory(solver).available():
+            test_solver = solver
+            comm_mip_avail = True
+            break
+    except:
+        continue
+if test_solver is None: 
+    for solver in ['cbc', 'glpk']:
+        try:
+            if SolverFactory(solver).available():
+                test_solver = solver
+                break
+        except:
+            continue
+if test_solver is None:
+    raise RuntimeError("No MIP/LP solver found for unit commitment tests")
 
 def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
 
@@ -33,21 +59,17 @@ def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
         md_dict = json.load(open(test_case,'r'))
         md = ModelData(md_dict)
         
-        if relax:
-            model = uc_model(md, relaxed=relax)
-            opt = SolverFactory('cbc')
-        else:
-            model = uc_model(md)
-            opt = SolverFactory('gurobi')
-            if opt == None:
-                # one of gurobi or cplex should be available, per the check for existence below
-                opt = SolverFactory('cplex')
-            opt.options['mipgap'] = 0.0
+        model = uc_model(md, relaxed=relax)
+        opt = SolverFactory(test_solver)
+        _set_options(opt, mipgap=0.0)
 
+        if isinstance(opt, PersistentSolver):
+            opt.set_instance(model)
+        
         result = opt.solve(model, tee=False)
 
         assert result.solver.termination_condition == TerminationCondition.optimal
-        assert math.isclose(ref_objval, result.problem.upper_bound)
+        assert math.isclose(ref_objval, result.problem.upper_bound, rel_tol=rel_tol)
 
 def _make_get_dcopf_uc_model(network):
     def get_dcopf_uc_model(model_data, relaxed=False, **kwargs):
@@ -58,8 +80,7 @@ def _make_get_dcopf_uc_model(network):
     return get_dcopf_uc_model
 
 ## definitely skip MIP tests if we don't have one of gurobi or cplex available
-@unittest.skipUnless(SolverFactory('gurobi').available() or SolverFactory('cplex').available(), "Neither Gurobi or CPLEX solver is available")
-@pytest.mark.mip
+@unittest.skipUnless(comm_mip_avail, "Neither Gurobi or CPLEX solver is available")
 def test_int_all_uc_models():
     _test_uc_model(create_tight_unit_commitment_model)
     _test_uc_model(create_compact_unit_commitment_model)
@@ -73,6 +94,8 @@ def test_int_all_uc_models():
     _test_uc_model(create_OAV_original_unit_commitment_model)
     _test_uc_model(create_OAV_up_downtime_unit_commitment_model)
     _test_uc_model(create_CA_unit_commitment_model)
+    _test_uc_model(create_CHP_unit_commitment_model)
+    _test_uc_model(create_super_tight_unit_commitment_model)
 
 def test_tight_uc_model():
     lp_obj_list = [4194720.23424, 5441076.85034, 5988496.92621, 5453617.47912, 6055376.54656]
@@ -122,41 +145,51 @@ def test_CA_uc_model():
     lp_obj_list = [4185855.30972, 5423650.80043, 5965411.93718, 5439434.94733, 6029118.03019]
     _test_uc_model(create_CA_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
+def test_CHP_uc_model():
+    lp_obj_list = [4195062.031337061, 5441117.29937132, 5989325.835633724, 5454266.5169105325, 6055624.773215021]
+    _test_uc_model(create_CHP_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
+def test_super_tight_uc_model():
+    lp_obj_list = [4194720.234239616, 5441076.850336192, 5988496.926211054, 5453617.479118543, 6055376.546557944]
+    _test_uc_model(create_super_tight_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
+
 def test_uc_runner():
-    test_names = ['tiny_uc_{}'.format(i) for i in range(1,6+1)]
+    test_names = ['tiny_uc_{}'.format(i) for i in range(1,9+1)]
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
-        md_in = ModelData(json.load(open(input_json_file_name, 'r')))
-        md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0)
+        md_in = ModelData.read(input_json_file_name)
+        md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0)
 
         reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
-        md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-        assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+        md_reference = ModelData.read(reference_json_file_name)
+        assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_transmission_models():
 
     ## the network tests can optionally specify some kwargs so we can pass them into solve_unit_commitment
     tc_networks = {'btheta_power_flow': [dict()], 'ptdf_power_flow':[{'ptdf_options': {'lazy':False}}, dict()], 'power_balance_constraints':[dict()],}
     no_network = 'copperplate_power_flow'
-    test_names = ['tiny_uc_tc', 'tiny_uc_tc_2'] ## based on tiny_uc_1, tiny_uc_tc_2 has an interface
+    test_names = ['tiny_uc_tc', 'tiny_uc_tc_2','tiny_uc_tc_3', 'tiny_uc_tc_4', 'tiny_uc_tc_5', 'tiny_uc_tc_6']
+    ## based on tiny_uc, tiny_uc_tc_2 has an interface, tiny_uc_tc_3 has a relaxed interface, tiny_uc_tc_4 has a relaxed flow limit
 
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
-        md_in = ModelData(json.load(open(input_json_file_name, 'r')))
+        md_in = ModelData.read(input_json_file_name)
         for tc in tc_networks:
             for kwargs in tc_networks[tc]:
 
-                md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(tc), **kwargs)
+                md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(tc), **kwargs)
                 reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
-                md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-                assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+                md_reference = ModelData.read(reference_json_file_name)
+                assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
     ## test copperplate
     test_name = 'tiny_uc_1'
-    md_results = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(no_network))
+    md_in = ModelData.read(os.path.join(current_dir, 'uc_test_instances', 'tiny_uc_tc_2.json'))
+    md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(no_network))
     reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
-    md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+    md_reference = ModelData.read(reference_json_file_name)
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_relaxation():
     test_name = 'tiny_uc_tc'
@@ -164,10 +197,10 @@ def test_uc_relaxation():
 
     md_in = ModelData(json.load(open(input_json_file_name, 'r')))
 
-    md_results = solve_unit_commitment(md_in, solver='cbc', solver_options={'presolve': 'off', 'primalS':''}, relaxed=True)
+    md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True)
     reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_relaxed_results.json')
     md_reference = ModelData(json.load(open(reference_json_file_name, 'r')))
-    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'])
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_lazy_ptdf_thresholding():
     test_name = 'tiny_uc_tc'
@@ -197,8 +230,8 @@ def test_uc_lazy_ptdf_thresholding():
                         (ntc_cost, {'branch_kv_threshold':301, 'kv_threshold_type':'both'}),
                        ]
     for c, ptdf_opt in ptdf_sol_options:
-        md_results = solve_unit_commitment(md_in, solver='cbc', solver_options={'presolve': 'off', 'primalS':''}, relaxed=True, ptdf_options=ptdf_opt)
-        assert math.isclose(c, md_results.data['system']['total_cost'])
+        md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, ptdf_options=ptdf_opt)
+        assert math.isclose(c, md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_ptdf_termination():
     test_name = 'tiny_uc_tc_3'
@@ -207,7 +240,7 @@ def test_uc_ptdf_termination():
     md_in = ModelData(json.load(open(input_json_file_name, 'r')))
 
     kwargs = {'ptdf_options':{'lazy': True, 'rel_ptdf_tol':10.}}
-    md_results, results = solve_unit_commitment(md_in, solver='cbc', solver_options={'presolve': 'off', 'primalS':''}, relaxed=True, return_results=True, **kwargs)
+    md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, return_results=True, **kwargs)
 
     assert results.egret_metasolver['iterations'] == 1
 
@@ -221,12 +254,12 @@ def test_uc_ptdf_serialization_deserialization():
     ptdf_file_name = test_name+'.pickle'
 
     kwargs = {'ptdf_options' : {'save_to': ptdf_file_name}}
-    md_serialization = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
+    md_serialization = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
 
     ## ensure the file is present
     assert os.path.isfile(ptdf_file_name)
 
     kwargs = {'ptdf_options' : {'load_from': ptdf_file_name}}
-    md_deserialization = solve_unit_commitment(md_in, solver='cbc', mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
+    md_deserialization = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
 
-    assert math.isclose(md_serialization.data['system']['total_cost'], md_deserialization.data['system']['total_cost'])
+    assert math.isclose(md_serialization.data['system']['total_cost'], md_deserialization.data['system']['total_cost'], rel_tol=rel_tol)

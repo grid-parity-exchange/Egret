@@ -13,6 +13,8 @@ import math
 from functools import lru_cache
 
 from .uc_utils import add_model_attr 
+from .generation_limits import _get_look_back_periods, _get_look_forward_periods
+
 component_name = 'production_costs'
 
 ## NOTE: for now we'll just consider all piecewise variables to represent
@@ -21,8 +23,8 @@ component_name = 'production_costs'
 
 # a function for use in piecewise linearization of the cost function.
 @lru_cache()
-def _production_cost_function(m, g, t, x):
-    return m.TimePeriodLengthHours * m.PowerGenerationPiecewiseValues[g,t][x]
+def _production_cost_function(m, g, t, i):
+    return m.TimePeriodLengthHours * m.PowerGenerationPiecewiseCostValues[g,t][i]
 
 def _compute_total_production_cost(model):
 
@@ -43,7 +45,7 @@ def _compute_total_production_cost(model):
                 break
     
                 #slope * production
-        return sum( (_production_cost_function(m,g,t,piecewise_points[l+1]) - _production_cost_function(m,g,t,piecewise_points[l])) / (piecewise_points[l+1] - piecewise_points[l]) * piecewise_eval[l] for l in range(len(piecewise_eval))) 
+        return sum( (_production_cost_function(m,g,t,l+1) - _production_cost_function(m,g,t,l)) / (piecewise_points[l+1] - piecewise_points[l]) * piecewise_eval[l] for l in range(len(piecewise_eval))) 
     
     model.ComputeProductionCosts = compute_production_costs_rule
 
@@ -57,7 +59,7 @@ def _get_piecewise_production_generators(model):
                     yield g,t
     model.PiecewiseGeneratorTimeIndexSet = Set(dimen=2, initialize=piecewise_generators_time_set)
 
-    # two points -> not linear
+    # two points -> linear
     def linear_generators_time_set(m):
         for g in m.ThermalGenerators:
             for t in m.TimePeriods:
@@ -92,11 +94,11 @@ def _basic_production_costs_constr(model):
 
     def piecewise_production_costs_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1]) - _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i]))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) *
+            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) *
            m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1)) 
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i = 0
-            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1]) - _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i]))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
+            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
         else:
             return m.ProductionCost[g,t] == 0.
     
@@ -125,11 +127,11 @@ def _rescaled_basic_production_costs_constr(model):
 
     def piecewise_production_costs_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1]) - _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i])) *
+            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i)) *
            m.UnitPiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1)) 
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i = 0
-            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1]) - _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i]))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
+            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
         else:
             return m.ProductionCost[g,t] == 0.
     
@@ -215,32 +217,30 @@ def KOW_production_costs_super_tight(model, rescaled=False):
         _basic_production_costs_vars(model)
 
     def piecewise_production_limits_from_start_stops_rule(m, g, t, i):
-        SU = value(m.ScaledStartupRampLimit[g])
-        SD = value(m.ScaledShutdownRampLimit[g])
-        RU = value(m.ScaledNominalRampUpLimit[g])
-        RD = value(m.ScaledNominalRampDownLimit[g])
-        if RU == 0. or RD == 0.:
+        RU = m.ScaledNominalRampUpLimit
+        RD = m.ScaledNominalRampDownLimit
+        if value(RU[g,t]) == 0. or value(RD[g,t]) == 0.:
             ## again, if we can't ramp, there will be no power above minimum
             return m.PowerGenerationPiecewisePoints[g,t][i] <= 0.
-        maxP = value(m.MaximumPowerOutput[g])
-        time_RU = max(math.floor((maxP-SU)/RU), 0)
-        time_RD = max(math.floor((maxP-SD)/RD), 0)
+        SU = m.ScaledStartupRampLimit
+        SD = m.ScaledShutdownRampLimit
+
         UT = value(m.ScaledMinimumUpTime[g])
-        SU_time_limit = min(time_RU, UT-1, t-value(m.InitialTime))
-        SD_time_limit = min(time_RD, UT-2-SU_time_limit, value(m.NumTimePeriods)-t-1)
+        SU_time_limit = _get_look_back_periods(m,g,t,UT-1)
+        SD_time_limit = _get_look_forward_periods(m,g,t,UT-2-SU_time_limit)
         full_range = (UT >= max(SU_time_limit,0) + max(SD_time_limit,0) + 2)
         ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
         ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
         upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
         lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-        minP = value(m.MinimumPowerOutput[g])
+        minP = m.MinimumPowerOutput
         su_step = {}
         sd_step = {}
         for j in range(0,SU_time_limit+1):
-            su_step[j] = _step_coeff(upper, lower, SU+j*RU-minP)
+            su_step[j] = _step_coeff(upper, lower, value(SU[g,t-j]-minP[g,t-j]) + value(sum(RU[g,t-i] for i in range(1,j+1))))
         ## grab one more if we don't cover the full range
         for j in range(0,SD_time_limit+1+(0 if full_range else 1)):
-            sd_step[j] = _step_coeff(upper, lower, SD+j*RD-minP)
+            sd_step[j] = _step_coeff(upper, lower, value(SD[g,t+j]-minP[g,t+j])+value(sum(RD[g,t+i] for i in range(1,j+1))))
 
         expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
                                         - sum(su_step[j]*m.UnitStart[g,t-j] for j in range(0,SU_time_limit+1)) \
@@ -249,26 +249,24 @@ def KOW_production_costs_super_tight(model, rescaled=False):
         if not full_range: 
             j = SD_time_limit+1
             if t+1+j <= value(m.NumTimePeriods):
-                expr -= max(su_step[SU_time_limit]-sd_step[j], 0)*m.UnitStop[g,t+1+j]
+                expr -= max(sd_step[j]-su_step[SU_time_limit],0)*m.UnitStop[g,t+1+j]
         return m.PiecewiseProduction[g,t,i] <= expr      
     model.PiecewiseProductionLimits = Constraint( model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_limits_from_start_stops_rule )
     
     def piecewise_production_limits_from_stops_start_rule(m, g, t, i):
         ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
         ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
-        SU = value(m.ScaledStartupRampLimit[g])
-        SD = value(m.ScaledShutdownRampLimit[g])
-        RU = value(m.ScaledNominalRampUpLimit[g])
-        RD = value(m.ScaledNominalRampDownLimit[g])
-        if RU == 0. or RD == 0.:
+        RU = m.ScaledNominalRampUpLimit
+        RD = m.ScaledNominalRampDownLimit
+        if value(RU[g,t]) == 0. or value(RD[g,t]) == 0.:
             ## again, if we can't ramp, there will be no power above minimum
             return m.PowerGenerationPiecewisePoints[g,t][i] <= 0.
-        maxP = value(m.MaximumPowerOutput[g])
-        time_RU = max(math.floor((maxP-SU)/RU), 0)
-        time_RD = max(math.floor((maxP-SD)/RD), 0)
+        SU = m.ScaledStartupRampLimit
+        SD = m.ScaledShutdownRampLimit
+
         UT = value(m.ScaledMinimumUpTime[g])
-        SD_time_limit = min(time_RD, UT-1, value(m.NumTimePeriods)-t-1)
-        SU_time_limit = min(time_RU, UT-2-SD_time_limit, t-value(m.InitialTime))
+        SD_time_limit = _get_look_forward_periods(m,g,t,UT-1)
+        SU_time_limit = _get_look_back_periods(m,g,t,UT-2-SD_time_limit)
 
         # in this case, this will give the same constraint as the rule above
         if (UT >= max(SU_time_limit,0) + max(SD_time_limit,0) + 2) or (SD_time_limit < 0):
@@ -277,20 +275,20 @@ def KOW_production_costs_super_tight(model, rescaled=False):
         ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
         upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
         lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-        minP = value(m.MinimumPowerOutput[g])
+        minP = m.MinimumPowerOutput
         su_step = {}
         sd_step = {}
         for j in range(0,SU_time_limit+2):
-            su_step[j] = _step_coeff(upper, lower, SU+j*RU-minP)
+            su_step[j] = _step_coeff(upper, lower, value(SU[g,t-j]-minP[g,t-j]) + value(sum(RU[g,t-i] for i in range(1,j+1))))
         for j in range(0,SD_time_limit+1):
-            sd_step[j] = _step_coeff(upper, lower, SD+j*RD-minP)
+            sd_step[j] = _step_coeff(upper, lower, value(SD[g,t+j]-minP[g,t+j])+value(sum(RD[g,t+i] for i in range(1,j+1))))
         expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
                                         - sum(su_step[j]*m.UnitStart[g,t-j] for j in range(0,SU_time_limit+1)) \
                                         - sum(sd_step[j]*m.UnitStop[g,t+1+j] for j in range(0,SD_time_limit+1))
 
         j = SU_time_limit+1
         if (t-j) >= value(m.InitialTime):
-            expr -= max(sd_step[SD_time_limit]-su_step[j],0)*m.UnitStart[g,t-j]
+            expr -= max(su_step[j]-sd_step[SD_time_limit],0)*m.UnitStart[g,t-j]
         return m.PiecewiseProduction[g,t,i] <= expr
     model.PiecewiseProductionLimits2 = Constraint( model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_limits_from_stops_start_rule )
 
@@ -315,14 +313,15 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
         ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
         upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
         lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-        SU = value(m.ScaledStartupRampLimit[g])
-        minP = value(m.MinimumPowerOutput[g])
+        SU = value(m.ScaledStartupRampLimit[g,t])
+        UT = value(m.ScaledMinimumUpTime[g])
+        minP = value(m.MinimumPowerOutput[g,t])
 
         su_step = _step_coeff(upper, lower, SU-minP)
         if t < value(m.NumTimePeriods):
-            SD = value(m.ScaledShutdownRampLimit[g])
+            SD = value(m.ScaledShutdownRampLimit[g,t])
             sd_step = _step_coeff(upper, lower, SD-minP)
-            if m.MinimumUpTime[g] > 1:
+            if UT > 1:
                 return m.PiecewiseProduction[g,t,i] <= (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
                                         - su_step*m.UnitStart[g,t] \
                                         - sd_step*m.UnitStop[g,t+1] 
@@ -330,7 +329,7 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
                 expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
                                         - su_step*m.UnitStart[g,t] 
                 if tightened:
-                    expr -= max(su_step - sd_step, 0)*m.UnitStop[g,t+1]
+                    expr -= max(sd_step - su_step, 0)*m.UnitStop[g,t+1]
                 return m.PiecewiseProduction[g,t,i] <= expr 
 
         else: ## t >= value(m.NumTimePeriods)
@@ -342,19 +341,20 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
     def piecewise_production_limits_rule2(m, g, t, i):
         ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
         ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
-        if m.MinimumUpTime[g] <= 1 and t < value(m.NumTimePeriods):
+        UT = value(m.ScaledMinimumUpTime[g])
+        if UT <= 1 and t < value(m.NumTimePeriods):
             upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
             lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-            SD = value(m.ScaledShutdownRampLimit[g])
-            minP = value(m.MinimumPowerOutput[g])
+            SD = value(m.ScaledShutdownRampLimit[g,t])
+            minP = value(m.MinimumPowerOutput[g,t])
 
             sd_step = _step_coeff(upper, lower, SD-minP)
             expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
                                         - sd_step*m.UnitStop[g,t+1] 
             if tightened:
-                SU = value(m.ScaledStartupRampLimit[g])
+                SU = value(m.ScaledStartupRampLimit[g,t])
                 su_step = _step_coeff(upper, lower, SU-minP)
-                expr -= max(sd_step - su_step, 0)*m.UnitStart[g,t]
+                expr -= max(su_step - sd_step, 0)*m.UnitStart[g,t]
             return m.PiecewiseProduction[g,t,i] <= expr
         else: ## MinimumUpTime[g] > 1 or we added it in the t == value(m.NumTimePeriods) clause above
             return Constraint.Skip
@@ -445,7 +445,7 @@ def _CW_production_costs_garver(model):
     model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
-        return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, m.PowerGenerationPiecewisePoints[g,t][i]))*m.PiecewiseProductionFrac[g,t,i] for i in range(1, len(m.PowerGenerationPiecewisePoints[g,t])))
+        return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, i))*m.PiecewiseProductionFrac[g,t,i] for i in range(1, len(m.PowerGenerationPiecewisePoints[g,t])))
 
     model.ProductionCostConst = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
@@ -517,7 +517,7 @@ def _SLL_production_costs(model, ideal=True):
     model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
     def piecewise_production_costs_rule(m, g, t):
-        return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, m.PowerGenerationPiecewisePoints[g,t][i]))*m.PiecewiseProductionFrac[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])))
+        return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, i))*m.PiecewiseProductionFrac[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])))
 
     model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
@@ -553,7 +553,7 @@ def SLL_production_costs(model):
                                             })
 def SLL_production_costs_tightened(model):
     '''
-    Based on SOS2 mdodel S_2 from
+    Based on SOS2 model S_2 from
 
     Sridhar, S. Linderoth, J., and Luedtke, J. Locally ideal formulations with
     indicator variables. Operation Research Letters 41 (2013) 627-632
@@ -574,21 +574,21 @@ def SLL_production_costs_tightened(model):
         return None ## indicates we ran off the end...which shouldn't happen
 
     def piecewise_production_frac_limits_startup_rule0(m, g, t):
-        upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledStartupRampLimit[g]-m.MinimumPowerOutput[g]))
+        upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledStartupRampLimit[g,t]-m.MinimumPowerOutput[g,t]))
         return sum( m.PiecewiseProductionFrac[g,t,i] for i in range(upper_limit+1) ) >= m.UnitStart[g,t]
     model.PiecewiseProductionSumStartup0 = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_frac_limits_startup_rule0 )
 
     def piecewise_production_frac_limits_startup_rule1(m, g, t):
-        upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledStartupRampLimit[g]-m.MinimumPowerOutput[g]))
-        if m.ScaledStartupRampLimit[g]-m.MinimumPowerOutput[g] == m.PowerGenerationPiecewisePoints[g,t][upper_limit]:
+        upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledStartupRampLimit[g,t]-m.MinimumPowerOutput[g,t]))
+        if m.ScaledStartupRampLimit[g,t]-m.MinimumPowerOutput[g,t] == m.PowerGenerationPiecewisePoints[g,t][upper_limit]:
             return Constraint.Skip
-        frac_from_before = 1 - (m.ScaledStartupRampLimit[g]-m.MinimumPowerOutput[g] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])/(m.PowerGenerationPiecewisePoints[g,t][upper_limit] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])
+        frac_from_before = 1 - (m.ScaledStartupRampLimit[g,t]-m.MinimumPowerOutput[g,t] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])/(m.PowerGenerationPiecewisePoints[g,t][upper_limit] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])
         return sum( m.PiecewiseProductionFrac[g,t,i] for i in range(upper_limit) ) >= frac_from_before* m.UnitStart[g,t]
     model.PiecewiseProductionSumStartup1 = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_frac_limits_startup_rule1 )
 
     def piecewise_production_frac_limits_shutdown_rule0(m, g, t):
         if t < value(m.NumTimePeriods):
-            upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledShutdownRampLimit[g]-m.MinimumPowerOutput[g]))
+            upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledShutdownRampLimit[g,t]-m.MinimumPowerOutput[g,t]))
             return sum( m.PiecewiseProductionFrac[g,t,i] for i in range(upper_limit+1) ) >= m.UnitStop[g,t+1]
         else:
             return Constraint.Skip
@@ -597,10 +597,10 @@ def SLL_production_costs_tightened(model):
     def piecewise_production_frac_limits_shutdown_rule1(m, g, t):
         if t >= value(m.NumTimePeriods):
             return Constraint.Skip
-        upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledShutdownRampLimit[g]-m.MinimumPowerOutput[g]))
-        if m.ScaledShutdownRampLimit[g]-m.MinimumPowerOutput[g] == m.PowerGenerationPiecewisePoints[g,t][upper_limit]:
+        upper_limit = _get_susd_upper_index(tuple(m.PowerGenerationPiecewisePoints[g,t]), value(m.ScaledShutdownRampLimit[g,t]-m.MinimumPowerOutput[g,t]))
+        if m.ScaledShutdownRampLimit[g,t]-m.MinimumPowerOutput[g,t] == m.PowerGenerationPiecewisePoints[g,t][upper_limit]:
             return Constraint.Skip
-        frac_from_before = 1 - (m.ScaledShutdownRampLimit[g]-m.MinimumPowerOutput[g] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])/(m.PowerGenerationPiecewisePoints[g,t][upper_limit] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])
+        frac_from_before = 1 - (m.ScaledShutdownRampLimit[g,t]-m.MinimumPowerOutput[g,t] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])/(m.PowerGenerationPiecewisePoints[g,t][upper_limit] - m.PowerGenerationPiecewisePoints[g,t][upper_limit-1])
         return sum( m.PiecewiseProductionFrac[g,t,i] for i in range(upper_limit) ) >= frac_from_before* m.UnitStop[g,t+1]
     model.PiecewiseProductionSumShutdown1 = Constraint( model.ThermalGenerators, model.TimePeriods, rule=piecewise_production_frac_limits_shutdown_rule1 )
 
@@ -642,8 +642,8 @@ def basic_production_costs_envelope(model):
 
         x0 = m.PowerGenerationPiecewisePoints[g,t][i]
         x1 = m.PowerGenerationPiecewisePoints[g,t][i+1]
-        y0 = _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i])
-        y1 = _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1])
+        y0 = _production_cost_function(m,g,t,i)
+        y1 = _production_cost_function(m,g,t,i+1)
         slope = (y1 - y0)/ (x1 - x0) 
         intercept = -slope*x0 + y0
         return m.ProductionCost[g,t] >= slope*m.PowerGeneratedAboveMinimum[g,t] + intercept
@@ -673,8 +673,8 @@ def HB_production_costs(model):
 
         x0 = m.PowerGenerationPiecewisePoints[g,t][i]
         x1 = m.PowerGenerationPiecewisePoints[g,t][i+1]
-        y0 = _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i])
-        y1 = _production_cost_function(m,g,t, m.PowerGenerationPiecewisePoints[g,t][i+1])
+        y0 = _production_cost_function(m,g,t,i)
+        y1 = _production_cost_function(m,g,t,i+1)
         slope = (y1 - y0)/ (x1 - x0) 
         intercept = -slope*x0 + y0
 

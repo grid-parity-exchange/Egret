@@ -80,6 +80,24 @@ def _setup_egret_network_topology(m,tm):
     return buses, branches, branches_in_service, branches_out_service, interfaces
 
 
+def _setup_branch_slacks(m,block,tm):
+    ### declare the interface slack variables
+    libbranch.declare_var_pf_slack_pos(model=block,
+                                        index_set=m.BranchesWithSlack,
+                                        bounds=(0, None),
+                                        )
+    libbranch.declare_var_pf_slack_neg(model=block,
+                                        index_set=m.BranchesWithSlack,
+                                        bounds=(0, None),
+                                        )
+
+    ### add the interface slack cost to the main model
+    m.BranchViolationCost[tm] = \
+            sum(m.TimePeriodLengthHours*m.BranchLimitPenalty[i]*( \
+                 block.pf_slack_pos[i] + block.pf_slack_neg[i] )
+                for i in m.BranchesWithSlack)
+
+
 def _setup_interface_slacks(m,block,tm):
     ### declare the interface slack variables
     libbranch.declare_var_pfi_slack_pos(model=block,
@@ -130,6 +148,8 @@ def _ptdf_dcopf_network_model(block,tm):
                              index_set=branches_in_service,
                              )
 
+    _setup_branch_slacks(m,block,tm)
+
     ### interface setup
     libbranch.declare_expr_pfi(model=block,
                                index_set=interfaces.keys()
@@ -166,12 +186,14 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      branches=branches,
                                                      p_thermal_limits=None,
                                                      approximation_type=None,
+                                                     slacks=True,
                                                      )
         ### declare the "blank" interface flow limits
         libbranch.declare_ineq_p_interface_bounds(model=block,
                                                 index_set=interfaces.keys(),
                                                 interfaces=interfaces,
                                                 approximation_type=None,
+                                                slacks=True,
                                                 )
 
         ### add helpers for tracking monitored branches
@@ -198,7 +220,8 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      index_set=branches_in_service,
                                                      branches=branches,
                                                      p_thermal_limits=p_max,
-                                                     approximation_type=ApproximationType.PTDF
+                                                     approximation_type=ApproximationType.PTDF,
+                                                     slacks=True
                                                      )
 
         ### declare the branch power flow approximation constraints
@@ -213,7 +236,8 @@ def _ptdf_dcopf_network_model(block,tm):
         libbranch.declare_ineq_p_interface_bounds(model=block,
                                                 index_set=interfaces.keys(),
                                                 interfaces=interfaces,
-                                                approximation_type=ApproximationType.PTDF
+                                                approximation_type=ApproximationType.PTDF,
+                                                slacks=True
                                                 )
 
 def _btheta_dcopf_network_model(block,tm):
@@ -253,8 +277,8 @@ def _btheta_dcopf_network_model(block,tm):
     libbranch.declare_var_pf(model=block,
                              index_set=branches_in_service,
                              initialize=None,
-                             bounds=pf_bounds
                              )
+    _setup_branch_slacks(m,block,tm)
 
     ### declare the branch power flow approximation constraints
     libbranch.declare_eq_branch_power_btheta_approx(model=block,
@@ -278,7 +302,8 @@ def _btheta_dcopf_network_model(block,tm):
                                                  index_set=branches_in_service,
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
-                                                 approximation_type=ApproximationType.BTHETA
+                                                 approximation_type=ApproximationType.BTHETA,
+                                                 slacks=True
                                                  )
 
     ### declare angle difference limits on interconnected buses
@@ -306,6 +331,7 @@ def _btheta_dcopf_network_model(block,tm):
     libbranch.declare_ineq_p_interface_bounds(model=block,
                                             index_set=interfaces.keys(),
                                             interfaces=interfaces,
+                                            slacks=True
                                             )
 
     return block
@@ -366,9 +392,9 @@ def _add_load_mismatch(model):
     over_gen_maxes = {}
     over_gen_times_per_bus = {b: list() for b in model.Buses}
     for b in model.Buses:
-        gen = sum(value(model.MaximumPowerOutput[g]) for g in model.ThermalGeneratorsAtBus[b])
         for t in model.TimePeriods:
-            total_gen = gen + sum(value(model.MinNondispatchablePower[n,t]) for n in model.NondispatchableGeneratorsAtBus[b])
+            total_gen = sum(value(model.MaximumPowerOutput[g,t]) for g in model.ThermalGeneratorsAtBus[b])
+            total_gen += sum(value(model.MinNondispatchablePower[n,t]) for n in model.NondispatchableGeneratorsAtBus[b])
             total_gen -= value(model.Demand[b,t])
             if total_gen > 0:
                 over_gen_maxes[b,t] = total_gen
@@ -531,6 +557,9 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
     model.TransmissionBlock = Block(model.TimePeriods, concrete=True)
 
     # for interface violation costs at a time step
+    model.BranchViolationCost = Expression(model.TimePeriods, rule=lambda m,t:0.)
+
+    # for interface violation costs at a time step
     model.InterfaceViolationCost = Expression(model.TimePeriods, rule=lambda m,t:0.)
 
     for tm in model.TimePeriods:
@@ -593,10 +622,29 @@ def power_balance_constraints(model, slacks=True):
 
     # system variables
     # amount of power flowing along each line, at each time period
+    model.BranchesWithoutSlacks = model.TransmissionLines - model.BranchesWithSlack
     def line_power_bounds_rule(m, l, t):
-        return (-m.ThermalLimit[l], m.ThermalLimit[l])
+        if l in m.BranchesWithoutSlacks:
+            return (-m.ThermalLimit[l], m.ThermalLimit[l])
+        return (None, None)
     model.LinePower = Var(model.TransmissionLines, model.TimePeriods, bounds=line_power_bounds_rule)
+
+    model.BranchSlackPos = Var(model.BranchesWithSlack, model.TimePeriods, within=NonNegativeReals)
+    model.BranchSlackNeg = Var(model.BranchesWithSlack, model.TimePeriods, within=NonNegativeReals)
     
+    def line_power_upper_bound(m, l, t):
+        return m.LinePower[l,t] <= m.ThermalLimit[l] + m.BranchSlackPos[l,t]
+    model.LinePowerUB = Constraint(model.BranchesWithSlack, model.TimePeriods, rule=line_power_upper_bound)
+
+    def line_power_lower_bound(m, l, t):
+        return -m.ThermalLimit[l] - m.BranchSlackNeg[l,t] <=  m.LinePower[l,t]
+    model.LinePowerLB = Constraint(model.BranchesWithSlack, model.TimePeriods, rule=line_power_lower_bound)
+
+    def branch_violation_cost_rule(m,t):
+        return sum(m.TimePeriodLengthHours*m.BranchLimitPenalty[l]*(m.BranchSlackPos[l,t]+m.BranchSlackNeg[l,t]) \
+                    for l in m.BranchesWithSlack)
+    model.BranchViolationCost = Expression(model.TimePeriods, rule=branch_violation_cost_rule)
+
     # voltage angles at the buses (S) (lock the first bus at 0) in radians
     model.Angle = Var(model.Buses, model.TimePeriods, within=Reals, bounds=(-3.14159265,3.14159265))
     

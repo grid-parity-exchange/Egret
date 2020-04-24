@@ -17,7 +17,7 @@ component_name = 'power_vars'
 def _add_reactive_power_vars(model):
 
     def reactive_power_bounds_rule(m,g,t):
-        return (m.MinimumReactivePowerOutput[g], m.MaximumReactivePowerOutput[g])
+        return (m.MinimumReactivePowerOutput[g,t], m.MaximumReactivePowerOutput[g,t])
     model.ReactivePowerGenerated = Var(model.ThermalGenerators, model.TimePeriods, within=Reals, bounds=reactive_power_bounds_rule)
 
 ## garver/ME power variables (above minimum)
@@ -37,13 +37,13 @@ def garver_power_vars(model):
 
     # amount of power produced by each generator above minimum, at each time period.
     def garver_power_bounds_rule(m, g, t):
-        return (0, m.MaximumPowerOutput[g]-m.MinimumPowerOutput[g])
+        return (0, m.MaximumPowerOutput[g,t]-m.MinimumPowerOutput[g,t])
 
     model.PowerGeneratedAboveMinimum = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=garver_power_bounds_rule) 
     
     ## Note: these only get used in system balance constraints
     def power_generated_expr_rule(m, g, t):
-        return m.PowerGeneratedAboveMinimum[g,t] + m.MinimumPowerOutput[g]*m.UnitOn[g,t]
+        return m.PowerGeneratedAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
     model.PowerGenerated = Expression(model.ThermalGenerators, model.TimePeriods, rule=power_generated_expr_rule)
 
     return
@@ -59,13 +59,13 @@ def basic_power_vars(model):
 
     # amount of power produced by each generator, at each time period.
     def power_bounds_rule(m, g, t):
-        return (0, m.MaximumPowerOutput[g])
+        return (0, m.MaximumPowerOutput[g,t])
     model.PowerGenerated = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=power_bounds_rule) 
 
     
     # This allows for automatic substitution in some places, such as PiecewisePorductionSum in production_costs
     def power_generated_expr_rule(m, g, t):
-        return m.PowerGenerated[g,t] - m.MinimumPowerOutput[g]*m.UnitOn[g,t]
+        return m.PowerGenerated[g,t] - m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
     model.PowerGeneratedAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=power_generated_expr_rule)
 
     return
@@ -84,9 +84,9 @@ def rescaled_power_vars(model):
     model.UnitPowerGeneratedAboveMinimum = Var(model.ThermalGenerators, model.TimePeriods, within=UnitInterval)
 
     def power_generated_above_min_expr_rule(m, g, t):
-        return (m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g])*m.UnitPowerGeneratedAboveMinimum[g,t]
+        return (m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t])*m.UnitPowerGeneratedAboveMinimum[g,t]
     model.PowerGeneratedAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=power_generated_above_min_expr_rule)
 
     def power_generated_expr_rule(m, g, t):
-        return m.PowerGeneratedAboveMinimum[g,t] + m.MinimumPowerOutput[g]*m.UnitOn[g,t]
+        return m.PowerGeneratedAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
     model.PowerGenerated = Expression(model.ThermalGenerators, model.TimePeriods, rule=power_generated_expr_rule)

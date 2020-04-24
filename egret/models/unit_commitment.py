@@ -44,10 +44,10 @@ def create_tight_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -87,10 +87,10 @@ def create_compact_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -130,10 +130,10 @@ def create_KOW_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -173,10 +173,10 @@ def create_ALS_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -216,10 +216,10 @@ def create_MLR_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -258,10 +258,10 @@ def create_random1_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -301,10 +301,10 @@ def create_random2_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -344,10 +344,10 @@ def create_OAV_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -390,10 +390,10 @@ def create_OAV_tighter_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -433,10 +433,10 @@ def create_OAV_original_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -476,10 +476,10 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -519,10 +519,10 @@ def create_CA_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -547,6 +547,104 @@ def create_CA_unit_commitment_model(model_data,
                          network_constraints,
                        ]
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
+
+def create_CHP_unit_commitment_model(model_data,
+                                     network_constraints='ptdf_power_flow',
+                                     relaxed=True,
+                                     **kwargs):
+    '''
+    Create a new unit commitment model based on the "extensive form" convex hull
+    pricing formulation from Knueven, Ostrowski, Castillo, and Watson (2019) 
+    "A computationally efficient algorithm for computing convex hull prices".
+    pre-print available: http://www.optimization-online.org/DB_FILE/2019/09/7370.pdf
+
+    NOTE: This model asserts that certain products (storage, dual-fuel units, 
+          ancillary services) are not part of the problem, so as to accurately
+          return convex hull prices.
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    network_constraints : str (optional)
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
+    relaxed : bool (optional)
+        If True, creates a model with the binary variables relaxed to [0,1].
+        Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
+
+    Returns
+    -------
+        pyomo.environ.ConcreteModel unit commitment model
+
+    '''
+    from egret.model_library.unit_commitment.thermal_convex_hull import \
+            add_convex_hull_for_all_units
+
+    formulation_list = [
+                         'garver_3bin_vars',
+                         'garver_power_vars',
+                         'MLR_reserve_vars',
+                         'gentile_generation_limits',
+                         'arroyo_conejo_ramping',
+                         'KOW_production_costs_tightened',
+                         'rajan_takriti_UT_DT_2bin',
+                         'pochet_wolsey_startup_costs',
+                         network_constraints,
+                       ]
+
+    model = _get_uc_model(model_data, formulation_list, relaxed)
+
+    add_convex_hull_for_all_units(model)
+
+    return model
+
+def create_super_tight_unit_commitment_model(model_data,
+                                             network_constraints='ptdf_power_flow',
+                                             relaxed=True,
+                                             **kwargs):
+    '''
+    Create a new unit commitment formulation based using the tightest formulation available
+    for each component, subject to avoiding quadratic (or worse) blow up in problem size
+
+    Used as the "master problem" pricing formulation in Knueven, Ostrowski, Castillo, 
+    and Watson (2019) "A computationally efficient algorithm for computing convex hull prices".
+    pre-print available: http://www.optimization-online.org/DB_FILE/2019/09/7370.pdf
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    network_constraints : str (optional)
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
+    relaxed : bool (optional)
+        If True, creates a model with the binary variables relaxed to [0,1].
+        Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
+
+    Returns
+    -------
+        pyomo.environ.ConcreteModel unit commitment model
+
+    '''
+    formulation_list = [
+                         'garver_3bin_vars',
+                         'garver_power_vars',
+                         'MLR_reserve_vars',
+                         'pan_guan_gentile_KOW_generation_limits',
+                         'damcikurt_ramping',
+                         'KOW_production_costs_super_tight',
+                         'rajan_takriti_UT_DT_2bin',
+                         'KOW_startup_costs',
+                         network_constraints,
+                       ]
+    return _get_uc_model(model_data, formulation_list, relaxed)
 
 
 def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, prepend_str):
@@ -763,10 +861,14 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
                 vars_to_load.extend(b.p_nw.values())
                 vars_to_load.extend(b.pfi_slack_neg.values())
                 vars_to_load.extend(b.pfi_slack_pos.values())
+                vars_to_load.extend(b.pf_slack_neg.values())
+                vars_to_load.extend(b.pf_slack_pos.values())
                 if t in t_subset:
                     vars_to_load_t_subset.extend(b.p_nw.values())
                     vars_to_load_t_subset.extend(b.pfi_slack_neg.values())
                     vars_to_load_t_subset.extend(b.pfi_slack_pos.values())
+                    vars_to_load_t_subset.extend(b.pf_slack_neg.values())
+                    vars_to_load_t_subset.extend(b.pf_slack_pos.values())
             else:
                 vars_to_load = None
                 vars_to_load_t_subset = None
@@ -929,32 +1031,19 @@ def solve_unit_commitment(model_data,
     storage = dict(md.elements(element_type='storage'))
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
+    pg_security_constraints = dict(md.elements(element_type='security_constraint', security_constraint_type='pg'))
 
     data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
 
-    regulation = False
-    spin = False
-    nspin = False
-    supp = False
-    flex = False
-    if hasattr(m, 'regulation_service'):
-        regulation = True
-    if hasattr(m, 'spinning_reserve'):
-        spin = True
-    if hasattr(m, 'non_spinning_reserve'):
-        nspin = True
-    if hasattr(m, 'supplemental_reserve'):
-        supp = True
-    if hasattr(m, 'flexible_ramping'):
-        flex = True
+    regulation = bool(m.regulation_service)
+    spin = bool(m.spinning_reserve)
+    nspin = bool(m.non_spinning_reserve)
+    supp = bool(m.supplemental_reserve)
+    flex = bool(m.flexible_ramping)
 
-    fs = False
-    if hasattr(m, 'fuel_supply'):
-        fs = True
-    fc = False
-    if hasattr(m, 'fuel_consumption'):
-        fc = True
+    fs = bool(m.fuel_supply)
+    fc = bool(m.fuel_consumption)
 
     for g,g_dict in thermal_gens.items():
         pg_dict = _preallocated_list(data_time_periods)
@@ -1114,6 +1203,20 @@ def solve_unit_commitment(model_data,
         s_dict['operational_cost'] = _time_series_dict(operational_cost_dict)
         s_dict['state_of_charge'] = _time_series_dict(state_of_charge_dict)
 
+    for sc, sc_dict in pg_security_constraints.items():
+        sc_violation = None
+        sc_flow = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
+            b = m.TransmissionBlock[mt]
+            sc_flow[dt] = value(b.pgSecurityExpression[sc])
+            if sc in b.pgRelaxedSecuritySet:
+                if sc_violation is None:
+                    sc_violation = _preallocated_list(data_time_periods)
+                sc_violation[dt] = value(b.pgSecuritySlackPos[sc] - b.pgSecuritySlackNeg[sc])
+        sc_dict['pf'] = _time_series_dict(sc_flow)
+        if sc_violation is not None:
+            sc_dict['pf_violation'] = _time_series_dict(sc_violation)
+
     ## NOTE: UC model currently has no notion of separate loads
 
     if m.power_balance == 'btheta_power_flow':
@@ -1122,6 +1225,11 @@ def solve_unit_commitment(model_data,
             for dt, mt in enumerate(m.TimePeriods):
                 pf_dict[dt] = value(m.TransmissionBlock[mt].pf[l])
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pf_slack_pos[l] - m.TransmissionBlock[mt].pf_slack_neg[l])
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
             va_dict = _preallocated_list(data_time_periods)
@@ -1220,6 +1328,11 @@ def solve_unit_commitment(model_data,
                 ## if the key doesn't exist, it is because that line was out
                 pf_dict[dt] = flows_dict[mt].get(l, 0.)
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pf_slack_pos[l] - m.TransmissionBlock[mt].pf_slack_neg[l])
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
             va_dict = _preallocated_list(data_time_periods)
@@ -1242,6 +1355,11 @@ def solve_unit_commitment(model_data,
             for dt, mt in enumerate(m.TimePeriods):
                 pf_dict[dt] = value(m.LinePower[l,mt])
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.BranchSlackPos[l,mt] - m.BranchSlackNeg[l,mt])
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
             va_dict = _preallocated_list(data_time_periods)

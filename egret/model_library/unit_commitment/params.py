@@ -84,7 +84,6 @@ def load_params(model, model_data):
     elements = md.data['elements']
 
     time_keys = system['time_keys']
-    TimeMapper = uc_time_helper
     
     ## insert potentially missing keys
     if 'branch' not in elements:
@@ -168,6 +167,8 @@ def load_params(model, model_data):
     
     model.InitialTime = Param(within=PositiveIntegers, default=1)
     model.TimePeriods = RangeSet(model.InitialTime, model.NumTimePeriods)
+
+    TimeMapper = uc_time_helper(model.TimePeriods)
     
     ## For now, hard code these. Probably need to be able to specify in model_data
     model.StageSet = Set(ordered=True, initialize=['Stage_1', 'Stage_2']) 
@@ -186,25 +187,38 @@ def load_params(model, model_data):
     
     model.TransmissionLines = Set(initialize=branch_attrs['names'])
     
-    model.BusFrom = Param(model.TransmissionLines, initialize=branch_attrs.get('from_bus'))
-    model.BusTo   = Param(model.TransmissionLines, initialize=branch_attrs.get('to_bus'))
+    model.BusFrom = Param(model.TransmissionLines, within=model.Buses, initialize=branch_attrs.get('from_bus', dict()))
+    model.BusTo   = Param(model.TransmissionLines, within=model.Buses, initialize=branch_attrs.get('to_bus', dict()))
 
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs.get('reactance'))
+    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs.get('reactance', dict()))
 
-    model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term')) # max flow across the line
+    model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term', dict())) # max flow across the line
 
     model.LineOutOfService = Param(model.TransmissionLines, model.TimePeriods, within=Boolean, default=False,
-                                    initialize=TimeMapper(branch_attrs.get('planned_outage')))
+                                    initialize=TimeMapper(branch_attrs.get('planned_outage', dict())))
+
+    _branch_penalties = dict()
+    _md_violation_penalties = branch_attrs.get('violation_penalty')
+    if _md_violation_penalties is not None:
+        for i, val in _md_violation_penalties.items():
+            if val is not None:
+                _branch_penalties[i] = val
+                if val <= 0:
+                    logger.warning("Branch {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i,val))
+
+    model.BranchesWithSlack = Set(within=model.TransmissionLines, initialize=_branch_penalties.keys())
+
+    model.BranchLimitPenalty = Param(model.BranchesWithSlack, within=NonNegativeReals, initialize=_branch_penalties)
 
     ## Interfaces
     model.Interfaces = Set(initialize=interface_attrs['names'])
 
-    model.InterfaceLines = Set(model.Interfaces, within=model.TransmissionLines, initialize=interface_attrs.get('lines'), ordered=True)
-    model.InterfaceMinFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('minimum_limit'))
-    model.InterfaceMaxFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('maximum_limit'))
+    model.InterfaceLines = Set(model.Interfaces, within=model.TransmissionLines, initialize=interface_attrs.get('lines', dict()), ordered=True)
+    model.InterfaceMinFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('minimum_limit', dict()))
+    model.InterfaceMaxFlow = Param(model.Interfaces, within=Reals, initialize=interface_attrs.get('maximum_limit', dict()))
 
     def check_min_less_max_interface_flow_limits(m):
         for i in m.Interfaces:
@@ -248,7 +262,7 @@ def load_params(model, model_data):
     model.ThermalGenerators = Set(initialize=thermal_gen_attrs['names'])
     model.ThermalGeneratorsAtBus = Set(model.Buses, initialize=thermal_gens_by_bus)
     
-    model.ThermalGeneratorType = Param(model.ThermalGenerators, within=Any, default='C', initialize=thermal_gen_attrs.get('fuel'))
+    model.ThermalGeneratorType = Param(model.ThermalGenerators, within=Any, default='C', initialize=thermal_gen_attrs.get('fuel', dict()))
     
     def verify_thermal_generator_buses_rule(m, g):
        for b in m.Buses:
@@ -259,7 +273,7 @@ def load_params(model, model_data):
     
     model.VerifyThermalGeneratorBuses = BuildAction(model.ThermalGenerators, rule=verify_thermal_generator_buses_rule)
     
-    model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('quickstart_capable'))
+    model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('quickstart_capable', dict()))
     
     def init_quick_start_generators(m):
         return [g for g in m.ThermalGenerators if value(m.QuickStart[g]) == 1]
@@ -272,14 +286,14 @@ def load_params(model, model_data):
                                   model.TimePeriods,
                                   within=model.FixedCommitmentTypes,
                                   default=None,
-                                  initialize=TimeMapper(thermal_gen_attrs.get('fixed_commitment')),)
+                                  initialize=TimeMapper(thermal_gen_attrs.get('fixed_commitment', dict())),)
     
     model.NondispatchableGeneratorsAtBus = Set(model.Buses, initialize=renewable_gens_by_bus)
     
     model.AllNondispatchableGenerators = Set(initialize=renewable_gen_attrs['names'])
 
     model.NondispatchableGeneratorType = Param(model.AllNondispatchableGenerators, within=Any, default='W', 
-                                                initialize=renewable_gen_attrs.get('fuel'))
+                                                initialize=renewable_gen_attrs.get('fuel', dict()))
     
     
     #################################################################
@@ -298,7 +312,7 @@ def load_params(model, model_data):
         bus = load['bus']
         load_time = TimeMapper(load['p_load'])
         for t in model.TimePeriods:
-            bus_loads[bus, t] += load_time(None,t)
+            bus_loads[bus, t] += load_time[t]
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
@@ -321,142 +335,6 @@ def load_params(model, model_data):
     reserve_requirement = system.get("reserve_requirement", 0.)
     model.ReserveRequirement = Param(model.TimePeriods, within=NonNegativeReals, 
                                         initialize=TimeMapper(reserve_requirement), mutable=True)
-    
-    
-    
-    ####################################################################################
-    # minimum and maximum generation levels, for each thermal generator. units are MW. #
-    # could easily be specified on a per-time period basis, but are not currently.     #
-    ####################################################################################
-    
-    # you can enter generator limits either once for the generator or for each period (or just take 0)
-    
-    model.MinimumPowerOutput = Param(model.ThermalGenerators, within=NonNegativeReals, 
-                                        initialize=thermal_gen_attrs['p_min'],
-                                        default=0.0)
-    
-    def maximum_power_output_validator(m, v, g):
-       return v >= value(m.MinimumPowerOutput[g])
-    
-    model.MaximumPowerOutput = Param(model.ThermalGenerators, within=NonNegativeReals, 
-                                        validate=maximum_power_output_validator, 
-                                        initialize=thermal_gen_attrs['p_max'],
-                                        default=0.0)
-
-    model.MinimumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
-                                                initialize=thermal_gen_attrs.get('q_min'),
-                                                default=0.0)
-
-    def maximum_reactive_output_validator(m, v, g):
-        return v >= value(m.MinimumReactivePowerOutput[g])
-
-    model.MaximumReactivePowerOutput = Param(model.ThermalGenerators, within=Reals,
-                                                initialize=thermal_gen_attrs.get('q_max'),
-                                                default=0.0)
-    
-    # wind is similar, but max and min will be equal for non-dispatchable wind
-    
-    model.MinNondispatchablePower = Param(model.AllNondispatchableGenerators,
-                                            model.TimePeriods, 
-                                            within=NonNegativeReals,
-                                            default=0.0,
-                                            mutable=True,
-                                            initialize=TimeMapper(renewable_gen_attrs.get('p_min')))
-    
-    def maximum_nd_output_validator(m, v, g, t):
-       return v >= value(m.MinNondispatchablePower[g,t])
-    
-    model.MaxNondispatchablePower = Param(model.AllNondispatchableGenerators,
-                                            model.TimePeriods,
-                                            within=NonNegativeReals,
-                                            default=0.0,
-                                            mutable=True,
-                                            validate=maximum_nd_output_validator,
-                                            initialize=TimeMapper(renewable_gen_attrs.get('p_max')))
-    
-    #################################################
-    # generator ramp up/down rates. units are MW/h. #
-    # IMPORTANT: Generator ramp limits can exceed   #
-    # the maximum power output, because it is the   #
-    # ramp limit over an hour. If the unit can      #
-    # fully ramp in less than an hour, then this    #
-    # will occur.                                   #
-    #################################################
-    
-    # limits for normal time periods
-    model.NominalRampUpLimit = Param(model.ThermalGenerators,
-                                        within=NonNegativeReals,
-                                        mutable=True,
-                                        initialize=thermal_gen_attrs['ramp_up_60min'])
-    model.NominalRampDownLimit = Param(model.ThermalGenerators,
-                                        within=NonNegativeReals,
-                                        mutable=True,
-                                        initialize=thermal_gen_attrs['ramp_down_60min'])
-    
-    # limits for time periods in which generators are brought on or off-line.
-    # must be no less than the generator minimum output.
-    def ramp_limit_validator(m, v, g):
-       return v >= m.MinimumPowerOutput[g]
-
-    ## These defaults follow what is in most market manuals
-    ## We scale this for the time period below
-    def startup_ramp_default(m, g):
-        return m.MinimumPowerOutput[g]+m.NominalRampUpLimit[g]/2.
-    def shutdown_ramp_default(m, g):
-        return m.MinimumPowerOutput[g]+m.NominalRampDownLimit[g]/2.
-
-    model.StartupRampLimit = Param(model.ThermalGenerators, 
-                                    within=NonNegativeReals,
-                                    default=startup_ramp_default,
-                                    validate=ramp_limit_validator,
-                                    mutable=True,
-                                    initialize=thermal_gen_attrs.get('startup_capacity'))
-    model.ShutdownRampLimit = Param(model.ThermalGenerators, 
-                                    within=NonNegativeReals,
-                                    default=shutdown_ramp_default, 
-                                    validate=ramp_limit_validator,
-                                    mutable=True,
-                                    initialize=thermal_gen_attrs.get('shutdown_capacity'))
-    
-    ## These get used in the basic UC constraints, which implicity assume RU, RD <= Pmax
-    def scale_ramp_up(m, g):
-        temp = m.NominalRampUpLimit[g] * m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g]):
-            return m.MaximumPowerOutput[g]
-        else:
-            return temp
-    model.ScaledNominalRampUpLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=scale_ramp_up, mutable=True)
-    
-    def scale_ramp_down(m, g):
-        temp = m.NominalRampDownLimit[g] * m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g]):
-            return m.MaximumPowerOutput[g]
-        else:
-            return temp
-    model.ScaledNominalRampDownLimit = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=scale_ramp_down, mutable=True)
-    
-    def scale_startup_limit(m, g):
-        ## temp now has the "running room" over Pmin. This will be scaled for the time period length, 
-        ## most market models do not have this notion, so this is set-up so that the defaults
-        ## will be scaled as they would be in most market models
-        temp = (m.StartupRampLimit[g] - m.MinimumPowerOutput[g])*m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g]):
-            return m.MaximumPowerOutput[g]
-        else:
-            return temp + m.MinimumPowerOutput[g]
-    model.ScaledStartupRampLimit = Param(model.ThermalGenerators, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_startup_limit, mutable=True)
-    
-    def scale_shutdown_limit(m, g):
-        ## temp now has the "running room" over Pmin. This will be scaled for the time period length
-        ## most market models do not have this notion, so this is set-up so that the defaults
-        ## will be scaled as they would be in most market models
-        temp = (m.ShutdownRampLimit[g] - m.MinimumPowerOutput[g])*m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g]):
-            return m.MaximumPowerOutput[g]
-        else:
-            return temp + m.MinimumPowerOutput[g]
-    model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
-    
     
     ##########################################################################################################
     # the minimum number of time periods that a generator must be on-line (off-line) once brought up (down). #
@@ -483,6 +361,107 @@ def load_params(model, model_data):
         return min(max(scaled_down_time,1), value(m.NumTimePeriods))
     model.ScaledMinimumDownTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_downtime)
     
+    ####################################################################################
+    # minimum and maximum generation levels, for each thermal generator. units are MW. #
+    # could easily be specified on a per-time period basis, but are not currently.     #
+    ####################################################################################
+    
+    # you can enter generator limits either once for the generator or for each period (or just take 0)
+    
+    model.MinimumPowerOutput = Param(model.ThermalGenerators, model.TimePeriods, 
+                                        within=NonNegativeReals, 
+                                        initialize=TimeMapper(thermal_gen_attrs['p_min']),
+                                        default=0.0)
+    
+    def maximum_power_output_validator(m, v, g, t):
+       return v >= value(m.MinimumPowerOutput[g,t])
+    
+    model.MaximumPowerOutput = Param(model.ThermalGenerators, model.TimePeriods, 
+                                        within=NonNegativeReals, 
+                                        validate=maximum_power_output_validator, 
+                                        initialize=TimeMapper(thermal_gen_attrs['p_max']),
+                                        default=0.0)
+
+    model.MinimumReactivePowerOutput = Param(model.ThermalGenerators, model.TimePeriods,
+                                                within=Reals,
+                                                initialize=TimeMapper(thermal_gen_attrs.get('q_min', dict())),
+                                                default=0.0)
+
+    def maximum_reactive_output_validator(m, v, g, t):
+        return v >= value(m.MinimumReactivePowerOutput[g,t])
+
+    model.MaximumReactivePowerOutput = Param(model.ThermalGenerators, model.TimePeriods, 
+                                                within=Reals,
+                                                initialize=TimeMapper(thermal_gen_attrs.get('q_max', dict())),
+                                                default=0.0)
+    
+    # wind is similar, but max and min will be equal for non-dispatchable wind
+    
+    model.MinNondispatchablePower = Param(model.AllNondispatchableGenerators,
+                                            model.TimePeriods, 
+                                            within=NonNegativeReals,
+                                            default=0.0,
+                                            mutable=True,
+                                            initialize=TimeMapper(renewable_gen_attrs.get('p_min', dict())))
+    
+    def maximum_nd_output_validator(m, v, g, t):
+       return v >= value(m.MinNondispatchablePower[g,t])
+    
+    model.MaxNondispatchablePower = Param(model.AllNondispatchableGenerators,
+                                            model.TimePeriods,
+                                            within=NonNegativeReals,
+                                            default=0.0,
+                                            mutable=True,
+                                            validate=maximum_nd_output_validator,
+                                            initialize=TimeMapper(renewable_gen_attrs.get('p_max', dict())))
+
+    #################################################
+    # generator ramp up/down rates. units are MW/h. #
+    # IMPORTANT: Generator ramp limits can exceed   #
+    # the maximum power output, because it is the   #
+    # ramp limit over an hour. If the unit can      #
+    # fully ramp in less than an hour, then this    #
+    # will occur.                                   #
+    #################################################
+
+    ## be sure the generator can ramp
+    ## between all the p_min/p_max values
+    def ramp_up_validator(m, v, g):
+        t1 = m.InitialTime
+        for t in m.TimePeriods:
+            if t == t1:
+                continue
+            diff = value(m.MinimumPowerOutput[g,t] - m.MaximumPowerOutput[g,t-1])
+            if v*m.TimePeriodLengthHours < diff:
+                logger.warn('Generator {} has an infeasible ramp up between time periods {} and {}'.format(g,t-1,t))
+                return False
+        return True
+
+    ## be sure the generator can ramp
+    ## between all the p_min/p_max values
+    def ramp_down_validator(m, v, g):
+        t1 = m.InitialTime
+        for t in m.TimePeriods:
+            if t == t1:
+                continue
+            diff = value(m.MinimumPowerOutput[g,t-1] - m.MaximumPowerOutput[g,t])
+            if v*m.TimePeriodLengthHours < diff:
+                logger.warn('Generator {} has an infeasible ramp down between time periods {} and {}'.format(g,t-1,t))
+                return False
+        return True
+
+    # limits for normal time periods
+    model.NominalRampUpLimit = Param(model.ThermalGenerators,
+                                        within=NonNegativeReals,
+                                        mutable=True,
+                                        initialize=thermal_gen_attrs['ramp_up_60min'],
+                                        validate=ramp_up_validator)
+    model.NominalRampDownLimit = Param(model.ThermalGenerators,
+                                        within=NonNegativeReals,
+                                        mutable=True,
+                                        initialize=thermal_gen_attrs['ramp_down_60min'],
+                                        validate=ramp_down_validator)
+
     #############################################
     # unit on state at t=0 (initial condition). #
     #############################################
@@ -514,18 +493,140 @@ def load_params(model, model_data):
     ####################################################################
     # generator power output at t=0 (initial condition). units are MW. #
     ####################################################################
-    
+
     def between_limits_validator(m, v, g):
-       status = (v <= (value(m.MaximumPowerOutput[g]) * value(m.UnitOnT0[g]))  and v >= (value(m.MinimumPowerOutput[g]) * value(m.UnitOnT0[g])))
-       if status == False:
-          print("Failed to validate PowerGeneratedT0 value for g="+g+"; new value="+str(v)+", UnitOnT0="+str(value(m.UnitOnT0[g])))
-       return status
+        t = m.TimePeriods.first() 
+
+        if value(m.UnitOnT0[g]):
+            v_less_max = v <= value(m.MaximumPowerOutput[g,t] + m.NominalRampDownLimit[g]*m.TimePeriodLengthHours)
+            if not v_less_max:
+                logger.error('Generator {} has more output at T0 than is feasible to ramp down to'.format(g))
+
+            v_greater_min = v >= value(m.MinimumPowerOutput[g,t] - m.NominalRampUpLimit[g]*m.TimePeriodLengthHours)
+            if not v_less_max:
+                logger.error('Generator {} has less output at T0 than is feasible to ramp up to'.format(g))
+            return True
+
+        else:
+            return v == 0.
+
     model.PowerGeneratedT0 = Param(model.ThermalGenerators, 
                                     within=NonNegativeReals, 
                                     validate=between_limits_validator, 
                                     mutable=True,
                                     initialize=thermal_gen_attrs['initial_p_output'])
     
+    # limits for time periods in which generators are brought on or off-line.
+    # must be no less than the generator minimum output.
+    def ramp_limit_validator(m, v, g, t):
+       return v >= m.MinimumPowerOutput[g,t]
+
+    ## These defaults follow what is in most market manuals
+    ## We scale this for the time period below
+    def startup_ramp_default(m, g, t):
+        return m.MinimumPowerOutput[g,t]+m.NominalRampUpLimit[g]/2.
+
+    ## shutdown is based on the last period *on*
+    def shutdown_ramp_default(m, g, t):
+        return m.MinimumPowerOutput[g,t]+m.NominalRampDownLimit[g]/2.
+
+    model.StartupRampLimit = Param(model.ThermalGenerators, 
+                                    model.TimePeriods,
+                                    within=NonNegativeReals,
+                                    default=startup_ramp_default,
+                                    validate=ramp_limit_validator,
+                                    mutable=True,
+                                    initialize=TimeMapper(thermal_gen_attrs.get('startup_capacity', dict())))
+    model.ShutdownRampLimit = Param(model.ThermalGenerators, 
+                                    model.TimePeriods,
+                                    within=NonNegativeReals,
+                                    default=shutdown_ramp_default, 
+                                    validate=ramp_limit_validator,
+                                    mutable=True,
+                                    initialize=TimeMapper(thermal_gen_attrs.get('shutdown_capacity', dict())))
+    
+    ## These get used in the basic UC constraints, which implicity assume RU, RD <= Pmax
+    ## Ramping constraints look backward, so these will accordingly as well
+    ## NOTES: can't ramp up higher than the current pmax from the previous value
+    ##        can't ramp down more than the pmax from the prior time period
+    def scale_ramp_up(m, g, t):
+        temp = m.NominalRampUpLimit[g] * m.TimePeriodLengthHours
+        if value(temp) > value(m.MaximumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
+        else:
+            return temp
+    model.ScaledNominalRampUpLimit = Param(model.ThermalGenerators, model.TimePeriods,  within=NonNegativeReals, initialize=scale_ramp_up, mutable=True)
+    
+    def scale_ramp_down(m, g, t):
+        temp = m.NominalRampDownLimit[g] * m.TimePeriodLengthHours
+        if t == m.InitialTime:
+            param = max(value(m.PowerGeneratedT0[g]), value(m.MaximumPowerOutput[g,t]))
+        else:
+            param = m.MaximumPowerOutput[g,t-1]
+        if value(temp) > value(param):
+            return param
+        else:
+            return temp
+    model.ScaledNominalRampDownLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=scale_ramp_down, mutable=True)
+    
+    def scale_startup_limit(m, g, t):
+        ## temp now has the "running room" over Pmin. This will be scaled for the time period length, 
+        ## most market models do not have this notion, so this is set-up so that the defaults
+        ## will be scaled as they would be in most market models
+        temp = (m.StartupRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
+        if value(temp) > value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
+        else:
+            return temp + m.MinimumPowerOutput[g,t]
+    model.ScaledStartupRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_startup_limit, mutable=True)
+    
+    def scale_shutdown_limit(m, g, t):
+        ## temp now has the "running room" over Pmin. This will be scaled for the time period length
+        ## most market models do not have this notion, so this is set-up so that the defaults
+        ## will be scaled as they would be in most market models
+        temp = (m.ShutdownRampLimit[g,t] - m.MinimumPowerOutput[g,t])*m.TimePeriodLengthHours
+        if value(temp) > value(m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t]):
+            return m.MaximumPowerOutput[g,t]
+        else:
+            return temp + m.MinimumPowerOutput[g,t]
+    model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
+
+    ## Some additional ramping parameters to 
+    ## deal with shutdowns at time=1
+    
+    def _init_p_min_t0(m,g):
+        if 'initial_p_min' in thermal_gen_attrs and \
+                g in thermal_gen_attrs['initial_p_min']:
+            return thermal_gen_attrs['initial_p_min'][g]
+        else:
+            return m.MinimumPowerOutput[g,m.InitialTime]
+
+    model.MinimumPowerOutputT0 = Param(model.ThermalGenerators, 
+                                    within=NonNegativeReals, 
+                                    mutable=True,
+                                    initialize=_init_p_min_t0)
+
+    def _init_sd_t0(m,g):
+        if 'initial_shutdown_capacity' in thermal_gen_attrs and\
+                g in thermal_gen_attrs['initial_shutdown_capacity']:
+            return thermal_gen_attrs['initial_shutdown_capacity'][g]
+        return m.ShutdownRampLimit[g,m.InitialTime]
+
+    model.ShutdownRampLimitT0 = Param(model.ThermalGenerators,
+                                    within=NonNegativeReals,
+                                    mutable=True,
+                                    initialize=_init_sd_t0)
+    
+    def scale_shutdown_limit_t0(m, g):
+        ## temp now has the "running room" over Pmin. This will be scaled for the time period length
+        ## most market models do not have this notion, so this is set-up so that the defaults
+        ## will be scaled as they would be in most market models
+        temp = (m.ShutdownRampLimitT0[g] - m.MinimumPowerOutputT0[g])*m.TimePeriodLengthHours
+        if value(temp) > value(m.PowerGeneratedT0[g] - m.MinimumPowerOutputT0[g]):
+            return m.PowerGeneratedT0[g]
+        else:
+            return temp + m.MinimumPowerOutputT0[g]
+    model.ScaledShutdownRampLimitT0 = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=scale_shutdown_limit_t0, mutable=True)
     
     ###############################################
     # startup cost parameters for each generator. #
@@ -619,294 +720,6 @@ def load_params(model, model_data):
     ##################################################################################
     
     model.ShutdownFixedCost = Param(model.ThermalGenerators, within=NonNegativeReals, default=0.0, initialize=thermal_gen_attrs.get('shutdown_cost', dict())) # units are $.
-    
-    ## BEGIN PRODUCTION COST
-    ## NOTE: For better or worse, we handle scaling this to the time period length in the objective function.
-    ##       In particular, this is done in objective.py.
-
-    ##################################################################################################################
-    # production cost coefficients (for the quadratic) a0=constant, a1=linear coefficient, a2=quadratic coefficient. #
-    ##################################################################################################################
-
-    def _init_A(coeff):
-        def _init(m,g):
-            cost = thermal_gens[g].get('p_cost')
-            if cost is None:
-                return 0.
-            elif cost['data_type'] != 'cost_curve':
-                raise Exception("p_cost must be of data_type cost_curve.")
-            elif cost['cost_curve_type'] == 'piecewise':
-                return 0.
-            elif cost['cost_curve_type'] == 'polynomial':
-                values = cost['values']
-                if set(values.keys()) <= {0,1,2}:
-                    if coeff in values:
-                        return values[coeff]
-                    else:
-                        return 0.
-                else:
-                    raise Exception("Polynomial cost curves must be quatric.")
-            else:
-                raise Exception("Unexpected cost_curve_type")
-        return _init
-    
-    model.ProductionCostA0 = Param(model.ThermalGenerators, default=0.0, initialize=_init_A(0)) # units are $/hr (or whatever the time unit is).
-    model.ProductionCostA1 = Param(model.ThermalGenerators, default=0.0, initialize=_init_A(1)) # units are $/MWhr.
-    model.ProductionCostA2 = Param(model.ThermalGenerators, default=0.0, initialize=_init_A(2)) # units are $/(MWhr^2).
-    
-    # the parameters below are populated if cost curves are specified as linearized heat rate increment segments.
-    #
-    # CostPiecewisePoints represents the power output levels defining the segment boundaries.
-    # these *must* include the minimum and maximum power output points - a validation check
-    # if performed below.
-    # 
-    # CostPiecewiseValues are the absolute costs associated with the corresponding
-    # power output levels.
-    
-    # there are many ways to interpret the cost piecewise point/value data, when translating into
-    # an actual piecewise construct for the model. this interpretation is controlled by the following
-    # string parameter, whose legal values are: NoPiecewise (no data provided) and Absolute.
-    # NoPiecewise means that we're using quadraic cost curves, and will 
-    # construct the piecewise data ourselves directly from that cost curve. 
-    
-    def piecewise_type_validator(m, v):
-       return (v == "NoPiecewise") or (v == "Absolute")
-    
-    def piecewise_type_init(m):
-        boo = False
-        for g in m.ThermalGenerators:
-            if not (m.ProductionCostA0[g] == 0.0 and m.ProductionCostA1[g] == 0.0 and m.ProductionCostA2[g] == 0.0):
-                boo = True
-                break
-        if boo:
-            return "NoPiecewise"
-        else:
-            return "Absolute"
-    
-    model.PiecewiseType = Param(validate=piecewise_type_validator,initialize=piecewise_type_init, mutable=True)  #irios: default="Absolute" initialize=piecewise_type_init
-
-    def get_piecewise_tuple_index(g, tuple_index):
-        cost = thermal_gens[g].get('p_cost')
-        fuel = thermal_gens[g].get('p_fuel')
-        fuel_cost = thermal_gens[g].get('fuel_cost')
-        fixed_no_load = thermal_gens[g].get('non_fuel_no_load_cost')
-        if cost is None and fuel is None and fixed_no_load is None:
-            return list()
-        if fixed_no_load is None or (tuple_index == 0): ## don't add for cost piecewise points
-            fixed_no_load = 0.
-        if cost is not None and fuel is not None:
-            logger.warning("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
-        if fuel is None:
-            if cost['data_type'] != 'cost_curve':
-                raise Exception("p_cost must be of data_type cost_curve.")
-            elif cost['cost_curve_type'] == 'polynomial':
-                return list()
-            elif cost['cost_curve_type'] == 'piecewise':
-                return (fixed_no_load + i[tuple_index] for i in cost['values'])
-            else:
-                raise Exception("Unexpected cost_curve type")
-        else:
-            if fuel['data_type'] != 'fuel_curve':
-                raise Exception("p_cost must be of data_type fuel_curve for generator {}".format(g))
-            if fuel_cost is None:
-                raise Exception("must supply fuel costs for generator {} with p_fuel".format(g))
-            if tuple_index == 0: ## don't multiply for cost piecewise points
-                return (i[tuple_index] for i in fuel['values'])
-            return (fixed_no_load + fuel_cost*i[tuple_index] for i in fuel['values'])
-
-
-    
-    def piecewise_points_init(m, g):
-        return get_piecewise_tuple_index(g, 0)
-
-    def piecewise_values_init(m, g):
-        return get_piecewise_tuple_index(g, 1)
-    
-    model.CostPiecewisePoints = Set(model.ThermalGenerators, initialize=piecewise_points_init, ordered=True, within=NonNegativeReals)
-    model.CostPiecewiseValues = Set(model.ThermalGenerators, initialize=piecewise_values_init, ordered=True, within=NonNegativeReals)
-    
-    # a check to ensure that the cost piecewise point parameter was correctly populated.
-    # these are global checks, which cannot be performed as a set validation (which 
-    # operates on a single element at a time).
-    
-    # irios: When the check fails, I add the missing PiecewisePoints and Values in order to make it work.
-    # I did this in an arbitrary way, but you can change it. In particular, I erased those values which are not 
-    # between the minimum power output and the maximum power output. Also, I added those values if they are not in
-    # the input data. Finally, I added values (0 and this_generator_piecewise_values[-1] + 1) to end with the same 
-    # number of points and values.
-    
-    def validate_cost_piecewise_points_and_values_rule(m, g):
-    
-        if value(m.PiecewiseType) == "NoPiecewise":
-            # if there isn't any piecewise data specified, we shouldn't find any.
-            if len(m.CostPiecewisePoints[g]) > 0:
-                print("DATA ERROR: The PiecewiseType parameter was set to NoPiecewise, but piecewise point data was specified!")
-                return False
-            # if there isn't anything to validate and we didn't expect piecewise 
-            # points, we can safely skip the remaining validation steps.
-            return True
-        else:
-            # if the user said there was going to be piecewise data and none was 
-            # supplied, they should be notified as to such.
-            if len(m.CostPiecewisePoints[g]) == 0:
-                print("DATA ERROR: The PiecewiseType parameter was set to something other than NoPiecewise, but no piecewise point data was specified!")
-                return False
-    
-        # per the requirement below, there have to be at least two piecewise points if there are any.
-    
-        min_output = value(m.MinimumPowerOutput[g])
-        max_output = value(m.MaximumPowerOutput[g])   
-    
-        points = list(m.CostPiecewisePoints[g])
-    
-        if min_output not in points:
-            for pnt in points:
-                if math.isclose(pnt, min_output):
-                    break
-            else:
-                raise Exception("Cost piecewise points for generator g="+str(g)+
-                                " must contain the minimum output level="+str(min_output))
-    
-        if max_output not in points:
-            for pnt in points:
-                if math.isclose(pnt, max_output):
-                    break
-            else:
-                raise Exception("Cost piecewise points for generator g="+str(g)+
-                                " must contain the maximum output level="+str(max_output))
-        return True
-
-    model.ValidateCostPiecewisePoints = BuildCheck(model.ThermalGenerators, rule=validate_cost_piecewise_points_and_values_rule)
-    
-    # Minimum production cost (needed because Piecewise constraint on ProductionCost 
-    # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
-    # back in to the objective if a unit is on
-    def minimum_production_cost(m, g):
-        if len(m.CostPiecewisePoints[g]) >= 1:
-            return m.CostPiecewiseValues[g].first()
-        else:
-            return (m.ProductionCostA0[g] + \
-                    m.ProductionCostA1[g] * m.MinimumPowerOutput[g] + \
-                    m.ProductionCostA2[g] * (m.MinimumPowerOutput[g]**2))
-    model.MinimumProductionCost = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=minimum_production_cost, mutable=True)
-    
-    ##############################################################################################
-    # number of pieces in the linearization of each generator's quadratic cost production curve. #
-    ##############################################################################################
-    
-    model.NumGeneratorCostCurvePieces = Param(within=PositiveIntegers, default=2, mutable=True)
-
-
-    #######################################################################
-    # points for piecewise linearization of power generation cost curves. #
-    #######################################################################
-    
-    # BK -- changed to reflect that the generator's power output variable is always above minimum in the ME model
-    #       this simplifies things quite a bit..
-    
-    # maps a (generator, time-index) pair to a list of points defining the piecewise cost linearization breakpoints.
-    # the time index is redundant, but required - in the current implementation of the Piecewise construct, the 
-    # breakpoints must be indexed the same as the Piecewise construct itself.
-    
-    # the points are expected to be on the interval [0, maxpower-minpower], and must contain both endpoints. 
-    # power generated can always be 0, and piecewise expects the entire variable domain to be represented.
-    model.PowerGenerationPiecewisePoints = {}
-    
-    # NOTE: the values are relative to the minimum production cost, i.e., the values represent
-    # incremental costs relative to the minimum production cost.
-    
-    model.PowerGenerationPiecewiseValues = {}
-    
-    def power_generation_piecewise_points_rule(m, g, t):
-    
-        # factor out the fuel cost here, as the piecewise approximation is scaled by fuel cost
-        # elsewhere in the model (i.e., in the Piecewise construct below).
-        minimum_production_cost = value(m.MinimumProductionCost[g])
-    
-        # minimum output
-        minimum_power_output = value(m.MinimumPowerOutput[g])
-        
-        piecewise_type = value(m.PiecewiseType)
-    
-        if piecewise_type == "Absolute":
-    
-           piecewise_values = list(m.CostPiecewiseValues[g])
-           piecewise_points = list(m.CostPiecewisePoints[g])
-           m.PowerGenerationPiecewiseValues[g,t] = {}
-           m.PowerGenerationPiecewisePoints[g,t] = [] 
-           for i in range(len(piecewise_points)):
-              this_point = piecewise_points[i] - minimum_power_output
-              m.PowerGenerationPiecewisePoints[g,t].append(this_point)
-              m.PowerGenerationPiecewiseValues[g,t][this_point] = piecewise_values[i] - minimum_production_cost
-    
-        else: # piecewise_type == "NoPiecewise"
-    
-           if value(m.ProductionCostA2[g]) == 0:
-              # If cost is linear, we only need two points -- (0,0) and (MaxOutput-MinOutput, MaxCost-MinCost))
-              min_power = value(m.MinimumPowerOutput[g])
-              max_power = value(m.MaximumPowerOutput[g])
-              if min_power == max_power:
-                 m.PowerGenerationPiecewisePoints[g, t] = [0.0]
-              else:
-                 m.PowerGenerationPiecewisePoints[g, t] = [0.0, max_power-min_power]
-    
-              m.PowerGenerationPiecewiseValues[g,t] = {}
-    
-              m.PowerGenerationPiecewiseValues[g,t][0.0] = 0.0
-    
-              if min_power != max_power:
-                 m.PowerGenerationPiecewiseValues[g,t][max_power-min_power] = \
-                     value(m.ProductionCostA0[g]) + \
-                     value(m.ProductionCostA1[g]) * max_power \
-                     - minimum_production_cost
-    
-           else:
-               min_power = value(m.MinimumPowerOutput[g])
-               max_power = value(m.MaximumPowerOutput[g])
-               n = value(m.NumGeneratorCostCurvePieces)
-               width = (max_power - min_power) / float(n)
-               if width == 0:
-                   m.PowerGenerationPiecewisePoints[g, t] = [0]
-               else:
-                   m.PowerGenerationPiecewisePoints[g, t] = []
-                   m.PowerGenerationPiecewisePoints[g, t].extend([0 + i*width for i in range(0,n+1)])
-                   # NOTE: due to numerical precision limitations, the last point in the x-domain
-                   #       of the generation piecewise cost curve may not be precisely equal to the 
-                   #       maximum power output level of the generator. this can cause Piecewise to
-                   #       sqawk, as it would like the upper bound of the variable to be represented
-                   #       in the domain. so, we will make it so.
-                   m.PowerGenerationPiecewisePoints[g, t][-1] = max_power - min_power
-               m.PowerGenerationPiecewiseValues[g,t] = {}
-               for i in range(len(m.PowerGenerationPiecewisePoints[g, t])):
-                   m.PowerGenerationPiecewiseValues[g,t][m.PowerGenerationPiecewisePoints[g,t][i]] = \
-                              value(m.ProductionCostA0[g]) + \
-                              value(m.ProductionCostA1[g]) * (m.PowerGenerationPiecewisePoints[g, t][i] + min_power) + \
-                              value(m.ProductionCostA2[g]) * (m.PowerGenerationPiecewisePoints[g, t][i] + min_power)**2 \
-                              - minimum_production_cost
-               assert(m.PowerGenerationPiecewisePoints[g, t][0] == 0)
-        
-        # validate the computed points, independent of the method used to generate them.
-        # nothing should be negative, and the costs should be monotonically non-decreasing.
-        for i in range(0, len(m.PowerGenerationPiecewisePoints[g, t])):
-           this_level = m.PowerGenerationPiecewisePoints[g, t][i]
-           assert this_level >= 0.0
-    
-    model.CreatePowerGenerationPiecewisePoints = BuildAction(model.ThermalGenerators * model.TimePeriods, rule=power_generation_piecewise_points_rule)
-
-    ModeratelyBigPenalty = 1e3*system['baseMVA']
-    
-    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost'))
-
-    #########################################
-    # penalty costs for constraint violation #
-    #########################################
-    
-    BigPenalty = 1e4*system['baseMVA']
-    
-    model.LoadMismatchPenalty = Param(within=NonNegativeReals, default=BigPenalty, mutable=True, initialize=system.get('load_mismatch_cost'))
-    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, default=BigPenalty/2., mutable=True, initialize=system.get('q_load_mismatch_cost'))
-
-    ## END PRODUCTION COST CALCULATIONS
 
     ## FUEL-SUPPLY Sets
 
@@ -947,13 +760,424 @@ def load_params(model, model_data):
     ## This set is for modeling elements that are exhanged
     ## in whole for the dual-fuel model
     model.SingleFuelGenerators = model.ThermalGenerators - model.DualFuelGenerators
+    
+    ## BEGIN PRODUCTION COST
+    ## NOTE: For better or worse, we handle scaling this to the time period length in the objective function.
+    ##       In particular, this is done in objective.py.
+    
+    def _check_curve(m, g, curve, curve_type):
+
+        for i, t in enumerate(m.TimePeriods):
+            ## first, get a cost_curve out of time series
+            if curve['data_type'] == 'time_series':
+                curve_t = curve['values'][i]
+            else:
+                curve_t = curve 
+
+            ## validate that what we have is a cost_curve
+            if curve_t['data_type'] != curve_type:
+                raise Exception("p_cost must be of data_type cost_curve.")
+
+            ## get the values, check against something empty
+            values = curve_t['values']
+            if len(values) == 0:
+                if curve_t == curve:
+                    logger.warning("WARNING: Generator {} has no cost information associated with it".format(g))
+                    return True
+                else:
+                    logger.warning("WARNING: Generator {} has no cost information associated with it at time {}".format(g,t))
+
+            ## if we have a piecewise cost curve, ensure its convexity past p_min
+            ## if no curve_type+'_type' is specified, we assume piecewise (for backwards 
+            ## compatibility with no 'fuel_curve_type')
+            if curve_type+'_type' not in curve_t or \
+                    curve_t[curve_type+'_type'] == 'piecewise':
+                p_min = value(m.MinimumPowerOutput[g,t])
+                last_slope = None
+                for (o1, c1), (o2, c2) in zip(values, values[1:]):
+                    if o2 <= p_min or math.isclose(p_min, o2):
+                        continue
+                    ## else p_min > o2
+                    if last_slope is None:
+                        last_slope = (c2-c1)/(o2-o1)
+                        continue
+                    this_slope = (c2-c1)/(o2-o1)
+                    if this_slope < last_slope and not math.isclose(this_slope, last_slope):
+                        raise Exception("Piecewise {} must be convex above p_min. ".format(curve_type) + \
+                                        "Found non-convex piecewise {} for generator {} at time {}".format(curve_type,g,t))
+                ## verify the last output value is at least p_max
+                o_last = values[-1][0]
+                if value(m.MaximumPowerOutput[g,t]) > o_last and \
+                        not math.isclose(value(m.MaximumPowerOutput[g,t]), o_last):
+                    raise Exception("{} does not contain p_max for generator {} at time {}".format(curve_type,g,t))
+
+            ## if we have a quadratic cost curve, ensure its convexity
+            elif curve_t[curve_type+'_type'] == 'polynomial':
+                if not _check_curve.warn_piecewise_approx:
+                    logger.warning("WARNING: Polynomial cost curves will be approximated using piecewise segments")
+                    _check_curve.warn_piecewise_approx = True
+                values = curve_t['values']
+                if set(values.keys()) <= {0,1,2}:
+                    if 2 in values and values[2] < 0:
+                        raise Exception("Polynomial {}s must be convex. ".format(curve_type) + \
+                                        "Found non-convex {} for generator {} at time {}.".format(curve_type,g,t))
+                    if curve_t == curve: ## in this case, no need to check the other time periods
+                        return
+                else:
+                    raise Exception("Polynomial {}s must be quatric. ".format(curve_type) + \
+                                    "Found non-quatric {} for generator {} at time {}.".format(curve_type,g,t))
+            else:
+                raise Exception("Unexpected {}_type".format(curve_type))
+
+    ## set "static" variable for this function
+    _check_curve.warn_piecewise_approx = False
+    
+    def validate_cost_rule(m, g):
+        gen_dict = thermal_gens[g]
+        cost = gen_dict.get('p_cost')
+        fuel = gen_dict.get('p_fuel')
+        fuel_cost = gen_dict.get('fuel_cost')
+
+        if cost is None and fuel is None:
+            logger.warning("WARNING: Generator {} has no cost information associated with it".format(g))
+            return True
+        if cost is not None and fuel is not None:
+            logger.warning("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
+
+        ## look at p_cost through time
+        if fuel is None:
+            _check_curve(m, g, cost, 'cost_curve')
+        else:
+            if fuel_cost is None:
+                raise Exception("Found fuel_curve but not fuel_cost for generator {}".format(g))
+            _check_curve(m, g, fuel, 'fuel_curve')
+            for i, t in enumerate(m.TimePeriods):
+                if fuel_cost is dict:
+                    if fuel_cost['data_type'] != 'time_series':
+                        raise Exception("fuel_cost must be either numeric or time_series")
+                    fuel_cost_t = fuel_cost['values'][i]
+                else:
+                    fuel_cost_t = fuel_cost
+                if fuel_cost_t < 0:
+                    raise Exception("fuel_cost must be non-negative, found negative fuel_cost for generator {}".format(g))
+                if fuel_cost_t == fuel_cost:
+                    break
+        return True
+
+    model.ValidateGeneratorCost = BuildCheck(model.ThermalGenerators, rule=validate_cost_rule)
+    
+
+    ##############################################################################################
+    # number of pieces in the linearization of each generator's quadratic cost production curve. #
+    ##############################################################################################
+    ## TODO: option-drive with Egret, either globally or per-generator
+    
+    model.NumGeneratorCostCurvePieces = Param(within=PositiveIntegers, default=2, mutable=True)
+
+    #######################################################################
+    # points for piecewise linearization of power generation cost curves. #
+    #######################################################################
+    
+    # BK -- changed to reflect that the generator's power output variable is always above minimum in the ME model
+    #       this simplifies things quite a bit..
+    
+    # maps a (generator, time-index) pair to a list of points defining the piecewise cost linearization breakpoints.
+    # the time index is redundant, but required - in the current implementation of the Piecewise construct, the 
+    # breakpoints must be indexed the same as the Piecewise construct itself.
+    
+    # the points are expected to be on the interval [0, maxpower-minpower], and must contain both endpoints. 
+    # power generated can always be 0, and piecewise expects the entire variable domain to be represented.
+    model.PowerGenerationPiecewisePoints = {}
+    
+    # NOTE: the values are relative to the minimum production cost, i.e., the values represent
+    # incremental costs relative to the minimum production cost.
+    model.PowerGenerationPiecewiseCostValues = {}
+
+    # NOTE; these values are relative to the minimum fuel conumption
+    model.PowerGenerationPiecewiseFuelValues = {}
+    
+    _minimum_production_cost = {}
+    _minimum_fuel_consumption = {}
+
+    def _much_less_than(v1, v2):
+        return v1 < v2 and not math.isclose(v1,v2)
+
+    def _piecewise_adjustment_helper(m, p_min, p_max, input_func):
+
+        minimum_val = 0.
+        new_points = []
+        new_vals = []
+
+        set_p_min = False
+
+        # NOTE: this implicitly inserts a (0.,0.)
+        #       into every cost array
+        prior_output, prior_cost = 0., 0. 
+
+        for output, cost in input_func:
+            ## catch this case
+            if math.isclose(output, p_min) and math.isclose(output, p_max):
+                new_points.append(0.)
+                new_vals.append(0.)
+                minimum_val = cost
+                break
+
+            ## output < p_min
+            elif _much_less_than(output, p_min):
+                pass
+
+            ## p_min == output
+            elif math.isclose(output, p_min):
+                assert set_p_min is False
+                new_points.append(0.)
+                new_vals.append(0.)
+                minimum_val = cost
+                set_p_min = True
+
+            ## p_min < output
+            elif _much_less_than(p_min, output) and _much_less_than(output, p_max):
+                if not set_p_min:
+                    new_points.append(0.)
+                    new_vals.append(0.)
+
+                    price = ((cost-prior_cost)/(output-prior_output))
+                    minimum_val = (p_min - prior_output) * price + prior_cost
+                    
+                    new_points.append( output - p_min )
+                    new_vals.append( (output - p_min) * price )
+
+                    set_p_min = True
+                else:
+                    new_points.append( output - p_min )
+                    new_vals.append( cost - minimum_val )
+
+            elif math.isclose(output, p_max) or _much_less_than(p_max, output):
+                if not set_p_min:
+                    new_points.append(0.)
+                    new_vals.append(0.)
+
+                    price = ((cost-prior_cost)/(output-prior_output))
+                    minimum_val = (p_min - prior_output) * price + prior_cost
+                    
+                    new_points.append( p_max - p_min )
+
+                    if math.isclose(output, p_max):
+                        new_vals.append( cost - minimum_val )
+                    else:
+                        new_vals.append( (p_max - p_min) * price )
+                    set_p_min = True
+
+                else:
+                    new_points.append( p_max - p_min )
+                    if math.isclose(output, p_max):
+                        new_vals.append( cost - minimum_val )
+                    else:
+                        price = ((cost-prior_cost)/(output-prior_output))
+                        new_vals.append( (p_max - prior_output) * price + prior_cost - minimum_val )
+
+                break
+
+            else:
+                raise Exception("Unexpected case in _piecewise_adjustment_helper, "
+                                "p_min={}, p_max={}, output={}".format(p_min, p_max, output))
+            
+            prior_output, prior_cost = output, cost
+
+        return new_points, new_vals, minimum_val
+
+    def _polynomial_to_piecewise_helper(m, p_min, p_max, input_func):
+        segment_max = value(m.NumGeneratorCostCurvePieces)
+
+        for key in {0,1,2}:
+            if key not in input_func:
+                input_func[key] = 0.
+
+        poly_func = lambda x : input_func[0] + input_func[1]*x + input_func[2]*x*x
+
+        if p_min >= p_max:
+            minimum_val = poly_func(p_min)
+            new_points = [0.]
+            new_vals = [0.]
+            return new_points, new_vals, minimum_val
+
+        elif input_func[2] == 0.: ## not actually quadratic 
+            minimum_val = poly_func(p_min)
+            new_points = [0., p_max - p_min]
+            new_vals = [0., poly_func(p_max) - minimum_val]
+            return new_points, new_vals, minimum_val
+
+        ## actually quadratic
+        width = (p_max - p_min)/float(segment_max)
+
+        new_points = [i*width for i in range(0, segment_max+1)]
+
+        ## replace the last with (p_max - p_min)
+        new_points[-1] = p_max - p_min
+
+        minimum_val = poly_func(p_min)
+        new_vals = [ poly_func(pnt+p_min) - minimum_val for pnt in new_points ]
+
+        return new_points, new_vals, minimum_val
+
+    def _piecewise_helper(m, p_min, p_max, curve, curve_type):
+        if curve_type not in curve or \
+                curve[curve_type] == 'piecewise':
+            return _piecewise_adjustment_helper(m, p_min, p_max, curve['values']) 
+        else:
+            assert curve[curve_type] == 'polynomial'
+            return _polynomial_to_piecewise_helper(m, p_min, p_max, curve['values']) 
+
+    
+    def power_generation_piecewise_points_rule(m, g):
+
+        ## NOTE: it is often (usually) the case that cost curves
+        ##       are the same in every time period, This function
+        ##       is optimized to avoid data redunancy and recalculation
+        ##       for that case
+
+        gen_dict = thermal_gens[g]
+
+        fuel_curve = gen_dict.get('p_fuel')
+        cost_curve = gen_dict.get('p_cost')
+        fuel_cost = gen_dict.get('fuel_cost', 0.)
+        no_load_cost = gen_dict.get('non_fuel_no_load_cost', 0.)
+
+        if isinstance(fuel_cost,dict):
+            fuel_costs = fuel_cost['values']
+        else:
+            fuel_costs = ( fuel_cost for t in m.TimePeriods )
+        if isinstance(no_load_cost,dict):
+            no_load_costs = no_load_cost['values']
+        else:
+            no_load_costs = ( no_load_cost for t in m.TimePeriods )
+
+        _curve_cache = dict()
+
+        if fuel_curve is not None:
+
+            g_in_fuel_supply_generators = g in m.FuelSupplyGenerators
+            g_in_single_fuel_generators = g in m.SingleFuelGenerators
+
+            if isinstance(fuel_curve,dict) and fuel_curve['data_type'] == 'time_series':
+                fuel_curves = fuel_curve['values']
+                one_fuel_curve = False
+            else:
+                fuel_curves = ( fuel_curve for t in m.TimePeriods )
+                one_fuel_curve = True
+
+            for fuel_curve, fuel_cost, nlc, t in zip(fuel_curves, fuel_costs, no_load_costs, m.TimePeriods):
+                p_min = value(m.MinimumPowerOutput[g,t])
+                p_max = value(m.MaximumPowerOutput[g,t])
+
+                if (p_min, p_max, fuel_cost, nlc) in _curve_cache:
+                    curve = _curve_cache[p_min, p_max, fuel_cost, nlc]
+                    if one_fuel_curve or curve['fuel_curve'] == fuel_curve:
+                        m.PowerGenerationPiecewisePoints[g,t] = curve['points']
+                        if g_in_fuel_supply_generators:
+                            _minimum_fuel_consumption[g,t] = curve['min_fuel_consumption']
+                            m.PowerGenerationPiecewiseFuelValues[g,t] = curve['fuel_values']
+                        if g_in_single_fuel_generators:
+                            _minimum_production_cost[g,t] = curve['min_production_cost']
+                            m.PowerGenerationPiecewiseCostValues[g,t] = curve['cost_values']
+                        continue
+                    
+                points, values, minimum_val = _piecewise_helper(m, p_min, p_max, fuel_curve, 'fuel_curve_type')
+                
+                curve = { 'points' : points }
+
+                if not one_fuel_curve:
+                    curve['fuel_curve'] = fuel_curve
+
+                m.PowerGenerationPiecewisePoints[g,t] = points
+                if g_in_fuel_supply_generators:
+                    _minimum_fuel_consumption[g,t] = minimum_val
+                    curve['min_fuel_consumption'] = minimum_val
+
+                    m.PowerGenerationPiecewiseFuelValues[g,t] = values
+                    curve['fuel_values'] = values
+
+                if g_in_single_fuel_generators:
+                    
+                    min_production_cost = minimum_val*fuel_cost + no_load_cost
+                    _minimum_production_cost[g,t] = min_production_cost
+                    curve['min_production_cost'] = min_production_cost
+
+                    cost_values = [ fuel_cost*val for val in values ]
+                    m.PowerGenerationPiecewiseCostValues[g,t] = cost_values
+                    curve['cost_values'] = cost_values
+
+                _curve_cache[p_min, p_max, fuel_cost, nlc] = curve
+
+            return ## we can assume below that we don't have a fuel curve
+
+        if isinstance(cost_curve,dict) and cost_curve['data_type'] == 'time_series':
+            cost_curves = cost_curve['values']
+            one_cost_curve = False
+        else:
+            cost_curves = ( cost_curve for t in m.TimePeriods )
+            one_cost_curve = True
+
+        for cost_curve, nlc, t in zip(cost_curves, no_load_costs, m.TimePeriods):
+            p_min = value(m.MinimumPowerOutput[g,t])
+            p_max = value(m.MaximumPowerOutput[g,t])
+
+            if (p_min, p_max, nlc) in _curve_cache:
+                curve = _curve_cache[p_min, p_max, nlc]
+                if one_cost_curve or curve['cost_curve'] == cost_curve:
+                    m.PowerGenerationPiecewisePoints[g,t] = curve['points']
+                    m.PowerGenerationPiecewiseCostValues[g,t] = curve['cost_values']
+                    _minimum_production_cost[g,t] = curve['min_production']
+                    continue
+
+            if cost_curve is None:
+                if p_min >= p_max: ## only one point
+                    points = [0.]
+                    values = [0.]
+                else:
+                    points = [0., p_max - p_min]
+                    values = [0., 0.]
+                min_production = nlc
+            else:
+                points, values, minimum_val = _piecewise_helper(m, p_min, p_max, cost_curve, 'cost_curve_type')
+                min_production = minimum_val + nlc
+    
+            curve = {'points':points, 'cost_values':values, 'min_production':min_production}
+            if not one_cost_curve:
+                curve['cost_curve'] = cost_curve
+            _curve_cache[p_min, p_max, nlc] = curve
+
+            m.PowerGenerationPiecewisePoints[g,t] = points
+            m.PowerGenerationPiecewiseCostValues[g,t] = values
+            _minimum_production_cost[g,t] = min_production 
+
+    model.CreatePowerGenerationPiecewisePoints = BuildAction(model.ThermalGenerators, rule=power_generation_piecewise_points_rule)
+
+    # Minimum production cost (needed because Piecewise constraint on ProductionCost 
+    # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
+    # back in to the objective if a unit is on
+
+    model.MinimumProductionCost = Param(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals, initialize=_minimum_production_cost, mutable=True)
+
+    model.MinimumFuelConsumption = Param(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals, initialize=_minimum_fuel_consumption, mutable=True)
+
+    ## END PRODUCTION COST CALCULATIONS
+
+    #########################################
+    # penalty costs for constraint violation #
+    #########################################
+
+    ModeratelyBigPenalty = 1e3*system['baseMVA']
+    
+    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
+    
+    BigPenalty = 1e4*system['baseMVA']
+    
+    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
 
     #
     # STORAGE parameters
     #
-    
-
-
     
     model.Storage = Set(initialize=storage_attrs['names'])
     model.StorageAtBus = Set(model.Buses, initialize=storage_by_bus)
@@ -975,26 +1199,26 @@ def load_params(model, model_data):
     # Storage power output >0 when discharging
     
     model.MinimumPowerOutputStorage = Param(model.Storage, within=NonNegativeReals,
-                                            default=0.0, initialize=storage_attrs.get('min_discharge_rate'))
+                                            default=0.0, initialize=storage_attrs.get('min_discharge_rate', dict()))
     
     def maximum_power_output_validator_storage(m, v, s):
         return v >= value(m.MinimumPowerOutputStorage[s])
     
     model.MaximumPowerOutputStorage = Param(model.Storage, within=NonNegativeReals,
                                             validate=maximum_power_output_validator_storage, default=0.0,
-                                            initialize=storage_attrs.get('max_discharge_rate'))
+                                            initialize=storage_attrs.get('max_discharge_rate', dict()))
     
     #Storage power input >0 when charging
     
     model.MinimumPowerInputStorage = Param(model.Storage, within=NonNegativeReals,
-                                            default=0.0, initialize=storage_attrs.get('min_charge_rate'))
+                                            default=0.0, initialize=storage_attrs.get('min_charge_rate', dict()))
     
     def maximum_power_input_validator_storage(m, v, s):
         return v >= value(m.MinimumPowerInputStorage[s])
     
     model.MaximumPowerInputStorage = Param(model.Storage, within=NonNegativeReals,
                                             validate=maximum_power_input_validator_storage, default=0.0,
-                                            initialize=storage_attrs.get('max_charge_rate'))
+                                            initialize=storage_attrs.get('max_charge_rate', dict()))
     
     ###############################################
     # storage ramp up/down rates. units are MW/h. #
@@ -1002,15 +1226,15 @@ def load_params(model, model_data):
     
     # ramp rate limits when discharging
     model.NominalRampUpLimitStorageOutput    = Param(model.Storage, within=NonNegativeReals,
-                                                        initialize=storage_attrs.get('ramp_up_output_60min'))
+                                                        initialize=storage_attrs.get('ramp_up_output_60min', dict()))
     model.NominalRampDownLimitStorageOutput  = Param(model.Storage, within=NonNegativeReals,
-                                                        initialize=storage_attrs.get('ramp_down_output_60min'))
+                                                        initialize=storage_attrs.get('ramp_down_output_60min', dict()))
     
     # ramp rate limits when charging
     model.NominalRampUpLimitStorageInput     = Param(model.Storage, within=NonNegativeReals,
-                                                        initialize=storage_attrs.get('ramp_up_input_60min'))
+                                                        initialize=storage_attrs.get('ramp_up_input_60min', dict()))
     model.NominalRampDownLimitStorageInput   = Param(model.Storage, within=NonNegativeReals,
-                                                        initialize=storage_attrs.get('ramp_down_input_60min'))
+                                                        initialize=storage_attrs.get('ramp_down_input_60min', dict()))
     
     def scale_storage_ramp_up_out(m, s):
         return m.NominalRampUpLimitStorageOutput[s] * m.TimePeriodLengthHours
@@ -1036,23 +1260,23 @@ def load_params(model, model_data):
     # you enter storage energy ratings once for each storage unit
     
     model.MaximumEnergyStorage = Param(model.Storage, within=NonNegativeReals, default=0.0,
-                                        initialize=storage_attrs.get('energy_capacity'))
+                                        initialize=storage_attrs.get('energy_capacity', dict()))
     model.MinimumSocStorage = Param(model.Storage, within=PercentFraction, default=0.0,
-                                        initialize=storage_attrs.get('minimum_state_of_charge'))
+                                        initialize=storage_attrs.get('minimum_state_of_charge', dict()))
     
     ################################################################################
     # round trip efficiency for each storage unit given as a fraction (i.e. [0,1]) #
     ################################################################################
     
     model.InputEfficiencyEnergy  = Param(model.Storage, within=PercentFraction, default=1.0,
-                                            initialize=storage_attrs.get('charge_efficiency'))
+                                            initialize=storage_attrs.get('charge_efficiency', dict()))
     model.OutputEfficiencyEnergy = Param(model.Storage, within=PercentFraction, default=1.0,
-                                            initialize=storage_attrs.get('discharge_efficienty'))
+                                            initialize=storage_attrs.get('discharge_efficienty', dict()))
     model.RetentionRate          = Param(model.Storage, within=PercentFraction, default=1.0,
-                                            initialize=storage_attrs.get('retention_rate_60min')) ## assumed to be %/hr
+                                            initialize=storage_attrs.get('retention_rate_60min', dict())) ## assumed to be %/hr
 
-    model.ChargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('charge_cost'))
-    model.DischargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('discharge_cost'))
+    model.ChargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('charge_cost', dict()))
+    model.DischargeCost = Param(model.Storage, within=Reals, default=0.0, initialize=storage_attrs.get('discharge_cost', dict()))
 
     ## this will be multiplied by itself 1/m.TimePeriodLengthHours times, so this is the scaling to
     ## get us back to %/hr
@@ -1068,7 +1292,7 @@ def load_params(model, model_data):
     # storage units will always be empty at the final time period.
     
     model.EndPointSocStorage = Param(model.Storage, within=PercentFraction, default=0.5,
-                                        initialize=storage_attrs.get('initial_state_of_charge'))
+                                        initialize=storage_attrs.get('initial_state_of_charge', dict()))
     
     ############################################################
     # storage initial conditions: SOC, power output and input  #
@@ -1083,13 +1307,13 @@ def load_params(model, model_data):
     model.StoragePowerOutputOnT0 = Param(model.Storage, within=NonNegativeReals,
                                             validate=t0_storage_power_output_validator,
                                             default=0.0,
-                                            initialize=storage_attrs.get('initial_discharge_rate'))
+                                            initialize=storage_attrs.get('initial_discharge_rate', dict()))
     model.StoragePowerInputOnT0  = Param(model.Storage, within=NonNegativeReals,
                                             validate=t0_storage_power_input_validator,
                                             default=0.0,
-                                            initialize=storage_attrs.get('initial_charge_rate'))
+                                            initialize=storage_attrs.get('initial_charge_rate', dict()))
     model.StorageSocOnT0         = Param(model.Storage, within=PercentFraction,
-                                            default=0.5, initialize=storage_attrs.get('initial_state_of_charge'))
+                                            default=0.5, initialize=storage_attrs.get('initial_state_of_charge', dict()))
 
     ##############################################################
     # failure probability for each generator, in any given hour. #

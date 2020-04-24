@@ -62,7 +62,7 @@ def _add_shutdown_costs(model, add_shutdown_cost_var=True):
         raise Exception("Problem adding shutdown costs, cannot identify status_vars for this model")
     
 
-#TODO: this doesn't check if regulation_services is added first, 
+#TODO: this doesn't check if regulation_service is added first, 
 #      but this will only happen when there are regulation_services!
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'status_vars': ['garver_3bin_vars', 'CA_1bin_vars', 'garver_2bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars'],
@@ -84,7 +84,7 @@ def basic_objective(model):
     #############################################
     
     def compute_no_load_cost_rule(m,g,t):
-        return m.MinimumProductionCost[g]*m.UnitOn[g,t]*m.TimePeriodLengthHours
+        return m.MinimumProductionCost[g,t]*m.UnitOn[g,t]*m.TimePeriodLengthHours
     
     model.NoLoadCost = Expression(model.SingleFuelGenerators, model.TimePeriods, rule=compute_no_load_cost_rule)
     
@@ -101,29 +101,12 @@ def basic_objective(model):
     # Cost computations
     #
 
-    # gather ancillary services added
-    regulation = False
-    spin = False
-    nspin = False
-    supp = False
-    flex = False
-    if hasattr(model, 'regulation_service'):
-        regulation = True
-    if hasattr(model, 'spinning_reserve'):
-        spin = True
-    if hasattr(model, 'non_spinning_reserve'):
-        nspin = True
-    if hasattr(model, 'supplemental_reserve'):
-        supp = True
-    if hasattr(model, 'flexible_ramping'):
-        flex = True
-    
     def commitment_stage_cost_expression_rule(m, st):
         cc = sum(sum(m.NoLoadCost[g,t] + m.StartupCost[g,t] for g in m.SingleFuelGenerators) + \
                  sum(m.DualFuelCommitmentCost[g,t] for g in m.DualFuelGenerators) + \
                  sum(m.ShutdownCost[g,t] for g in m.ThermalGenerators) 
              for t in m.CommitmentTimeInStage[st])
-        if regulation:
+        if m.regulation_service:
             cc += sum(m.RegulationCostCommitment[g,t] for g in m.AGC_Generators for t in m.CommitmentTimeInStage[st])
         return cc
     
@@ -139,23 +122,26 @@ def basic_objective(model):
                 for t in m.GenerationTimeInStage[st]) + \
               sum(m.LoadMismatchCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st]) + \
+              sum(m.BranchViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.InterfaceViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
         if m.reactive_power:
             cc += sum(m.LoadMismatchCostReactive[t] for t in m.GenerationTimeInStage[st])
-        if regulation:
+        if m.security_constraints:
+            cc += sum(m.SecurityConstraintViolationCost[t] for t in m.GenerationTimeInStage[st])
+        if m.regulation_service:
             cc += sum(m.RegulationCostGeneration[g,t] for g in m.AGC_Generators for t in m.GenerationTimeInStage[st]) \
                 + sum(m.RegulationCostPenalty[t] for t in m.GenerationTimeInStage[st])
-        if spin:
+        if m.spinning_reserve:
             cc += sum(m.SpinningReserveCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
                 + sum(m.SpinningReserveCostPenalty[t] for t in m.GenerationTimeInStage[st])
-        if nspin:
+        if m.non_spinning_reserve:
             cc += sum(m.NonSpinningReserveCostGeneration[g,t] for g in m.NonSpinGenerators for t in m.GenerationTimeInStage[st]) \
                 + sum(m.NonSpinningReserveCostPenalty[t] for t in m.GenerationTimeInStage[st])
-        if supp:
+        if m.supplemental_reserve:
             cc += sum(m.SupplementalReserveCostGeneration[g,t] for g in m.ThermalGenerators for t in m.GenerationTimeInStage[st]) \
                 + sum(m.SupplementalReserveCostPenalty[t] for t in m.GenerationTimeInStage[st])
-        if flex:
+        if m.flexible_ramping:
             cc += sum(m.FlexibleRampingCostPenalty[t] for t in m.GenerationTimeInStage[st])
         return cc
     model.GenerationStageCost = Expression(model.StageSet, rule=generation_stage_cost_expression_rule)

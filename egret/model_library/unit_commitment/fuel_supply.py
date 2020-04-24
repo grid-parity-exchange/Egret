@@ -26,9 +26,7 @@ def fuel_supply_model(model):
     '''
     md = model.model_data
 
-    system = md.data['system']
-    time_keys = system['time_keys']
-    TimeMapper = uc_time_helper
+    TimeMapper = uc_time_helper(model.TimePeriods)
 
     ## instantaneous fuel supply model
     inst_fuel_supply_attrs = md.attributes(element_type='fuel_supply', fuel_supply_type='instantaneous')
