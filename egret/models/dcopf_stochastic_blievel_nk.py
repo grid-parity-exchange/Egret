@@ -345,10 +345,11 @@ def solve_stochastic_bilevel_nk(model_data,
 
     print('~~~~~~~~~~ solution stats ~~~~~~~~~~~')
     print('objective: {} MW expected load shed'.format(objective))
-
+    _relay_list = ''
     for name, val in m.delta.items():
         if val == 1:
-            print(' relay compromised: {}'.format(name))
+            _relay_list += name + " "
+    print(' relay(s) compromised: {}'.format(_relay_list))
 
 
     unscale_ModelData_to_pu(md, inplace=True)
@@ -372,7 +373,7 @@ if __name__ == '__main__':
     path = os.path.dirname(__file__)
     print(path)
     ### MATPOWER format *.m file for numerous power systems available at github for pglib-opf
-    filename = 'pglib_opf_case118_ieee.m'
+    filename = 'pglib_opf_case24_ieee_rts__api.m'
     test_case = os.path.join(path, '../../download/', filename)
     md_dict = create_ModelData(test_case)
 
@@ -423,11 +424,15 @@ if __name__ == '__main__':
     # create 3 ranges for real power load uncertainty
     # range _bound[0] is around 85-95% of nominal specified in input data
     # range _bound[1] is around 95-105% of nominal specified in input data
-    # range _bound[2] is around 105-155% of nominal specified in input data
-    _bounds = [(0.75,0.85),(0.85,0.95),(0.95,1.05),(1.05,1.15),(1.15,1.25)]
+    # range _bound[2] is around 105-115% of nominal specified in input data
+    _bounds = [(0.85,0.95),(0.95,1.05),(1.05,1.15)]
+
+    # creates 1 range for real power load uncertainty
+    # range _bound[0] is around 25-175% of nominal specified in input data
+    _bounds = [(0,2)]
     omega = dict()
     # total number of scenarios; idx determines which _bounds tuple is used
-    total_scenarios = 5
+    total_scenarios = 20
     for scenario in range(1,total_scenarios+1):
         scenario_name = 'scenario_'+str(scenario)
         omega[scenario_name] = dict()

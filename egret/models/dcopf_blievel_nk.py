@@ -357,7 +357,7 @@ if __name__ == '__main__':
     path = os.path.dirname(__file__)
     print(path)
     ### MATPOWER format *.m file for numerous power systems available at github for pglib-opf
-    filename = 'pglib_opf_case118_ieee.m'
+    filename = 'pglib_opf_case24_ieee_rts__api.m'
     test_case = os.path.join(path, '../../download/', filename)
     md_dict = create_ModelData(test_case)
 
