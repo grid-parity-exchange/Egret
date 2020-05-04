@@ -276,13 +276,17 @@ def declare_eq_p_balance_dc_approx(model, index_set,
             p_expr -= m.pl[bus_name]
 
         if rhs_kwargs:
+            k = bus_name
             for idx, val in rhs_kwargs.items():
-                if not bus_name in eval("m." + val).index_set():
+                if isinstance(val, tuple):
+                    val,key = val
+                    k = (key,bus_name)
+                if not k in eval("m." + val).index_set():
                     continue
                 if idx == 'include_feasibility_slack_pos':
-                    p_expr -= eval("m." + val)[bus_name]
+                    p_expr -= eval("m." + val)[k]
                 if idx == 'include_feasibility_slack_neg':
-                    p_expr += eval("m." + val)[bus_name]
+                    p_expr += eval("m." + val)[k]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]

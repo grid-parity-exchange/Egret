@@ -249,6 +249,24 @@ def declare_ineq_load_shed(model, index_set):
             m.pl[bus_name]*(1-m.u[bus_name]) <= m.load_shed[bus_name]
 
 
+def declare_ineq_load_shed_stochastic(model, index_set, scenario):
+    """
+    Create the upper-bound inequality constraint for the load shed.
+    """
+    m = model
+    con_set = decl.declare_set('_con_ineq_load_shed_ub',
+                               model=model, index_set=index_set)
+
+    m.ineq_load_shed_ub = pe.Constraint(con_set)
+    m.ineq_load_shed_lb = pe.Constraint(con_set)
+
+    for bus_name in index_set:
+        m.ineq_load_shed_ub[bus_name] = \
+            m.load_shed[scenario,bus_name] <= m.pl[bus_name]
+        m.ineq_load_shed_lb[bus_name] = \
+            m.pl[bus_name]*(1-m.u[bus_name]) <= m.load_shed[scenario,bus_name]
+
+
 def declare_ineq_gen(model, index_set, gens):
     """
     Create the inequality constraints for the generator operations.
