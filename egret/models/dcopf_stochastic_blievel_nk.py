@@ -429,10 +429,10 @@ if __name__ == '__main__':
 
     # creates 1 range for real power load uncertainty
     # range _bound[0] is around 25-175% of nominal specified in input data
-    _bounds = [(0,2)]
+    _bounds = [(0.25,1.75)]
     omega = dict()
     # total number of scenarios; idx determines which _bounds tuple is used
-    total_scenarios = 20
+    total_scenarios = 10
     for scenario in range(1,total_scenarios+1):
         scenario_name = 'scenario_'+str(scenario)
         omega[scenario_name] = dict()
