@@ -36,7 +36,7 @@ The COIN-OR organization - who developers CBC - also provides pre-built binaries
 
 ### Testing the Installation
 
-To test the functionality of the unit commitment aspects of EGRET, execute the following command from the EGRET models/test sub-directory:
+To test the functionality of the unit commitment aspects of EGRET, execute the following command from the EGRET models/tests sub-directory:
 
    pytest test_unit_commitment.py
 
