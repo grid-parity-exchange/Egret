@@ -12,7 +12,6 @@ from pyomo.environ import *
 import os.path
 import egret.data.model_data as md
 
-
 def create_ModelData(dat_file):
     '''
     Create a ModelData object from a prescient dat file
@@ -29,14 +28,17 @@ def create_ModelData(dat_file):
     '''
     return md.ModelData(create_model_data_dict(dat_file))
 
-
 def create_model_data_dict(dat_file):
-    
-    abstract_params = AbstractModel()
+    model = get_uc_model()
+    params = model.create_instance(dat_file)
+    return create_model_data_dict_params(params)
 
-    load_basic_data(abstract_params)
+def get_uc_model():
+    uc_model = AbstractModel()
+    load_basic_data(uc_model)
+    return uc_model
 
-    params = abstract_params.create_instance(dat_file)
+def create_model_data_dict_params(params):
 
     md_dict = md.ModelData.empty_model_data_dict()
 
