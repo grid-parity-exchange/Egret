@@ -104,7 +104,13 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    p_lbub = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
+    p_lbub = dict()
+    for k in branches.keys():
+        k_pmax = p_max[k]
+        if k_pmax is None:
+            p_lbub[k] = (None, None)
+        else:
+            p_lbub[k] = (-k_pmax,k_pmax)
     pf_bounds = p_lbub
     pf_init = dict()
     for branch_name, branch in branches.items():
