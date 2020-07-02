@@ -1290,9 +1290,18 @@ def load_params(model, model_data):
     
     # end-point values are the SOC targets at the final time period. With no end-point constraints
     # storage units will always be empty at the final time period.
+    def _end_point_soc(m, s):
+        if s is None:
+            return
+        s_dict = storage[s]
+        if 'end_state_of_charge' in s_dict:
+            return s_dict['end_state_of_charge']
+        if 'initial_state_of_charge' in s_dict:
+            return s_dict['initial_state_of_charge']
+        return 0.5
     
     model.EndPointSocStorage = Param(model.Storage, within=PercentFraction, default=0.5,
-                                        initialize=storage_attrs.get('initial_state_of_charge', dict()))
+                                        initialize=_end_point_soc)
     
     ############################################################
     # storage initial conditions: SOC, power output and input  #

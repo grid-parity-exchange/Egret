@@ -1555,10 +1555,13 @@ def solve_unit_commitment(model_data,
         return md, results
     return md
 
-# if __name__ == '__main__':
-#     from egret.data.model_data import ModelData
-#
-#     file = "tests/uc_test_instances/test_case_1.json"
-#     md = ModelData()
-#     md.read_from_json(file)
-#     solve_unit_commitment(md, "gurobi")
+if __name__ == '__main__':
+    from egret.data.model_data import ModelData
+    from egret.common.solver_interface import _solve_model
+    from pyomo.environ import SolverFactory
+
+    xpress = SolverFactory('xpress_direct')
+    filen = "../thirdparty/pglib-uc-master/ca/2014-09-01_reserves_0.json"
+    md = ModelData.read(filen, file_type='pglib-uc')
+    model = create_tight_unit_commitment_model(md)
+    model, results = _solve_model(model, 'xpress_direct', mipgap=0.00001, timelimit=60, solver_tee=True)

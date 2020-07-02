@@ -90,6 +90,9 @@ def storage_services(model):
     #####################################
 
     def enforce_ramp_up_rates_power_output_storage_rule(m, s, t):
+        if value(m.ScaledNominalRampUpLimitStorageOutput[s]) >= \
+                value(m.MaximumPowerOutputStorage[s]-m.MinimumPowerOutputStorage[s]):
+            return Constraint.Skip
         if t == m.InitialTime:
             return m.PowerOutputStorage[s, t] <= m.StoragePowerOutputOnT0[s] + m.ScaledNominalRampUpLimitStorageOutput[s]
         else:
@@ -98,6 +101,9 @@ def storage_services(model):
     model.EnforceStorageOutputRampUpRates = Constraint(model.Storage, model.TimePeriods, rule=enforce_ramp_up_rates_power_output_storage_rule)
 
     def enforce_ramp_down_rates_power_output_storage_rule(m, s, t):
+        if value(m.ScaledNominalRampDownLimitStorageOutput[s]) >= \
+                value(m.MaximumPowerOutputStorage[s]-m.MinimumPowerOutputStorage[s]):
+            return Constraint.Skip
         if t == m.InitialTime:
             return m.PowerOutputStorage[s, t] >= m.StoragePowerOutputOnT0[s] - m.ScaledNominalRampDownLimitStorageOutput[s]
         else:
@@ -106,6 +112,9 @@ def storage_services(model):
     model.EnforceStorageOutputRampDownRates = Constraint(model.Storage, model.TimePeriods, rule=enforce_ramp_down_rates_power_output_storage_rule)
 
     def enforce_ramp_up_rates_power_input_storage_rule(m, s, t):
+        if value(m.ScaledNominalRampUpLimitStorageInput[s]) >= \
+                value(m.MaximumPowerInputStorage[s]-m.MinimumPowerInputStorage[s]):
+            return Constraint.Skip
         if t == m.InitialTime:
             return m.PowerInputStorage[s, t] <= m.StoragePowerInputOnT0[s] + m.ScaledNominalRampUpLimitStorageInput[s]
         else:
@@ -114,6 +123,9 @@ def storage_services(model):
     model.EnforceStorageInputRampUpRates = Constraint(model.Storage, model.TimePeriods, rule=enforce_ramp_up_rates_power_input_storage_rule)
 
     def enforce_ramp_down_rates_power_input_storage_rule(m, s, t):
+        if value(m.ScaledNominalRampDownLimitStorageInput[s]) >= \
+                value(m.MaximumPowerInputStorage[s]-m.MinimumPowerInputStorage[s]):
+            return Constraint.Skip
         if t == m.InitialTime:
             return m.PowerInputStorage[s, t] >= m.StoragePowerInputOnT0[s] - m.ScaledNominalRampDownLimitStorageInput[s]
         else:
@@ -141,7 +153,7 @@ def storage_services(model):
 
     def storage_end_point_soc_rule(m, s):
         # storage s, last time period
-        return m.SocStorage[s, value(m.NumTimePeriods)] == m.EndPointSocStorage[s]
+        return m.SocStorage[s, value(m.NumTimePeriods)] >= m.EndPointSocStorage[s]
     model.EnforceEndPointSocStorage = Constraint(model.Storage, rule=storage_end_point_soc_rule)
 
     def storage_cost_rule(m, s, t):
