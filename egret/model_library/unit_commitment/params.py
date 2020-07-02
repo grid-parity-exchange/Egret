@@ -734,11 +734,16 @@ def load_params(model, model_data):
             thermal_gen_attrs['fuel_supply'] = dict()
         if 'aux_fuel_supply' not in thermal_gen_attrs:
             thermal_gen_attrs['aux_fuel_supply'] = dict()
-        gen_set = set(thermal_gen_attrs['fuel_supply'].keys())
-        gen_set.update(thermal_gen_attrs['aux_fuel_supply'].keys())
-        return gen_set
+        fuel_supply = thermal_gen_attrs['fuel_supply']
+        for g in fuel_supply:
+            yield g
+        for g in thermal_gen_attrs['aux_fuel_supply']:
+            if g not in fuel_supply:
+                yield g
 
     def gen_cost_fuel_validator(m,g):
+        if g is None:
+            return True
         if 'p_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['p_fuel']:
             pass
         else:

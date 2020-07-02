@@ -12,7 +12,6 @@ from pyomo.environ import *
 import os.path
 import egret.data.model_data as md
 
-
 def create_ModelData(dat_file):
     '''
     Create a ModelData object from a prescient dat file
@@ -29,14 +28,17 @@ def create_ModelData(dat_file):
     '''
     return md.ModelData(create_model_data_dict(dat_file))
 
-
 def create_model_data_dict(dat_file):
-    
-    abstract_params = AbstractModel()
+    model = get_uc_model()
+    params = model.create_instance(dat_file)
+    return create_model_data_dict_params(params)
 
-    load_basic_data(abstract_params)
+def get_uc_model():
+    uc_model = AbstractModel()
+    load_basic_data(uc_model)
+    return uc_model
 
-    params = abstract_params.create_instance(dat_file)
+def create_model_data_dict_params(params):
 
     md_dict = md.ModelData.empty_model_data_dict()
 
@@ -144,13 +146,14 @@ def create_model_data_dict(dat_file):
         p_cost = {'data_type' : 'cost_curve' }
         if value(params.PiecewiseType) == "NoPiecewise":
             p_cost['cost_curve_type'] = 'polynomial'
-            p_cost['values'] = { 0 : params.ProductionCostA0[g],
-                                 1 : params.ProductionCostA1[g],
-                                 2 : params.ProductionCostA2[g],
+            p_cost['values'] = { 0 : params.FuelCost[g]*params.ProductionCostA0[g],
+                                 1 : params.FuelCost[g]*params.ProductionCostA1[g],
+                                 2 : params.FuelCost[g]*params.ProductionCostA2[g],
                                }
         else:
             p_cost['cost_curve_type'] = 'piecewise'
-            p_cost['values'] = list(zip(params.CostPiecewisePoints[g], params.CostPiecewiseValues[g]))
+            p_cost['values'] = list(zip(params.CostPiecewisePoints[g], 
+                                        (params.FuelCost[g]*val for val in params.CostPiecewiseValues[g])))
         g_d['p_cost'] =  p_cost
 
         ## NOTE: generators need unique names
@@ -257,7 +260,7 @@ def load_basic_data(model):
             print("Multiple buses is not supported by buildBusZone in ReferenceModel.py -- someone should fix that!")
             exit(1)
     
-    model.BusZone = Param(model.Buses, mutable=True)
+    model.BusZone = Param(model.Buses, mutable=True, within=Any)
     model.BuildBusZone = BuildAction(rule=buildBusZone)
     
     model.LoadCoefficient = Param(model.Buses, default=0.0)
@@ -379,11 +382,9 @@ def load_basic_data(model):
     model.NondispatchableGeneratorsAtBus = Set(model.Buses, initialize=nd_gen_init)
     
     def NonNoBus_init(m):
-        retval = set()
         for b in m.Buses:
-            retval = retval.union([gen for gen in m.NondispatchableGeneratorsAtBus[b]])
-        return retval
-    
+            for gen in m.NondispatchableGeneratorsAtBus[b]:
+                yield gen
     model.AllNondispatchableGenerators = Set(initialize=NonNoBus_init)
 
     model.NondispatchableGeneratorType = Param(model.AllNondispatchableGenerators, within=Any, default='W')
@@ -397,7 +398,7 @@ def load_basic_data(model):
     
     model.ReserveZones = Set()
     model.ZonalReserveRequirement = Param(model.ReserveZones, model.TimePeriods, default=0.0, within=NonNegativeReals)
-    model.ReserveZoneLocation = Param(model.ThermalGenerators, default='None')
+    model.ReserveZoneLocation = Param(model.ThermalGenerators, default='None', within=Any)
     
     #################################################################
     # the global system demand, for each time period. units are MW. #
@@ -667,7 +668,7 @@ def load_basic_data(model):
         else:
             return "Absolute"
     
-    model.PiecewiseType = Param(validate=piecewise_type_validator,initialize=piecewise_type_init, )
+    model.PiecewiseType = Param(validate=piecewise_type_validator,initialize=piecewise_type_init, within=Any)
     
     def piecewise_init(m, g):
         return []
@@ -715,11 +716,7 @@ def load_basic_data(model):
     
     model.ValidateCostPiecewisePointsAndValues = BuildCheck(model.ThermalGenerators, rule=validate_cost_piecewise_points_and_values_rule)
     
-    # Sets the cost of fuel to the generator.  Assert that this is 1.0 for this parser, for now
-    model.FuelCost = Param(model.ThermalGenerators, default=1.0) 
-    def unit_fuel_cost(m,g):
-        return (m.FuelCost[g] == 1.0)
-    model.ValidateFuelCost = BuildCheck(model.ThermalGenerators, rule=unit_fuel_cost)
+    model.FuelCost = Param(model.ThermalGenerators, default=1.0, within=Reals) 
     
     # Minimum production cost (needed because Piecewise constraint on ProductionCost 
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
@@ -760,7 +757,7 @@ def load_basic_data(model):
     
     
     model.Storage = Set()
-    model.StorageAtBus = Set(model.Buses, initialize=Set())
+    model.StorageAtBus = Set(model.Buses)
     
     def verify_storage_buses_rule(m, s):
         for b in m.Buses:

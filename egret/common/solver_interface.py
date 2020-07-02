@@ -60,6 +60,11 @@ def _set_options(solver, mipgap=None, timelimit=None, other_options=None):
             solver.options.ratioGap = mipgap
         if timelimit is not None:
             solver.options.sec = timelimit
+    elif 'xpress' in solver_name:
+        if mipgap is not None:
+            solver.options.mipgap = mipgap
+        if timelimit is not None:
+            solver.options.maxtime = timelimit
     # else:
     #     raise Exception('Solver {0} not recognized'.format(solver_name))
 
