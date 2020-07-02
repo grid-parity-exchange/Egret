@@ -634,6 +634,14 @@ def load_params(model, model_data):
     
     # startup costs are conceptually expressed as pairs (x, y), where x represents the number of hours that a unit has been off and y represents
     # the cost associated with starting up the unit after being off for x hours. these are broken into two distinct ordered sets, as follows.
+
+    def _get_startup_lag(startup,default):
+        try:
+            iter(startup)
+        except TypeError:
+            return [default]
+        else:
+            return [i[0] for i in startup]
     
     def startup_lags_init_rule(m, g):
         startup_cost = thermal_gens[g].get('startup_cost')
@@ -643,10 +651,18 @@ def load_params(model, model_data):
         if startup_fuel is None and startup_cost is None:
             return [value(m.MinimumDownTime[g])] 
         elif startup_cost is None:
-            return [i[0] for i in startup_fuel]
+            return _get_startup_lag(startup_fuel, value(m.MinimumDownTime[g]))
         else:
-            return [i[0] for i in startup_cost]
+            return _get_startup_lag(startup_cost, value(m.MinimumDownTime[g]))
     model.StartupLags = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_lags_init_rule) # units are hours / time periods.
+
+    def _get_startup_cost(startup, fixed_adder, multiplier):
+        try:
+            iter(startup)
+        except TypeError:
+            return [fixed_adder+multiplier*startup]
+        else:
+            return [fixed_adder+multiplier*i[1] for i in startup]
     
     def startup_costs_init_rule(m, g):
         startup_cost = thermal_gens[g].get('startup_cost')
@@ -660,9 +676,9 @@ def load_params(model, model_data):
             fuel_cost = thermal_gens[g].get('fuel_cost')
             if fuel_cost is None:
                 raise Exception("No fuel cost for generator {}, but data is provided for fuel tracking".format(g))
-            return [fixed_startup_cost+fuel_cost*i[1] for i in startup_fuel]
+            return _get_startup_cost(startup_fuel, fixed_startup_cost, fuel_cost)
         else:
-            return [fixed_startup_cost+i[1] for i in startup_cost]
+            return _get_startup_cost(startup_cost, fixed_startup_cost, 1.)
     model.StartupCosts = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_costs_init_rule) # units are $.
     
     # startup lags must be monotonically increasing...
