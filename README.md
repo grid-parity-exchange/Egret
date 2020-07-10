@@ -68,7 +68,13 @@ test_unit_commitment.py ..............                                          
 
 ### How to Cite EGRET in Your Research
 
-If you are using the unit commitment functionality of EGRET, please cite the following paper: http://www.optimization-online.org/DB_HTML/2018/11/6930.html.
+If you are using the unit commitment functionality of EGRET, please cite the following paper: 
+
+On Mixed-Integer Programming Formulations for the Unit Commitment Problem
+Bernard Knueven, James Ostrowski, and Jean-Paul Watson.
+INFORMS Journal on Computing (Ahead of Print)
+https://pubsonline.informs.org/doi/10.1287/ijoc.2019.0944
+
 
 
 
