@@ -193,7 +193,7 @@ def load_params(model, model_data):
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs.get('reactance', dict()))
+    model.Impedence = Param(model.TransmissionLines, within=Reals, initialize=branch_attrs.get('reactance', dict()))
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term', dict())) # max flow across the line
 
@@ -309,10 +309,16 @@ def load_params(model, model_data):
     bus_loads = { (b,t) : 0 for b in bus_attrs['names'] for t in model.TimePeriods}
 
     for lname, load in loads.items():
-        bus = load['bus']
         load_time = TimeMapper(load['p_load'])
-        for t in model.TimePeriods:
-            bus_loads[bus, t] += load_time[t]
+        bus = load['bus']
+        if isinstance(bus, dict):
+            assert bus['data_type'] == 'load_distribution_factor'
+            for bn, multi in bus['values'].items():
+                for t in model.TimePeriods:
+                    bus_loads[bn, t] += multi*load_time[t]
+        else:
+            for t in model.TimePeriods:
+                bus_loads[bus, t] += load_time[t]
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
@@ -399,7 +405,7 @@ def load_params(model, model_data):
     
     model.MinNondispatchablePower = Param(model.AllNondispatchableGenerators,
                                             model.TimePeriods, 
-                                            within=NonNegativeReals,
+                                            within=Reals, # more permissive; e.g. CSP
                                             default=0.0,
                                             mutable=True,
                                             initialize=TimeMapper(renewable_gen_attrs.get('p_min', dict())))
@@ -409,7 +415,7 @@ def load_params(model, model_data):
     
     model.MaxNondispatchablePower = Param(model.AllNondispatchableGenerators,
                                             model.TimePeriods,
-                                            within=NonNegativeReals,
+                                            within=Reals, # more permissive; e.g. CSP
                                             default=0.0,
                                             mutable=True,
                                             validate=maximum_nd_output_validator,
@@ -818,6 +824,11 @@ def load_params(model, model_data):
                 for (o1, c1), (o2, c2) in zip(values, values[1:]):
                     if o2 <= p_min or math.isclose(p_min, o2):
                         continue
+                    if math.isclose(o2,o1):
+                        if math.isclose(c2,c1):
+                            continue
+                        raise Exception("Piecewise {} must be convex above p_min. ".format(curve_type) + \
+                                        "Found non-convex piecewise {} for generator {} at time {}".format(curve_type,g,t))
                     ## else p_min > o2
                     if last_slope is None:
                         last_slope = (c2-c1)/(o2-o1)
@@ -920,6 +931,16 @@ def load_params(model, model_data):
     _minimum_production_cost = {}
     _minimum_fuel_consumption = {}
 
+
+    def _eliminate_piecewise_duplicates(input_func):
+        if len(input_func) <= 1:
+            return input_func
+        new = [input_func[0]]
+        for (o1, c1), (o2, c2) in zip(input_func, input_func[1:]):
+            if not math.isclose(o1,o2) and not math.isclose(c1,c2):
+                new.append((o2,c2))
+        return new
+
     def _much_less_than(v1, v2):
         return v1 < v2 and not math.isclose(v1,v2)
 
@@ -928,6 +949,8 @@ def load_params(model, model_data):
         minimum_val = 0.
         new_points = []
         new_vals = []
+
+        input_func = _eliminate_piecewise_duplicates(input_func)
 
         set_p_min = False
 

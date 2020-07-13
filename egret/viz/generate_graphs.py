@@ -73,6 +73,7 @@ BUILT_IN_FUEL_CODES = [
     ('Sync_Cond', 'SC'),
     ('Biomass', 'B'),
     ('Dual Fuel', 'DF'),
+    ('Battery', 'Z'),
     # To accomodate data that uses the codes directly
     ('Z', 'Z'),
     ('N', 'N'),
@@ -166,7 +167,8 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
             return
         
         bottom = np.zeros(len(indices))
-        
+        y_min_lim = 0
+
         if plot_individual_generators:      
             INDIVIDUAL_GEN_PLOT_UPPER_LIMIT = 5
 
@@ -220,7 +222,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     quickstart_label = 'quickstart'
                 else:
                     quickstart_label = 'not quickstart'
-                
+
                 if reported_fuel_type == 'Dual Fuel':
                     aux_fuel_consumed = attribute_to_array(generator_data['aux_fuel_consumed'])
 
@@ -249,7 +251,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     component_label = GENERATION_TYPES[generation_type].label
                 except KeyError:
                     component_label = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].label
-                
+
                 try:
                     component_color = GENERATION_TYPES[generation_type].color
                 except KeyError:
@@ -270,7 +272,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                                 component_label = ''
 
                             ax.bar(indices, output_level_array, bar_width, bottom=bottom, 
-                                color=component_color, 
+                                color=component_color,
                                 label=component_label,
                                 hatch=HATCH_SYMBOL[quickstart_label],
                                 edgecolor='#FFFFFF', linewidth=0.5
@@ -300,13 +302,21 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                             bottom += output_level_array                        
         else:    
             total_generation_by_fuel_type = {}
+            total_storage_by_fuel_type = {}
 
             for generator, generator_data in egret_model_data.data['elements']['generator'].items():
                 pg_array = attribute_to_array(generator_data['pg'])
 
-                if not sum(pg_array) > 0.0:
+                if np.all(pg_array==0.):
                     continue
-    
+
+                if np.any(pg_array<0.):
+                    st_array = -pg_array
+                    pg_array[ pg_array < 0. ] = 0.
+                    st_array[ st_array < 0. ] = 0.
+                else:
+                    st_array = None
+
                 reported_fuel_type = generator_data['fuel']
 
                 # Check if dual fuel generator and override 'fuel' field with 'Dual Fuel'
@@ -322,7 +332,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                     quickstart_label = 'quickstart'
                 else:
                     quickstart_label = 'not quickstart'
-        
+
                 if reported_fuel_type == 'Dual Fuel':
                     aux_fuel_consumed = attribute_to_array(generator_data['aux_fuel_consumed'])
 
@@ -346,20 +356,83 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                         total_generation_by_fuel_type[fuel_type] = {}
                         total_generation_by_fuel_type[fuel_type][quickstart_label] = pg_array
 
+                if st_array is not None:
+                    try:
+                        total_storage_by_fuel_type[fuel_type] += st_array
+                    except KeyError:
+                        total_storage_by_fuel_type[fuel_type] = st_array
+                    bottom -= st_array
+
+            for storage, storage_data in egret_model_data.data['elements']['storage'].items():
+                pg_array = attribute_to_array(storage_data['p_discharge'])
+                st_array = attribute_to_array(storage_data['p_charge'])
+
+                if np.all(pg_array==0.) and np.all(st_array==0.):
+                    continue
+
+                if 'fuel' in storage_data:
+                    reported_fuel_type = storage_data['fuel']
+                    if FUEL_TO_CODE[reported_fuel_type] == 'Other':
+                        reported_fuel_type = 'Z'
+                else:
+                    reported_fuel_type = 'Z'
+
+                # Match fuel type to one of pre-determined types or 'other'
+                fuel_type = GENERATION_TYPES[FUEL_TO_CODE[reported_fuel_type]].label
+                quickstart_label = 'not quickstart'
+                try:
+                    total_generation_by_fuel_type[fuel_type][quickstart_label] += pg_array
+                except KeyError:
+                    total_generation_by_fuel_type[fuel_type] = {}
+                    total_generation_by_fuel_type[fuel_type][quickstart_label] = pg_array
+
+                try:
+                    total_storage_by_fuel_type[fuel_type] += st_array
+                except KeyError:
+                    total_storage_by_fuel_type[fuel_type] = st_array
+
+                bottom -= st_array
+
+            y_min_lim = min(bottom)
+
+            # Plot each bar stack component.
+            sorted_total_storage_by_fuel_type = sorted(total_storage_by_fuel_type.items(), key=lambda x: -GENERATION_TYPE_SORT_KEY.get(x[0], 1e3))
+            for storage_type, total_storage_array in sorted_total_storage_by_fuel_type:
+                try:
+                    component_label = GENERATION_TYPES[storage_type].label
+                except KeyError:
+                    component_label = GENERATION_TYPES[FUEL_TO_CODE[storage_type]].label
+
+                try:
+                    component_color = GENERATION_TYPES[storage_type].color
+                except KeyError:
+                    component_color = GENERATION_TYPES[FUEL_TO_CODE[storage_type]].color
+
+
+                component_values = total_storage_array
+
+                ax.bar(indices, component_values, bar_width, bottom=bottom,
+                    color=component_color,
+                    label=component_label,
+                    hatch=HATCH_SYMBOL[quickstart_label],
+                    linewidth=0
+                )
+                bottom += component_values
+
+
             # Plot each bar stack component.
             sorted_total_generation_by_fuel_type = sorted(total_generation_by_fuel_type.items(), key=lambda x: GENERATION_TYPE_SORT_KEY.get(x[0], 1e3))
-
             for generation_type, total_generation_array in sorted_total_generation_by_fuel_type:
                 try:
                     component_label = GENERATION_TYPES[generation_type].label
                 except KeyError:
                     component_label = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].label
-                
+
                 try:
                     component_color = GENERATION_TYPES[generation_type].color
                 except KeyError:
                     component_color = GENERATION_TYPES[FUEL_TO_CODE[generation_type]].color
-                
+
                 if not (generation_type == 'Dual Fuel'):
                     for quickstart_label in ['not quickstart', 'quickstart']:
                         try:
@@ -380,7 +453,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                         _, l = ax.get_legend_handles_labels()
                         if component_label in l:
                             component_label = ''
-                        
+
                         for quickstart_label in ['not quickstart', 'quickstart']:
                             try:
                                 component_values = total_generation_array[quickstart_label][operation_type]
@@ -394,7 +467,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                                     linewidth=0
                                 )
                                 bottom += component_values        
-        return bottom
+        return bottom, y_min_lim
 
     fig, ax = plt.subplots(figsize=(16, 8))
 
@@ -402,7 +475,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     indices = np.arange(len(time_labels))
                 
     # Plot generation dispatch/output.
-    total_dispatch_levels = _plot_generation_stack_components()
+    total_dispatch_levels, y_min_lim = _plot_generation_stack_components()
     bottom = total_dispatch_levels
     
     # Plot load shedding, if applicable.    
@@ -550,7 +623,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
 
     # Explicitly set y-axis limits.
     y_max = max(bottom)
-    ax.set_ylim(0, 1.05*y_max)
+    ax.set_ylim(1.05*y_min_lim, 1.05*y_max)
 
     ax.set_title(title)
     ax.set_ylabel('Power [MW]')
