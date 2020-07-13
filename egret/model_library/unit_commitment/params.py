@@ -742,6 +742,8 @@ def load_params(model, model_data):
                 yield g
 
     def gen_cost_fuel_validator(m,g):
+        # validators may get called once 
+        # with key None for empty sets
         if g is None:
             return True
         if 'p_fuel' in thermal_gen_attrs and g in thermal_gen_attrs['p_fuel']:
