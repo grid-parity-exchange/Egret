@@ -35,7 +35,7 @@ def create_model_data_dict(dat_file):
 
 def get_uc_model():
     uc_model = AbstractModel()
-    load_basic_data(uc_model)
+    setup_abstract_model(uc_model)
     return uc_model
 
 def create_model_data_dict_params(params):
@@ -228,10 +228,10 @@ def _populate_reserve_requirements(model):
     
     model.PopulateReserveRequirements = BuildAction(rule=populate_reserve_requirements_rule)
 
-def load_basic_data(model):
+def setup_abstract_model(model):
     
     '''
-    This loads the model from a dat file
+    This adds an AbstractModel shell for dat file parsing
     '''
     warn_neg_load = False
     #
@@ -381,11 +381,11 @@ def load_basic_data(model):
         return []
     model.NondispatchableGeneratorsAtBus = Set(model.Buses, initialize=nd_gen_init)
     
-    def NonNoBus_init(m):
+    def nondispatchable_generator_init(m):
         for b in m.Buses:
             for gen in m.NondispatchableGeneratorsAtBus[b]:
                 yield gen
-    model.AllNondispatchableGenerators = Set(initialize=NonNoBus_init)
+    model.AllNondispatchableGenerators = Set(initialize=nondispatchable_generator_init)
 
     model.NondispatchableGeneratorType = Param(model.AllNondispatchableGenerators, within=Any, default='W')
     
