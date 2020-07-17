@@ -30,7 +30,7 @@ test_int_objvals = [4201915.017320504, 5454367.7670904165, 5999272.361123627, 54
 ## for FP comparisons
 rel_tol = 1e-08
 
-solver_list = ['gurobi_persistent', 'cplex_persistent', 'gurobi', 'cplex']
+solver_list = ['xpress_persistent', 'gurobi_persistent', 'cplex_persistent', 'gurobi', 'cplex']
 test_solver = None
 comm_mip_avail = False
 for solver in solver_list:
