@@ -82,9 +82,9 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStart[g,t] + \
-                                      sum( (list(m.StartupCosts[g])[s-1] - m.StartupCosts[g].last()) * \
+                                      sum( (m.StartupCosts[g][s] - m.StartupCosts[g].last()) * \
                                          sum( m.StartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriods[g] \
-                                           if (list(m.ScaledStartupLags[g])[s-1] <= t - tp < (list(m.ScaledStartupLags[g])[s])) ) \
+                                           if (m.ScaledStartupLags[g][s] <= t - tp < (m.ScaledStartupLags[g][s+1])) ) \
                                          for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
     
     model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
@@ -132,8 +132,8 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
         ## the last startup indicator doesn't have a lag
         if s == len(m.StartupCostIndices[g]):
             return Constraint.Skip
-        this_lag = list(m.ScaledStartupLags[g])[s-1]
-        next_lag = list(m.ScaledStartupLags[g])[s]
+        this_lag = m.ScaledStartupLags[g][s]
+        next_lag = m.ScaledStartupLags[g][s+1]
         ## this is negative if the generator has previously been off
         generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
         
@@ -159,7 +159,7 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
         model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
     
     def ComputeStartupCost2_rule(m,g,t):
-        return m.StartupCost[g,t] == sum(m.delta[g,s,t]*list(m.StartupCosts[g])[s-1] for s in m.StartupCostIndices[g])
+        return m.StartupCost[g,t] == sum(m.delta[g,s,t]*m.StartupCosts[g][s] for s in m.StartupCostIndices[g])
     
     model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 

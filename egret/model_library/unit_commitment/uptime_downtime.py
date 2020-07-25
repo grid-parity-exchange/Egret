@@ -9,10 +9,14 @@
 
 ## file for minimum uptime/downtime constraints
 from pyomo.environ import *
+from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
 from .uc_utils import add_model_attr 
 component_name = 'uptime_downtime'
+
+def _is_var(v):
+    return isinstance(v, Var)
 
 def _add_initial(model):
 
@@ -61,10 +65,23 @@ def _add_fixed_and_initial(model):
 
 def _3bin_logic(model):
     
-    def logical_rule(m,g,t):
-        if t==value(m.InitialTime):
-            return m.UnitOn[g, t] - m.UnitOnT0[g] == m.UnitStart[g,t] - m.UnitStop[g,t]
-        return m.UnitOn[g,t] - m.UnitOn[g,t-1] == m.UnitStart[g,t] - m.UnitStop[g,t]
+    if _is_var(model.UnitOn) and _is_var(model.UnitStart) and _is_var(model.UnitStop):
+        def logical_rule(m,g,t):
+            if t==value(m.InitialTime):
+                return (m.UnitOnT0[g], LinearExpression(
+                    linear_vars=[m.UnitOn[g,t], m.UnitStart[g,t], m.UnitStop[g,t]],
+                    linear_coefs=[1., -1., 1.],
+                    ) )
+            return (0, LinearExpression(
+                linear_vars=[m.UnitOn[g,t], m.UnitOn[g,t-1], m.UnitStart[g,t], m.UnitStop[g,t]],
+                linear_coefs=[1., -1, -1., 1.],
+                ) )
+            
+    else:
+        def logical_rule(m,g,t):
+            if t==value(m.InitialTime):
+                return m.UnitOn[g, t] - m.UnitOnT0[g] == m.UnitStart[g,t] - m.UnitStop[g,t]
+            return m.UnitOn[g,t] - m.UnitOn[g,t-1] == m.UnitStart[g,t] - m.UnitStop[g,t]
     
     model.Logical = Constraint(model.ThermalGenerators, model.TimePeriods,rule=logical_rule)
 
@@ -282,26 +299,43 @@ def rajan_takriti_UT_DT(model):
     # up-time constraints #
     #######################
     
-    def uptime_rule(m,g,t):
-        if t < value(m.ScaledMinimumUpTime[g]):
-            return Constraint.Skip
-        else: 
-            return sum(m.UnitStart[g,i] for i in range(t-value(m.ScaledMinimumUpTime[g])+1, t+1)) <= m.UnitOn[g,t] 
+    if _is_var(model.UnitOn) and _is_var(model.UnitStart) and _is_var(model.UnitStop):
+        def uptime_rule(m,g,t):
+            if t < value(m.ScaledMinimumUpTime[g]):
+                return Constraint.Skip
+            linear_vars = [m.UnitStart[g,i] for i in range(t-value(m.ScaledMinimumUpTime[g])+1, t+1)]
+            linear_coefs = [1.]*len(linear_vars)
+            linear_vars.append(m.UnitOn[g,t])
+            linear_coefs.append(-1.)
+            return (None, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
+
+        def downtime_rule(m,g,t):
+            if t < value(m.ScaledMinimumDownTime[g]):
+                return Constraint.Skip
+            linear_vars = [m.UnitStop[g,i] for i in range(t-value(m.ScaledMinimumDownTime[g])+1, t+1)]
+            linear_coefs = [1.]*len(linear_vars)
+            linear_vars.append(m.UnitOn[g,t])
+            linear_coefs.append(1.)
+            return (None, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), 1.)
+
+    else:
+        def uptime_rule(m,g,t):
+            if t < value(m.ScaledMinimumUpTime[g]):
+                return Constraint.Skip
+            else: 
+                return sum(m.UnitStart[g,i] for i in range(t-value(m.ScaledMinimumUpTime[g])+1, t+1)) <= m.UnitOn[g,t] 
+        #########################
+        # down-time constraints #
+        #########################
+        
+        
+        def downtime_rule(m,g,t):
+            if t < value(m.ScaledMinimumDownTime[g]):
+                return Constraint.Skip
+            else: 
+                return sum(m.UnitStop[g,i] for i in range(t-value(m.ScaledMinimumDownTime[g])+1, t+1)) <= 1 - m.UnitOn[g,t] 
     
     model.UpTime = Constraint(model.ThermalGenerators, model.TimePeriods, rule=uptime_rule)
-    
-    
-    #########################
-    # down-time constraints #
-    #########################
-    
-    
-    def downtime_rule(m,g,t):
-        if t < value(m.ScaledMinimumDownTime[g]):
-            return Constraint.Skip
-        else: 
-            return sum(m.UnitStop[g,i] for i in range(t-value(m.ScaledMinimumDownTime[g])+1, t+1)) <= 1 - m.UnitOn[g,t] 
-    
     model.DownTime = Constraint(model.ThermalGenerators,model.TimePeriods,rule=downtime_rule)
     
     _3bin_logic(model)
