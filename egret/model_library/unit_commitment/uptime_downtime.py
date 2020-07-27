@@ -15,9 +15,6 @@ import math
 from .uc_utils import add_model_attr, is_var, linear_summation
 component_name = 'uptime_downtime'
 
-def _is_var(v):
-    return isinstance(v, Var)
-
 def _add_initial(model):
 
     # constraint due to initial conditions.
@@ -65,7 +62,7 @@ def _add_fixed_and_initial(model):
 
 def _3bin_logic(model):
     
-    if _is_var(model.UnitOn) and _is_var(model.UnitStart) and _is_var(model.UnitStop):
+    if is_var(model.UnitOn) and is_var(model.UnitStart) and is_var(model.UnitStop):
         linear_expr = LinearExpression
     else:
         linear_expr = linear_summation
@@ -76,10 +73,10 @@ def _3bin_logic(model):
                 linear_vars=[m.UnitOn[g,t], m.UnitStart[g,t], m.UnitStop[g,t]],
                 linear_coefs=[1., -1., 1.],
                 ) )
-        return (0, linear_expr(
+        return (linear_expr(
             linear_vars=[m.UnitOn[g,t], m.UnitOn[g,t-1], m.UnitStart[g,t], m.UnitStop[g,t]],
             linear_coefs=[1., -1, -1., 1.],
-            ) )
+            ), 0. )
     
     model.Logical = Constraint(model.ThermalGenerators, model.TimePeriods,rule=logical_rule)
 
@@ -297,7 +294,7 @@ def rajan_takriti_UT_DT(model):
     # up-time constraints #
     #######################
     
-    if _is_var(model.UnitOn) and _is_var(model.UnitStart) and _is_var(model.UnitStop):
+    if is_var(model.UnitOn) and is_var(model.UnitStart) and is_var(model.UnitStop):
         linear_expr = LinearExpression
     else:
         linear_expr = linear_summation
@@ -312,6 +309,10 @@ def rajan_takriti_UT_DT(model):
         return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
 
     model.UpTime = Constraint(model.ThermalGenerators, model.TimePeriods, rule=uptime_rule)
+
+    #########################
+    # down-time constraints #
+    #########################
 
     def downtime_rule(m,g,t):
         if t < value(m.ScaledMinimumDownTime[g]):
