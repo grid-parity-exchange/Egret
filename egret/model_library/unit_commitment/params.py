@@ -193,7 +193,7 @@ def load_params(model, model_data):
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals, initialize=branch_attrs.get('reactance', dict()))
+    model.Impedence = Param(model.TransmissionLines, within=Reals, initialize=branch_attrs.get('reactance', dict()))
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term', dict())) # max flow across the line
 
@@ -309,10 +309,16 @@ def load_params(model, model_data):
     bus_loads = { (b,t) : 0 for b in bus_attrs['names'] for t in model.TimePeriods}
 
     for lname, load in loads.items():
-        bus = load['bus']
         load_time = TimeMapper(load['p_load'])
-        for t in model.TimePeriods:
-            bus_loads[bus, t] += load_time[t]
+        bus = load['bus']
+        if isinstance(bus, dict):
+            assert bus['data_type'] == 'load_distribution_factor'
+            for bn, multi in bus['values'].items():
+                for t in model.TimePeriods:
+                    bus_loads[bn, t] += multi*load_time[t]
+        else:
+            for t in model.TimePeriods:
+                bus_loads[bus, t] += load_time[t]
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
@@ -399,7 +405,7 @@ def load_params(model, model_data):
     
     model.MinNondispatchablePower = Param(model.AllNondispatchableGenerators,
                                             model.TimePeriods, 
-                                            within=NonNegativeReals,
+                                            within=Reals, # more permissive; e.g. CSP
                                             default=0.0,
                                             mutable=True,
                                             initialize=TimeMapper(renewable_gen_attrs.get('p_min', dict())))
@@ -409,7 +415,7 @@ def load_params(model, model_data):
     
     model.MaxNondispatchablePower = Param(model.AllNondispatchableGenerators,
                                             model.TimePeriods,
-                                            within=NonNegativeReals,
+                                            within=Reals, # more permissive; e.g. CSP
                                             default=0.0,
                                             mutable=True,
                                             validate=maximum_nd_output_validator,
@@ -634,6 +640,14 @@ def load_params(model, model_data):
     
     # startup costs are conceptually expressed as pairs (x, y), where x represents the number of hours that a unit has been off and y represents
     # the cost associated with starting up the unit after being off for x hours. these are broken into two distinct ordered sets, as follows.
+
+    def _get_startup_lag(startup,default):
+        try:
+            iter(startup)
+        except TypeError:
+            return [default]
+        else:
+            return [i[0] for i in startup]
     
     def startup_lags_init_rule(m, g):
         startup_cost = thermal_gens[g].get('startup_cost')
@@ -643,10 +657,18 @@ def load_params(model, model_data):
         if startup_fuel is None and startup_cost is None:
             return [value(m.MinimumDownTime[g])] 
         elif startup_cost is None:
-            return [i[0] for i in startup_fuel]
+            return _get_startup_lag(startup_fuel, value(m.MinimumDownTime[g]))
         else:
-            return [i[0] for i in startup_cost]
+            return _get_startup_lag(startup_cost, value(m.MinimumDownTime[g]))
     model.StartupLags = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_lags_init_rule) # units are hours / time periods.
+
+    def _get_startup_cost(startup, fixed_adder, multiplier):
+        try:
+            iter(startup)
+        except TypeError:
+            return [fixed_adder+multiplier*startup]
+        else:
+            return [fixed_adder+multiplier*i[1] for i in startup]
     
     def startup_costs_init_rule(m, g):
         startup_cost = thermal_gens[g].get('startup_cost')
@@ -660,9 +682,9 @@ def load_params(model, model_data):
             fuel_cost = thermal_gens[g].get('fuel_cost')
             if fuel_cost is None:
                 raise Exception("No fuel cost for generator {}, but data is provided for fuel tracking".format(g))
-            return [fixed_startup_cost+fuel_cost*i[1] for i in startup_fuel]
+            return _get_startup_cost(startup_fuel, fixed_startup_cost, fuel_cost)
         else:
-            return [fixed_startup_cost+i[1] for i in startup_cost]
+            return _get_startup_cost(startup_cost, fixed_startup_cost, 1.)
     model.StartupCosts = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_costs_init_rule) # units are $.
     
     # startup lags must be monotonically increasing...
@@ -804,6 +826,11 @@ def load_params(model, model_data):
                 for (o1, c1), (o2, c2) in zip(values, values[1:]):
                     if o2 <= p_min or math.isclose(p_min, o2):
                         continue
+                    if math.isclose(o2,o1):
+                        if math.isclose(c2,c1):
+                            continue
+                        raise Exception("Piecewise {} must be convex above p_min. ".format(curve_type) + \
+                                        "Found non-convex piecewise {} for generator {} at time {}".format(curve_type,g,t))
                     ## else p_min > o2
                     if last_slope is None:
                         last_slope = (c2-c1)/(o2-o1)
@@ -906,6 +933,16 @@ def load_params(model, model_data):
     _minimum_production_cost = {}
     _minimum_fuel_consumption = {}
 
+
+    def _eliminate_piecewise_duplicates(input_func):
+        if len(input_func) <= 1:
+            return input_func
+        new = [input_func[0]]
+        for (o1, c1), (o2, c2) in zip(input_func, input_func[1:]):
+            if not math.isclose(o1,o2) and not math.isclose(c1,c2):
+                new.append((o2,c2))
+        return new
+
     def _much_less_than(v1, v2):
         return v1 < v2 and not math.isclose(v1,v2)
 
@@ -914,6 +951,8 @@ def load_params(model, model_data):
         minimum_val = 0.
         new_points = []
         new_vals = []
+
+        input_func = _eliminate_piecewise_duplicates(input_func)
 
         set_p_min = False
 
@@ -1297,9 +1336,18 @@ def load_params(model, model_data):
     
     # end-point values are the SOC targets at the final time period. With no end-point constraints
     # storage units will always be empty at the final time period.
+    def _end_point_soc(m, s):
+        if s is None:
+            return
+        s_dict = storage[s]
+        if 'end_state_of_charge' in s_dict:
+            return s_dict['end_state_of_charge']
+        if 'initial_state_of_charge' in s_dict:
+            return s_dict['initial_state_of_charge']
+        return 0.5
     
     model.EndPointSocStorage = Param(model.Storage, within=PercentFraction, default=0.5,
-                                        initialize=storage_attrs.get('initial_state_of_charge', dict()))
+                                        initialize=_end_point_soc)
     
     ############################################################
     # storage initial conditions: SOC, power output and input  #

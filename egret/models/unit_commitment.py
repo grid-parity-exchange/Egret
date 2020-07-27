@@ -843,6 +843,9 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     from egret.common.solver_interface import _solve_model
     import time
 
+    ## write the PTDF matrix, if told to
+    ptdf_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
+
     egret_metasolver_status = dict()
 
     start_time = time.time()
@@ -944,9 +947,6 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 
     egret_metasolver_status['time'] = time.time() - start_time
     results.egret_metasolver = egret_metasolver_status
-
-    ## write the PTDF matrix, if told to
-    ptdf_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
 
     return m, results, solver
 
@@ -1196,7 +1196,7 @@ def solve_unit_commitment(model_data,
             p_discharge_dict[dt] = value(m.PowerOutputStorage[s,mt])
             p_charge_dict[dt] = value(m.PowerInputStorage[s,mt])
             operational_cost_dict[dt] = value(m.StorageCost[s,mt])
-            state_of_charge_dict[dt] = value(m.SocStorage[s.mt])
+            state_of_charge_dict[dt] = value(m.SocStorage[s,mt])
 
         s_dict['p_discharge'] = _time_series_dict(p_discharge_dict)
         s_dict['p_charge'] = _time_series_dict(p_charge_dict)
@@ -1555,10 +1555,10 @@ def solve_unit_commitment(model_data,
         return md, results
     return md
 
-# if __name__ == '__main__':
-#     from egret.data.model_data import ModelData
-#
-#     file = "tests/uc_test_instances/test_case_1.json"
-#     md = ModelData()
-#     md.read_from_json(file)
-#     solve_unit_commitment(md, "gurobi")
+if __name__ == '__main__':
+    from egret.data.model_data import ModelData
+
+    file = "tests/uc_test_instances/test_case_1.json"
+    md = ModelData()
+    md.read_from_json(file)
+    solve_unit_commitment(md, "gurobi")
