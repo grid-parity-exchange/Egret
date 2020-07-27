@@ -12,7 +12,7 @@ from pyomo.environ import *
 from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, is_var, linear_summation
 component_name = 'reserve_vars'
 
 def check_reserve_requirement(model):
@@ -57,43 +57,38 @@ def garver_power_avail_vars(model):
     model.MaximumPowerAvailableAboveMinimum = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=garver_power_bounds_rule)
     
     ## Note: thes only get used in system balance constraints
-    if isinstance(model.UnitOn, Var):
-        def maximum_power_avaiable_expr_rule(m, g, t):
-            #return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
-            return LinearExpression( constant=0., \
-                                    linear_vars=[m.MaximumPowerAvailableAboveMinimum[g,t], m.UnitOn[g,t]], \
-                                    linear_coefs=[1., m.MinimumPowerOutput[g,t]] )
+    if is_var(model.UnitOn):
+        linear_expr = LinearExpression
     else:
-        def maximum_power_avaiable_expr_rule(m, g, t):
-            return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
+        linear_expr = linear_summation
+    def maximum_power_avaiable_expr_rule(m, g, t):
+        #return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
+        return linear_expr( constant=0., \
+                                linear_vars=[m.MaximumPowerAvailableAboveMinimum[g,t], m.UnitOn[g,t]], \
+                                linear_coefs=[1., m.MinimumPowerOutput[g,t]] )
     model.MaximumPowerAvailable = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_avaiable_expr_rule)
 
 
     # m.MinimumPowerOutput[g] * m.UnitOn[g, t] <= m.PowerGenerated[g,t] <= m.MaximumPowerAvailable[g, t] <= m.MaximumPowerOutput[g] * m.UnitOn[g, t]
     # BK -- first <= now handled by bounds
     
-    if isinstance(model.PowerGeneratedAboveMinimum, Var):
-        def enforce_generator_output_limits_rule_part_b(m, g, t):
-            return (None, LinearExpression(
-                    linear_vars=[m.PowerGeneratedAboveMinimum[g,t], m.MaximumPowerAvailableAboveMinimum[g,t]],
-                    linear_coefs=[1,-1]
-                                            ), 0)
-
-        def reserve_provided_expr_rule(m, g, t):
-            #return m.MaximumPowerAvailableAboveMinimum[g,t] - m.PowerGeneratedAboveMinimum[g,t]
-            return LinearExpression(
-                    linear_vars=[m.MaximumPowerAvailableAboveMinimum[g,t],m.PowerGeneratedAboveMinimum[g,t]],
-                    linear_coefs=[1, -1])
+    if is_var(model.PowerGeneratedAboveMinimum):
+        linear_expr = LinearExpression
     else:
-        def enforce_generator_output_limits_rule_part_b(m, g, t):
-            return m.PowerGeneratedAboveMinimum[g,t] <= m.MaximumPowerAvailableAboveMinimum[g, t]
-
-        ## BK -- for reserve pricing
-        def reserve_provided_expr_rule(m, g, t):
-            return m.MaximumPowerAvailableAboveMinimum[g,t] - m.PowerGeneratedAboveMinimum[g,t]
-
+        linear_expr = linear_summation
+    def enforce_generator_output_limits_rule_part_b(m, g, t):
+        return (None, linear_expr(
+                linear_vars=[m.PowerGeneratedAboveMinimum[g,t], m.MaximumPowerAvailableAboveMinimum[g,t]],
+                linear_coefs=[1,-1]
+                                        ), 0)
     model.EnforceGeneratorOutputLimitsPartB = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_generator_output_limits_rule_part_b)
 
+    ## BK -- for reserve pricing
+    def reserve_provided_expr_rule(m, g, t):
+        #return m.MaximumPowerAvailableAboveMinimum[g,t] - m.PowerGeneratedAboveMinimum[g,t]
+        return linear_expr(
+                linear_vars=[m.MaximumPowerAvailableAboveMinimum[g,t],m.PowerGeneratedAboveMinimum[g,t]],
+                linear_coefs=[1, -1])
     model.ReserveProvided = Expression(model.ThermalGenerators, model.TimePeriods, rule=reserve_provided_expr_rule) 
 
     return

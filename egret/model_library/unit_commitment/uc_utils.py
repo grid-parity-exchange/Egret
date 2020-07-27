@@ -13,8 +13,9 @@ This module contains several helper functions that are useful when
 working with unit commitment models
 """
 
-## some useful function decorators for building these dynamic models
+## some useful functions and function decorators for building these dynamic models
 from functools import wraps
+from pyomo.environ import Var, quicksum
 import warnings
 
 import logging
@@ -88,3 +89,10 @@ def uc_time_helper(model_time_periods):
         return return_dict
 
     return dict_constructor
+
+def is_var(v):
+    ''' isinstance(v, pyomo.environ.Var) '''
+    return isinstance(v, Var)
+
+def linear_summation(linear_coefs, linear_vars, constant=0.):
+    return quicksum((c*v for c,v in zip(linear_coefs, linear_vars)), start=constant, linear=True)

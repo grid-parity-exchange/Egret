@@ -101,6 +101,7 @@ def ramping_polytope_block_rule(rp, g):
     ## live on the main model
     model = rp.model() 
     value = pe.value
+    quicksum = pe.quicksum
 
     relaxed = _is_relaxed(model)
 
@@ -158,15 +159,15 @@ def ramping_polytope_block_rule(rp, g):
         rp.start_link_y = pe.Constraint(timeperiods)
         rp.stop_link_y = pe.Constraint(timeperiods)
         for t in timeperiods:
-            rp.downtime_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et+DT) ) <= 1
+            rp.downtime_y[t] = quicksum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et+DT) ) <= 1
 
-            rp.on_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et) ) \
+            rp.on_link_y[t] = quicksum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et) ) \
                                  == model.UnitOn[g,t]
 
-            rp.start_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt == t) ) \
+            rp.start_link_y[t] = quicksum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt == t) ) \
                                  == model.UnitStart[g,t]
 
-            rp.stop_link_y[t] = sum( rp.y[bt,et] for bt,et in start_stop_pairs if (et == t) ) \
+            rp.stop_link_y[t] = quicksum( rp.y[bt,et] for bt,et in start_stop_pairs if (et == t) ) \
                                  == model.UnitStop[g,t]
 
     rp.p_ints = pe.Var(timeperiods, start_stop_pairs, within=pe.NonNegativeReals)
@@ -213,10 +214,10 @@ def ramping_polytope_block_rule(rp, g):
     rp.r_link_r_ints = pe.Constraint(timeperiods)
     for t in timeperiods:
         rp.p_link_p_ints[t] = \
-                sum( rp.p_ints[t,pair] for pair in start_stop_pairs ) == \
+                quicksum( rp.p_ints[t,pair] for pair in start_stop_pairs ) == \
                     model.PowerGeneratedAboveMinimum[g,t]
         rp.r_link_r_ints[t] = \
-                sum( rp.r_ints[t,pair] for pair in start_stop_pairs ) == \
+                quicksum( rp.r_ints[t,pair] for pair in start_stop_pairs ) == \
                     model.ReserveProvided[g,t]
 
     if len(model.PowerGenerationPiecewisePoints[g,t]) > 2:
@@ -247,13 +248,13 @@ def ramping_polytope_block_rule(rp, g):
 
             for t in timeperiods:
                 rp.pl_int_p_int_link[t,pair] = \
-                        sum( rp.pl_ints[l,t,pair] for l in l_range ) == rp.p_ints[t,pair] 
+                        quicksum( rp.pl_ints[l,t,pair] for l in l_range ) == rp.p_ints[t,pair] 
          
         rp.pl_link = pe.Constraint(l_ints_time)
         for lt in l_ints_time:
             l,t = lt
             rp.pl_link[lt] = \
-                    sum( rp.pl_ints[lt,pair] for pair in start_stop_pairs ) \
+                    quicksum( rp.pl_ints[lt,pair] for pair in start_stop_pairs ) \
                         == model.PiecewiseProduction[g,t,l]
 
 ## we'll require that non-ramping constrained generators have a convex hull description

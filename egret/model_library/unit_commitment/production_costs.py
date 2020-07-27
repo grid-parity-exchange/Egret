@@ -13,13 +13,11 @@ from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 from functools import lru_cache
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, is_var, linear_summation
 from .generation_limits import _get_look_back_periods, _get_look_forward_periods
 
 component_name = 'production_costs'
 
-def _is_var(v):
-    return isinstance(v, Var)
 
 ## NOTE: for now we'll just consider all piecewise variables to represent
 ##       power above minimum. This is how it's done the the Carrion-Arroyo 
@@ -311,118 +309,74 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
     else:
         _basic_production_costs_vars(model)
 
-    if not rescaled and _is_var(model.UnitOn) and\
-            _is_var(model.UnitStart) and _is_var(model.UnitStop):
-        def piecewise_production_limits_rule(m, g, t, i):
-            ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
-            ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
-            upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
-            lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-            SU = value(m.ScaledStartupRampLimit[g,t])
-            UT = value(m.ScaledMinimumUpTime[g])
-            minP = value(m.MinimumPowerOutput[g,t])
+    if not rescaled and is_var(model.UnitOn) and\
+            is_var(model.UnitStart) and is_var(model.UnitStop):
+        linear_expr = LinearExpression 
+    else:
+        linear_expr = linear_summation 
 
-            su_step = _step_coeff(upper, lower, SU-minP)
-            if t < value(m.NumTimePeriods):
-                SD = value(m.ScaledShutdownRampLimit[g,t])
-                sd_step = _step_coeff(upper, lower, SD-minP)
-                if UT > 1:
-                    linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t], m.UnitStop[g,t+1]]
-                    linear_coefs = [-1., (upper-lower), -su_step, -sd_step]
-                    return (0, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
-                else: ## MinimumUpTime[g] <= 1
-                    linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t],]
-                    linear_coefs = [-1., (upper-lower), -su_step,]
+    def piecewise_production_limits_rule(m, g, t, i):
+        ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
+        ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
+        upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
+        lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
+        SU = value(m.ScaledStartupRampLimit[g,t])
+        UT = value(m.ScaledMinimumUpTime[g])
+        minP = value(m.MinimumPowerOutput[g,t])
 
-                    expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                            - su_step*m.UnitStart[g,t] 
-                    if tightened:
-                        coef = -max(sd_step-su_step,0)
-                        if coef != 0:
-                            linear_vars.append(m.UnitStop[g,t+1])
-                            linear_coefs.append(coef)
-                    return (0, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
-
-            else: ## t >= value(m.NumTimePeriods)
+        su_step = _step_coeff(upper, lower, SU-minP)
+        if t < value(m.NumTimePeriods):
+            SD = value(m.ScaledShutdownRampLimit[g,t])
+            sd_step = _step_coeff(upper, lower, SD-minP)
+            if UT > 1:
+                linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t], m.UnitStop[g,t+1]]
+                linear_coefs = [-1., (upper-lower), -su_step, -sd_step]
+                return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
+            else: ## MinimumUpTime[g] <= 1
                 linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t],]
                 linear_coefs = [-1., (upper-lower), -su_step,]
-                return (0, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
-        
-        def piecewise_production_limits_rule2(m, g, t, i):
-            ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
-            ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
-            UT = value(m.ScaledMinimumUpTime[g])
-            if UT <= 1 and t < value(m.NumTimePeriods):
-                upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
-                lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-                SD = value(m.ScaledShutdownRampLimit[g,t])
-                minP = value(m.MinimumPowerOutput[g,t])
 
-                sd_step = _step_coeff(upper, lower, SD-minP)
-                linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStop[g,t+1],]
-                linear_coefs = [-1., (upper-lower), -sd_step,]
+                expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
+                                        - su_step*m.UnitStart[g,t] 
                 if tightened:
-                    SU = value(m.ScaledStartupRampLimit[g,t])
-                    su_step = _step_coeff(upper, lower, SU-minP)
-                    coef = -max(su_step - sd_step, 0)
+                    coef = -max(sd_step-su_step,0)
                     if coef != 0:
-                        linear_vars.append(m.UnitStart[g,t])
+                        linear_vars.append(m.UnitStop[g,t+1])
                         linear_coefs.append(coef)
-                return (0, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
-            else: ## MinimumUpTime[g] > 1 or we added it in the t == value(m.NumTimePeriods) clause above
-                return Constraint.Skip
+                return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
 
-    else:
-        def piecewise_production_limits_rule(m, g, t, i):
-            ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
-            ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
+        else: ## t >= value(m.NumTimePeriods)
+            linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t],]
+            linear_coefs = [-1., (upper-lower), -su_step,]
+            return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
+
+    model.PiecewiseProductionLimits = Constraint( model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_limits_rule )
+    
+    def piecewise_production_limits_rule2(m, g, t, i):
+        ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
+        ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
+        UT = value(m.ScaledMinimumUpTime[g])
+        if UT <= 1 and t < value(m.NumTimePeriods):
             upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
             lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-            SU = value(m.ScaledStartupRampLimit[g,t])
-            UT = value(m.ScaledMinimumUpTime[g])
+            SD = value(m.ScaledShutdownRampLimit[g,t])
             minP = value(m.MinimumPowerOutput[g,t])
 
-            su_step = _step_coeff(upper, lower, SU-minP)
-            if t < value(m.NumTimePeriods):
-                SD = value(m.ScaledShutdownRampLimit[g,t])
-                sd_step = _step_coeff(upper, lower, SD-minP)
-                if UT > 1:
-                    return m.PiecewiseProduction[g,t,i] <= (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                            - su_step*m.UnitStart[g,t] \
-                                            - sd_step*m.UnitStop[g,t+1] 
-                else: ## MinimumUpTime[g] <= 1
-                    expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                            - su_step*m.UnitStart[g,t] 
-                    if tightened:
-                        expr -= max(sd_step - su_step, 0)*m.UnitStop[g,t+1]
-                    return m.PiecewiseProduction[g,t,i] <= expr 
+            sd_step = _step_coeff(upper, lower, SD-minP)
+            linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStop[g,t+1],]
+            linear_coefs = [-1., (upper-lower), -sd_step,]
+            if tightened:
+                SU = value(m.ScaledStartupRampLimit[g,t])
+                su_step = _step_coeff(upper, lower, SU-minP)
+                coef = -max(su_step - sd_step, 0)
+                if coef != 0:
+                    linear_vars.append(m.UnitStart[g,t])
+                    linear_coefs.append(coef)
+            return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
+        else: ## MinimumUpTime[g] > 1 or we added it in the t == value(m.NumTimePeriods) clause above
+            return Constraint.Skip
 
-            else: ## t >= value(m.NumTimePeriods)
-                return m.PiecewiseProduction[g,t,i] <= (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                            - su_step*m.UnitStart[g,t] 
         
-        def piecewise_production_limits_rule2(m, g, t, i):
-            ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
-            ### since PowerGenerationPiecewisePoints are scaled to MinimumPowerOutput, we need to scale Startup/Shutdown ramps to it as well
-            UT = value(m.ScaledMinimumUpTime[g])
-            if UT <= 1 and t < value(m.NumTimePeriods):
-                upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
-                lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
-                SD = value(m.ScaledShutdownRampLimit[g,t])
-                minP = value(m.MinimumPowerOutput[g,t])
-
-                sd_step = _step_coeff(upper, lower, SD-minP)
-                expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                            - sd_step*m.UnitStop[g,t+1] 
-                if tightened:
-                    SU = value(m.ScaledStartupRampLimit[g,t])
-                    su_step = _step_coeff(upper, lower, SU-minP)
-                    expr -= max(su_step - sd_step, 0)*m.UnitStart[g,t]
-                return m.PiecewiseProduction[g,t,i] <= expr
-            else: ## MinimumUpTime[g] > 1 or we added it in the t == value(m.NumTimePeriods) clause above
-                return Constraint.Skip
-        
-    model.PiecewiseProductionLimits = Constraint( model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_limits_rule )
     model.PiecewiseProductionLimits2 = Constraint( model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_limits_rule2 )
     
     if rescaled:

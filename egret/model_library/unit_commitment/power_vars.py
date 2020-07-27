@@ -12,7 +12,7 @@ from pyomo.environ import *
 from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, is_var, linear_summation
 component_name = 'power_vars'
 
 def _add_reactive_power_vars(model):
@@ -42,15 +42,16 @@ def garver_power_vars(model):
 
     model.PowerGeneratedAboveMinimum = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=garver_power_bounds_rule) 
     
-    if isinstance(model.UnitOn, Var):
-        ## Note: these only get used in system balance constraints
-        def power_generated_expr_rule(m, g, t):
-            #return m.PowerGeneratedAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
-            return LinearExpression( constant=0., linear_vars=[m.PowerGeneratedAboveMinimum[g,t], m.UnitOn[g,t]], \
-                                    linear_coefs=[1., m.MinimumPowerOutput[g,t]] )
+    if is_var(model.UnitOn):
+        linear_expr = LinearExpression
     else:
-        def power_generated_expr_rule(m, g, t):
-            return m.PowerGeneratedAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
+        linear_expr = linear_summation
+
+    ## Note: these only get used in system balance constraints
+    def power_generated_expr_rule(m, g, t):
+        #return m.PowerGeneratedAboveMinimum[g,t] + m.MinimumPowerOutput[g,t]*m.UnitOn[g,t]
+        return linear_expr( constant=0., linear_vars=[m.PowerGeneratedAboveMinimum[g,t], m.UnitOn[g,t]], \
+                                linear_coefs=[1., m.MinimumPowerOutput[g,t]] )
     model.PowerGenerated = Expression(model.ThermalGenerators, model.TimePeriods, rule=power_generated_expr_rule)
 
     return

@@ -12,13 +12,10 @@ from pyomo.environ import *
 from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, is_var, linear_summation
 component_name = 'ramping_limits'
 
 ## TODO: FIXME: FINISH CONVERTING RAMPING CONSTRAINTS
-
-def _is_var(v):
-    return isinstance(v, Var)
 
 generation_limits_w_startup_shutdown = ['MLR_generation_limits',
                                         'gentile_generation_limits',
@@ -93,91 +90,61 @@ def _model_time_invariant(m):
 
 def _damcikurt_basic_ramping(model):
 
-    if _is_var(model.MaximumPowerAvailableAboveMinimum) and _is_var(model.UnitOn) and\
-            _is_var(model.UnitStart) and _is_var(model.UnitStop):
-        
-        ## NOTE: with the expression MaximumPowerAvailableAboveMinimum and PowerGeneratedAboveMinimum, 
-        ##       these constraints are expressed as needed, there's no cancelation even though we end
-        ##       up using these expressions
-        def enforce_max_available_ramp_up_rates_rule(m, g, t):
-            if _ramp_up_not_needed(m,g,t):
-                return Constraint.Skip
-            if t == m.InitialTime:
-                # if the unit was on in t0, then it's m.PowerGeneratedT0[g] >= m.MinimumPowerOutput[g], and m.UnitOnT0 == 1
-                # if not, then m.UnitOnT0[g] == 0 and so (m.PowerGeneratedT0[g] - m.MinimumPowerOutput[g]) * m.UnitOnT0[g] is 0
-                ## assume m.MinimumPowerOutput[g,T0] == 0
-                linear_vars = [m.MaximumPowerAvailableAboveMinimum[g,t], m.UnitOn[g,t], m.UnitStart[g,t]]
-                linear_coefs = [1, -m.ScaledNominalRampUpLimit[g,t] - 0 + m.MinimumPowerOutput[g,t],
-                                -m.ScaledStartupRampLimit[g,t] + 0 + m.ScaledNominalRampUpLimit[g,t]]
-                
-                RHS = m.PowerGeneratedT0[g]
-                return (None, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), RHS)
-            else:
-                linear_vars = [m.MaximumPowerAvailableAboveMinimum[g,t], m.PowerGeneratedAboveMinimum[g,t-1],
-                                m.UnitOn[g,t], m.UnitStart[g,t]]
-                linear_coefs = [1, -1, 
-                    -m.ScaledNominalRampUpLimit[g,t] - m.MinimumPowerOutput[g,t-1] + m.MinimumPowerOutput[g,t],
-                    -m.ScaledStartupRampLimit[g,t] + m.MinimumPowerOutput[g,t-1] + m.ScaledNominalRampUpLimit[g,t]
-                    ]
-                return (None, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
-
-        def enforce_ramp_down_limits_rule(m, g, t):
-            if _ramp_down_not_needed(m,g,t):
-                return Constraint.Skip
-            if t == m.InitialTime:
-                ## assume m.MinimumPowerOutput[g,T0] == 0
-                return m.PowerGeneratedT0[g] - m.PowerGeneratedAboveMinimum[g, t] <= \
-                        (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g] + \
-                        (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
-                        ## TODO: figure out ScaledShutdownRampLimitT0[g]
-                linear_vars = [m.PowerGeneratedAboveMinimum[g,t], m.UnitStop[g,t]]
-                linear_coefs = [ 1, (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t]) ]
-                LHS = m.PowerGeneratedT0[g] - (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g]
-                return (LHS, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
-            else:
-                linear_vars = [m.PowerGeneratedAboveMinimum[g,t-1], m.PowerGeneratedAboveMinimum[g,t],
-                                m.UnitOn[g,t-1], m.UnitStop[g,t]]
-                linear_coefs = [-1, 1, 
-                        m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - m.MinimumPowerOutput[g,t-1],
-                        m.ScaledShutdownRampLimit[g,t-1] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t]
-                        ]
-                return (0, LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
-
+    if is_var(model.MaximumPowerAvailableAboveMinimum) and is_var(model.UnitOn) and\
+            is_var(model.UnitStart) and is_var(model.UnitStop):
+        linear_expr = LinearExpression
     else:
-        ## NOTE: with the expression MaximumPowerAvailableAboveMinimum and PowerGeneratedAboveMinimum, 
-        ##       these constraints are expressed as needed, there's no cancelation even though we end
-        ##       up using these expressions
-        def enforce_max_available_ramp_up_rates_rule(m, g, t):
-            if _ramp_up_not_needed(m,g,t):
-                return Constraint.Skip
-            if t == m.InitialTime:
-              # if the unit was on in t0, then it's m.PowerGeneratedT0[g] >= m.MinimumPowerOutput[g], and m.UnitOnT0 == 1
-              # if not, then m.UnitOnT0[g] == 0 and so (m.PowerGeneratedT0[g] - m.MinimumPowerOutput[g]) * m.UnitOnT0[g] is 0
-              ## assume m.MinimumPowerOutput[g,T0] == 0
-                return m.MaximumPowerAvailableAboveMinimum[g, t] - m.PowerGeneratedT0[g] <= \
-                            (m.ScaledNominalRampUpLimit[g,t] + 0 - m.MinimumPowerOutput[g,t])*m.UnitOn[g,t] + \
-        			(m.ScaledStartupRampLimit[g,t] - 0 - m.ScaledNominalRampUpLimit[g,t])*m.UnitStart[g,t] 
-            else:
-                return m.MaximumPowerAvailableAboveMinimum[g, t] - m.PowerGeneratedAboveMinimum[g, t-1] <= \
-                            (m.ScaledNominalRampUpLimit[g,t] + m.MinimumPowerOutput[g,t-1] - m.MinimumPowerOutput[g,t])*m.UnitOn[g,t] + \
-        			(m.ScaledStartupRampLimit[g,t] - m.MinimumPowerOutput[g,t-1] - m.ScaledNominalRampUpLimit[g,t])*m.UnitStart[g,t] 
+        linear_expr = linear_summation
         
-    
-        def enforce_ramp_down_limits_rule(m, g, t):
-            if _ramp_down_not_needed(m,g,t):
-                return Constraint.Skip
-            if t == m.InitialTime:
-                ## assume m.MinimumPowerOutput[g,T0] == 0
-                return m.PowerGeneratedT0[g] - m.PowerGeneratedAboveMinimum[g, t] <= \
-                        (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g] + \
-                        (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
-                        ## TODO: figure out ScaledShutdownRampLimitT0[g]
-            else:
-                return m.PowerGeneratedAboveMinimum[g, t-1] - m.PowerGeneratedAboveMinimum[g, t] <= \
-                            (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - m.MinimumPowerOutput[g,t-1])*m.UnitOn[g,t-1] + \
-                            (m.ScaledShutdownRampLimit[g,t-1] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
-    
+    ## NOTE: with the expression MaximumPowerAvailableAboveMinimum and PowerGeneratedAboveMinimum, 
+    ##       these constraints are expressed as needed, there's no cancelation even though we end
+    ##       up using these expressions
+    def enforce_max_available_ramp_up_rates_rule(m, g, t):
+        if _ramp_up_not_needed(m,g,t):
+            return Constraint.Skip
+        if t == m.InitialTime:
+            # if the unit was on in t0, then it's m.PowerGeneratedT0[g] >= m.MinimumPowerOutput[g], and m.UnitOnT0 == 1
+            # if not, then m.UnitOnT0[g] == 0 and so (m.PowerGeneratedT0[g] - m.MinimumPowerOutput[g]) * m.UnitOnT0[g] is 0
+            ## assume m.MinimumPowerOutput[g,T0] == 0
+            linear_vars = [m.MaximumPowerAvailableAboveMinimum[g,t], m.UnitOn[g,t], m.UnitStart[g,t]]
+            linear_coefs = [1, -m.ScaledNominalRampUpLimit[g,t] - 0 + m.MinimumPowerOutput[g,t],
+                            -m.ScaledStartupRampLimit[g,t] + 0 + m.ScaledNominalRampUpLimit[g,t]]
+            
+            RHS = m.PowerGeneratedT0[g]
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), RHS)
+        else:
+            linear_vars = [m.MaximumPowerAvailableAboveMinimum[g,t], m.PowerGeneratedAboveMinimum[g,t-1],
+                            m.UnitOn[g,t], m.UnitStart[g,t]]
+            linear_coefs = [1, -1, 
+                -m.ScaledNominalRampUpLimit[g,t] - m.MinimumPowerOutput[g,t-1] + m.MinimumPowerOutput[g,t],
+                -m.ScaledStartupRampLimit[g,t] + m.MinimumPowerOutput[g,t-1] + m.ScaledNominalRampUpLimit[g,t]
+                ]
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
+
     model.EnforceMaxAvailableRampUpRates = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_max_available_ramp_up_rates_rule)
+
+    def enforce_ramp_down_limits_rule(m, g, t):
+        if _ramp_down_not_needed(m,g,t):
+            return Constraint.Skip
+        if t == m.InitialTime:
+            ## assume m.MinimumPowerOutput[g,T0] == 0
+            return m.PowerGeneratedT0[g] - m.PowerGeneratedAboveMinimum[g, t] <= \
+                    (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g] + \
+                    (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
+                    ## TODO: figure out ScaledShutdownRampLimitT0[g]
+            linear_vars = [m.PowerGeneratedAboveMinimum[g,t], m.UnitStop[g,t]]
+            linear_coefs = [ 1, (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t]) ]
+            LHS = m.PowerGeneratedT0[g] - (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g]
+            return (LHS, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
+        else:
+            linear_vars = [m.PowerGeneratedAboveMinimum[g,t-1], m.PowerGeneratedAboveMinimum[g,t],
+                            m.UnitOn[g,t-1], m.UnitStop[g,t]]
+            linear_coefs = [-1, 1, 
+                    m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - m.MinimumPowerOutput[g,t-1],
+                    m.ScaledShutdownRampLimit[g,t-1] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t]
+                    ]
+            return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
+
     model.EnforceScaledNominalRampDownLimits = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_ramp_down_limits_rule)
 
     return
