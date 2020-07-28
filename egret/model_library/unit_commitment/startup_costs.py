@@ -32,20 +32,34 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     #begin ostrowski startup costs
     time_period_list = list(model.TimePeriods)
     initial_time = model.InitialTime
+    after_last_time = model.TimePeriods.last()+1
     def ValidShutdownTimePeriods_generator(m,g):
         ## for speed, if we don't have different startups
         if len(m.ScaledStartupLags[g]) <= 1:
             return []
-                                        ## adds the necessary index for starting-up after a shutdown before the time horizon began
+        ## adds the necessary index for starting-up after a shutdown before the time horizon began
         unit_on_t0_state = value(m.UnitOnT0State[g])
-        yield from (time_period_list+([] if (unit_on_t0_state >= 0) else [initial_time + int(round(unit_on_t0_state/value(m.TimePeriodLengthHours)))]))
+        if unit_on_t0_state >= 0:
+            return time_period_list
+        else:
+            return time_period_list+[initial_time + int(round(unit_on_t0_state/value(m.TimePeriodLengthHours)))]
     model.ValidShutdownTimePeriods=Set(model.ThermalGenerators, initialize=ValidShutdownTimePeriods_generator)
     
     def ShutdownHotStartupPairs_generator(m,g):
         ## for speed, if we don't have different startups
         if len(m.ScaledStartupLags[g]) <= 1:
-            return [] 
-        return ((t_prime, t) for t_prime in m.ValidShutdownTimePeriods[g] for t in m.TimePeriods if (m.ScaledStartupLags[g].first() <= t - t_prime < m.ScaledStartupLags[g].last()))
+            return
+        first_lag = m.ScaledStartupLags[g].first()
+        last_lag = m.ScaledStartupLags[g].last()
+        for t_prime in m.ValidShutdownTimePeriods[g]:
+            t_first = first_lag+t_prime
+            t_last = last_lag+t_prime
+            if t_first < initial_time:
+                t_first = initial_time
+            if t_last > after_last_time:
+                t_last = after_last_time
+            for t in range(t_first, t_last):
+                yield (t_prime, t)
     model.ShutdownHotStartupPairs = Set(model.ThermalGenerators, initialize=ShutdownHotStartupPairs_generator, dimen=2)
     
     # (g,t',t) will be an inidicator for g for shutting down at time t' and starting up at time t
@@ -86,17 +100,14 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     model.StartupMatch = Constraint(model.ThermalGenerators, model.TimePeriods, rule=startup_match_rule)
 
     def shutdown_match_rule(m, g, t):
-        if t < m.InitialTime:
-            begin_times = m.StartupsByShutdowns[g,t]
-            if not begin_times: ##if this is empty
-                return Constraint.Feasible
-            else:
-                linear_vars = list(m.StartupIndicator[g, t, t_p] for t_p in begin_times)
-                linear_coefs = [1.]*len(linear_vars)
-                return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 1.)
+        begin_times = m.StartupsByShutdowns[g,t]
+        if not begin_times: ##if this is empty
+            return Constraint.Feasible
+        linear_vars = list(m.StartupIndicator[g, t, t_p] for t_p in begin_times)
+        linear_coefs = [1.]*len(linear_vars)
+        if t < initial_time:
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 1.)
         else:
-            linear_vars = list(m.StartupIndicator[g, t, t_p] for t_p in m.StartupsByShutdowns[g,t])
-            linear_coefs = [1.]*len(linear_vars)
             linear_vars.append(m.UnitStop[g,t])
             linear_coefs.append(-1.)
             return (None, linear_expr(linear_coefs=linear_coefs, linear_vars=linear_vars), 0.)

@@ -57,7 +57,7 @@ def _MLR_generation_limits_uptime_1(model, tightened=False):
         linear_coefs.append(m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t])
         if t == m.NumTimePeriods or not tightened:
             return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
-        coef = max(value(m.ScaledStartupRampLimit[g,t] - m.ScaledShutdownRampLimit[g,t]), 0)
+        coef = max(value(m.ScaledStartupRampLimit[g,t]) - value(m.ScaledShutdownRampLimit[g,t]), 0)
         if coef != 0.:
             linear_vars.append(m.UnitStop[g,t+1])
             linear_coefs.append(coef)
@@ -75,7 +75,7 @@ def _MLR_generation_limits_uptime_1(model, tightened=False):
         linear_coefs.append(m.MaximumPowerOutput[g,t] - m.ScaledShutdownRampLimit[g,t])
         if not tightened:
             return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
-        coef = max(value(m.ScaledShutdownRampLimit[g,t] - m.ScaledStartupRampLimit[g,t]), 0)
+        coef = max(value(m.ScaledShutdownRampLimit[g,t]) - value(m.ScaledStartupRampLimit[g,t]), 0)
         if coef != 0.:
             linear_vars.append(m.UnitStart[g,t])
             linear_coefs.append(coef)
@@ -211,12 +211,12 @@ def _pan_guan_generation_limits(model, include_UT_1=True):
         SU = m.ScaledStartupRampLimit
         RU = m.ScaledNominalRampUpLimit
         if t == m.NumTimePeriods: 
+            ##### ^^^ in this case we can squeeze one more into the sum
             linear_vars, linear_coefs = _get_initial_lists(m,g,t)
             for i in range(0, _get_look_back_periods(m,g,t,m.ScaledMinimumUpTime[g]-1)+1):
                 linear_vars.append(Start[g,t-i])
                 linear_coefs.append(Pmax - SU[g,t-i] - sum(RU[g,t-j] for j in range(1,i+1)))
             return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
-                                                                                                                            ##### ^^^ in this case we can squeeze one more into the sum
         else:
             linear_vars, linear_coefs = _get_initial_lists(m,g,t)
             for i in range(0, _get_look_back_periods(m,g,t,m.ScaledMinimumUpTime[g]-2)+1):
@@ -331,7 +331,8 @@ def _KOW_generation_limits(model):
         if not full_range: 
             i = SU_time_limit+1
             if (t-i) >= value(m.InitialTime):
-                coef =  max(value( (Pmax - SD[g,t+SD_time_limit] - sum(RD[g,t+j] for j in range(1,SD_time_limit+1)) - (Pmax - SU[g,t-i] - sum(RU[g,t-j] for j in range(1,i+1)))) ),0)
+                coef =  max((value(Pmax) - value(SD[g,t+SD_time_limit]) - sum(value(RD[g,t+j]) for j in range(1,SD_time_limit+1)) - \
+                        (value(Pmax) - value(SU[g,t-i]) - sum(value(RU[g,t-j]) for j in range(1,i+1)))), 0)
                 if coef != 0:
                     linear_vars.append(Start[g,t-i])
                     linear_coefs.append(coef)
