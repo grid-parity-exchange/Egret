@@ -93,7 +93,7 @@ def _basic_production_costs_vars(model):
 
     def piecewise_production_sum_rule(m, g, t):
         linear_vars = list( m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1))
-        linear_coefs = [1.]*linear_vars
+        linear_coefs = [1.]*len(linear_vars)
         linear_vars.append(m.PowerGeneratedAboveMinimum[g,t])
         linear_coefs.append(-1.)
         return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
@@ -118,7 +118,7 @@ def _basic_production_costs_constr(model):
                         for i in range(len(points)-1)]
             linear_vars = [m.PiecewiseProduction[g,t,i] for i in range(len(points)-1)]
             linear_coefs.append(-1.)
-            linear_vars.append(m.ProductionCost)
+            linear_vars.append(m.ProductionCost[g,t])
             return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i = 0
