@@ -86,23 +86,50 @@ def _basic_production_costs_vars(model):
     
     model.PiecewiseProduction = Var( model.PiecewiseProductionCostsIndexSet, within=NonNegativeReals, bounds = piecewise_production_bounds_rule )
     
+    if is_var(model.PowerGeneratedAboveMinimum):
+        linear_expr = LinearExpression
+    else:
+        linear_expr = linear_summation
+
     def piecewise_production_sum_rule(m, g, t):
-        return sum( m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1) ) == m.PowerGeneratedAboveMinimum[g,t] 
+        linear_vars = list( m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1))
+        linear_coefs = [1.]*linear_vars
+        linear_vars.append(m.PowerGeneratedAboveMinimum[g,t])
+        linear_coefs.append(-1.)
+        return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
     model.PiecewiseProductionSum = Constraint( model.PiecewiseGeneratorTimeIndexSet, rule=piecewise_production_sum_rule )
 
 def _basic_production_costs_constr(model):
 
     model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
+    if is_var(model.PiecewiseProduction) and is_var(model.PowerGeneratedAboveMinimum):
+        linear_expr = LinearExpression
+    else:
+        linear_expr = linear_summation
+
     def piecewise_production_costs_rule(m, g, t):
+        
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) *
-           m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1)) 
+            points = m.PowerGenerationPiecewisePoints[g,t]
+            costs = m.PowerGenerationPiecewiseCostValues[g,t]
+            time_scale = m.TimePeriodLengthHours
+            linear_coefs = [(time_scale*costs[i+1] - time_scale*costs[i])/(points[i+1] - points[i]) \
+                        for i in range(len(points)-1)]
+            linear_vars = [m.PiecewiseProduction[g,t,i] for i in range(len(points)-1)]
+            linear_coefs.append(-1.)
+            linear_vars.append(m.ProductionCost)
+            return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i = 0
-            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
+            points = m.PowerGenerationPiecewisePoints[g,t]
+            costs = m.PowerGenerationPiecewiseCostValues[g,t]
+            time_scale = m.TimePeriodLengthHours
+            linear_coefs = [(time_scale*costs[i+1] - time_scale*costs[i])/(points[i+1] - points[i]), -1.]
+            linear_vars = [m.PowerGeneratedAboveMinimum[g,t], m.ProductionCost[g,t]]
+            return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
         else:
-            return m.ProductionCost[g,t] == 0.
+            return (m.ProductionCost[g,t], 0.)
     
     model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
