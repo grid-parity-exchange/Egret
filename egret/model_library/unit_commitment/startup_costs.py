@@ -30,12 +30,15 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     '''
 
     #begin ostrowski startup costs
+    time_period_list = list(model.TimePeriods)
+    initial_time = model.InitialTime
     def ValidShutdownTimePeriods_generator(m,g):
         ## for speed, if we don't have different startups
         if len(m.ScaledStartupLags[g]) <= 1:
             return []
                                         ## adds the necessary index for starting-up after a shutdown before the time horizon began
-        return (t for t in (list(m.TimePeriods)+([] if (value(m.UnitOnT0State[g]) >= 0) else [m.InitialTime + int(round(value(m.UnitOnT0State[g]/value(m.TimePeriodLengthHours))))])))
+        unit_on_t0_state = value(m.UnitOnT0State[g])
+        yield from (time_period_list+([] if (unit_on_t0_state >= 0) else [initial_time + int(round(unit_on_t0_state/value(m.TimePeriodLengthHours)))]))
     model.ValidShutdownTimePeriods=Set(model.ThermalGenerators, initialize=ValidShutdownTimePeriods_generator)
     
     def ShutdownHotStartupPairs_generator(m,g):

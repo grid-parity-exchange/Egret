@@ -348,12 +348,12 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
         upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
         lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
         SU = value(m.ScaledStartupRampLimit[g,t])
-        UT = value(m.ScaledMinimumUpTime[g])
         minP = value(m.MinimumPowerOutput[g,t])
 
         su_step = _step_coeff(upper, lower, SU-minP)
         if t < value(m.NumTimePeriods):
             SD = value(m.ScaledShutdownRampLimit[g,t])
+            UT = value(m.ScaledMinimumUpTime[g])
             sd_step = _step_coeff(upper, lower, SD-minP)
             if UT > 1:
                 linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t], m.UnitStop[g,t+1]]
@@ -362,9 +362,6 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
             else: ## MinimumUpTime[g] <= 1
                 linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t],]
                 linear_coefs = [-1., (upper-lower), -su_step,]
-
-                expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                        - su_step*m.UnitStart[g,t] 
                 if tightened:
                     coef = -max(sd_step-su_step,0)
                     if coef != 0:

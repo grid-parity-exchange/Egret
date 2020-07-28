@@ -67,18 +67,19 @@ def _3bin_logic(model):
     else:
         linear_expr = linear_summation
 
+    initial_time = value(model.InitialTime)
     def logical_rule(m,g,t):
-        if t==value(m.InitialTime):
-            return (m.UnitOnT0[g], linear_expr(
+        if t==initial_time:
+            return (linear_expr(
                 linear_vars=[m.UnitOn[g,t], m.UnitStart[g,t], m.UnitStop[g,t]],
                 linear_coefs=[1., -1., 1.],
-                ) )
+                ), m.UnitOnT0[g] )
         return (linear_expr(
             linear_vars=[m.UnitOn[g,t], m.UnitOn[g,t-1], m.UnitStart[g,t], m.UnitStop[g,t]],
             linear_coefs=[1., -1, -1., 1.],
             ), 0. )
     
-    model.Logical = Constraint(model.ThermalGenerators, model.TimePeriods,rule=logical_rule)
+    model.Logical = Constraint(model.ThermalGenerators, model.TimePeriods, rule=logical_rule)
 
 def _2bin_logic(model):
 
