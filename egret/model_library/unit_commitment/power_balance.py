@@ -376,13 +376,25 @@ def _add_load_mismatch(model):
     over_gen_maxes = {}
     over_gen_times_per_bus = {b: list() for b in model.Buses}
 
-    under_gen_maxes = {}
-    under_gen_times_per_bus = {b: list() for b in model.Buses}
+    load_shed_maxes = {}
+    load_shed_times_per_bus = {b: list() for b in model.Buses}
+
+    storage_
 
     for b in model.Buses:
+
+        # storage, for now, does not
+        # have time-vary parameters
+        storage_max_injections = 0.
+        storage_max_withdraws = 0.
+
+        for s in model.StorageAtBus[b]:
+            storage_max_injections += value(model.MaximumPowerOutputStorage[s])
+            storage_max_withdraws += value(model.MaximumPowerInputStorage[s])
+
         for t in model.TimePeriods:
-            max_injections = 0
-            max_withdrawls = 0
+            max_injections = storage_max_injections
+            max_withdrawls = storage_max_withdraws 
 
             for g in model.ThermalGeneratorsAtBus[b]:
                 p_max = value(model.MaximumPowerOutput[g,t])
@@ -402,24 +414,6 @@ def _add_load_mismatch(model):
                 if p_min < 0:
                     max_withdrawls += -p_min
 
-            for s in model.StorageAtBus[b]:
-                p_output_max = value(model.MaximumPowerOutputStorage[s])
-                p_input_max = value(model.MaximumPowerInputStorage[s])
-
-                if p_output_max > 0:
-                    max_injections += p_output_max
-                elif p_output_max == 0:
-                    pass
-                else:
-                    raise RuntimeError(f"Storage {s} has negative maximum output power at time {t}")
-
-                if p_input_max > 0:
-                    max_withdrawls += p_input_max
-                elif p_input_max == 0:
-                    pass
-                else:
-                    raise RuntimeError(f"Storage {s} has negative maximum input power at time {t}")
-
             load = value(model.Demand[b,t])
             if load > 0:
                 max_withdrawls += load
@@ -430,19 +424,19 @@ def _add_load_mismatch(model):
                 over_gen_maxes[b,t] = max_injections
                 over_gen_times_per_bus[b].append(t)
             if max_withdrawls > 0:
-                under_gen_maxes[b,t] = max_withdrawls
-                under_gen_times_per_bus[b].append(t)
+                load_shed_maxes[b,t] = max_withdrawls
+                load_shed_times_per_bus[b].append(t)
 
     model.OverGenerationBusTimes = Set(dimen=2, initialize=over_gen_maxes.keys())
-    model.LoadSheddingBusTimes = Set(dimen=2, initialize=under_gen_maxes.keys())
+    model.LoadSheddingBusTimes = Set(dimen=2, initialize=load_shed_maxes.keys())
 
     def get_over_gen_bounds(m,b,t):
         return (0,over_gen_maxes[b,t])
     model.OverGeneration = Var(model.OverGenerationBusTimes, within=NonNegativeReals, bounds=get_over_gen_bounds) # over generation
 
-    def get_under_gen_bounds(m,b,t):
-        return (0,under_gen_maxes[b,t])
-    model.LoadShedding = Var(model.LoadSheddingBusTimes, within=NonNegativeReals, bounds=get_under_gen_bounds) # load shedding
+    def get_load_shed_bounds(m,b,t):
+        return (0,load_shed_maxes[b,t])
+    model.LoadShedding = Var(model.LoadSheddingBusTimes, within=NonNegativeReals, bounds=get_load_shed_bounds) # load shedding
     # the following constraints are necessarily, at least in the case of CPLEX 12.4, to prevent
     # the appearance of load generation mismatch component values in the range of *negative* e-5.
     # what these small negative values do is to cause the optimal objective to be a very large negative,
@@ -452,8 +446,8 @@ def _add_load_mismatch(model):
 
 
     def pos_load_generate_mismatch_tolerance_rule(m, b):
-        if under_gen_times_per_bus[b]:
-            return sum(m.LoadShedding[b,t] for t in under_gen_times_per_bus[b]) >= 0
+        if load_shed_times_per_bus[b]:
+            return sum(m.LoadShedding[b,t] for t in load_shed_times_per_bus[b]) >= 0
         else:
             return Constraint.Feasible
     model.PosLoadGenerateMismatchTolerance = Constraint(model.Buses, 
