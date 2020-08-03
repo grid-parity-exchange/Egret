@@ -31,7 +31,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 case_names = ['pglib_opf_case3_lmbd',
               'pglib_opf_case5_pjm',
               'pglib_opf_case14_ieee',
-              'pglib_opf_case30_fsr',
+              #'pglib_opf_case30_fsr',
               'pglib_opf_case30_ieee',
               'pglib_opf_case39_epri',
               'pglib_opf_case57_ieee']
@@ -39,14 +39,14 @@ test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-op
 upper_bounds = {'pglib_opf_case3_lmbd': 5812.6,
                 'pglib_opf_case5_pjm': 1.7552e+04,
                 'pglib_opf_case14_ieee': 2.1781e03,
-                'pglib_opf_case30_fsr': 5.7577e+02,
+                #'pglib_opf_case30_fsr': 5.7577e+02,
                 'pglib_opf_case30_ieee': 8.2085e+03,
                 'pglib_opf_case39_epri': 1.3842e+05,
                 'pglib_opf_case57_ieee': 3.7589e04}
 gaps = {'pglib_opf_case3_lmbd': 1.32,
         'pglib_opf_case5_pjm': 14.55,
         'pglib_opf_case14_ieee': 0.11,
-        'pglib_opf_case30_fsr': 0.39,
+        #'pglib_opf_case30_fsr': 0.39,
         'pglib_opf_case30_ieee': 18.84,
         'pglib_opf_case39_epri': 0.56,
         'pglib_opf_case57_ieee': 0.16}

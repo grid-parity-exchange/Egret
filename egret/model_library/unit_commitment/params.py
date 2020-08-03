@@ -193,7 +193,17 @@ def load_params(model, model_data):
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
 
-    model.Impedence = Param(model.TransmissionLines, within=Reals, initialize=branch_attrs.get('reactance', dict()))
+    def _warn_neg_impedence(m, v, l):
+        if v == 0.:
+            logger.error(f"Found zero reactance for line {l}")
+            return False
+        elif v < 0.:
+            # We allow negative reactance, as it just reverses the
+            # direction of the line. But we do print a warning.
+            logger.warning(f"WARNING: found negative reactance for line {l}")
+            return True
+        return True
+    model.Impedence = Param(model.TransmissionLines, within=Reals, initialize=branch_attrs.get('reactance', dict()), validate=_warn_neg_impedence)
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term', dict())) # max flow across the line
 
@@ -439,7 +449,7 @@ def load_params(model, model_data):
                 continue
             diff = value(m.MinimumPowerOutput[g,t] - m.MaximumPowerOutput[g,t-1])
             if v*m.TimePeriodLengthHours < diff:
-                logger.warn('Generator {} has an infeasible ramp up between time periods {} and {}'.format(g,t-1,t))
+                logger.error('Generator {} has an infeasible ramp up between time periods {} and {}'.format(g,t-1,t))
                 return False
         return True
 
@@ -452,7 +462,7 @@ def load_params(model, model_data):
                 continue
             diff = value(m.MinimumPowerOutput[g,t-1] - m.MaximumPowerOutput[g,t])
             if v*m.TimePeriodLengthHours < diff:
-                logger.warn('Generator {} has an infeasible ramp down between time periods {} and {}'.format(g,t-1,t))
+                logger.error('Generator {} has an infeasible ramp down between time periods {} and {}'.format(g,t-1,t))
                 return False
         return True
 
@@ -507,10 +517,11 @@ def load_params(model, model_data):
             v_less_max = v <= value(m.MaximumPowerOutput[g,t] + m.NominalRampDownLimit[g]*m.TimePeriodLengthHours)
             if not v_less_max:
                 logger.error('Generator {} has more output at T0 than is feasible to ramp down to'.format(g))
-
+                return False
             v_greater_min = v >= value(m.MinimumPowerOutput[g,t] - m.NominalRampUpLimit[g]*m.TimePeriodLengthHours)
             if not v_less_max:
                 logger.error('Generator {} has less output at T0 than is feasible to ramp up to'.format(g))
+                return False
             return True
 
         else:
