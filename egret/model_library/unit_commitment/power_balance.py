@@ -379,8 +379,6 @@ def _add_load_mismatch(model):
     load_shed_maxes = {}
     load_shed_times_per_bus = {b: list() for b in model.Buses}
 
-    storage_
-
     for b in model.Buses:
 
         # storage, for now, does not

@@ -203,7 +203,7 @@ def load_params(model, model_data):
             logger.warning(f"WARNING: found negative reactance for line {l}")
             return True
         return True
-    model.Impedence = Param(model.TransmissionLines, within=Reals, initialize=branch_attrs.get('reactance', dict(), validate=_warn_neg_impedence))
+    model.Impedence = Param(model.TransmissionLines, within=Reals, initialize=branch_attrs.get('reactance', dict()), validate=_warn_neg_impedence)
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term', dict())) # max flow across the line
 
