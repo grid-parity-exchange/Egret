@@ -957,6 +957,8 @@ def _preallocated_list(other_iter):
     return [ None for _ in other_iter ]
 
 def _save_uc_results(m):
+    from pyomo.environ import value
+
     md = m.model_data
 
     # save results data to ModelData object
@@ -1486,6 +1488,14 @@ def _save_uc_results(m):
 
     return md
 
+def _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed ):
+    model_data = m.model_data
+    network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
+    if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
+        return _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
+    else:
+        return _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True)
+
 def solve_unit_commitment(model_data,
                           solver,
                           mipgap = 0.001,
@@ -1535,20 +1545,14 @@ def solve_unit_commitment(model_data,
         Additional arguments for building model
     '''
 
-    from pyomo.environ import value
     from egret.common.solver_interface import _solve_model
 
     m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
 
-    network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
-
     if relaxed:
         m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
-        m, results, solver = _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
-    else:
-        m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True)
+    m, results, solver = _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
 
     md = _save_uc_results(m)
     
