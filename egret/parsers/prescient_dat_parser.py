@@ -333,8 +333,8 @@ def setup_abstract_model(model):
     
     model.TransmissionLines = Set()
     
-    model.BusFrom = Param(model.TransmissionLines)
-    model.BusTo   = Param(model.TransmissionLines)
+    model.BusFrom = Param(model.TransmissionLines, within=Any)
+    model.BusTo   = Param(model.TransmissionLines, within=Any)
 
     model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals)
 
