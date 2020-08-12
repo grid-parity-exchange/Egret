@@ -1489,6 +1489,7 @@ def _save_uc_results(m):
     return md
 
 def _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed ):
+    from egret.common.solver_interface import _solve_model
     model_data = m.model_data
     network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
     if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
@@ -1544,8 +1545,6 @@ def solve_unit_commitment(model_data,
     kwargs : dictionary (optional)
         Additional arguments for building model
     '''
-
-    from egret.common.solver_interface import _solve_model
 
     m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
 
