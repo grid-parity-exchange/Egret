@@ -956,7 +956,7 @@ def _time_series_dict(values):
 def _preallocated_list(other_iter):
     return [ None for _ in other_iter ]
 
-def _save_uc_results(m):
+def _save_uc_results(m, relaxed):
     from pyomo.environ import value
 
     md = m.model_data
@@ -1553,7 +1553,7 @@ def solve_unit_commitment(model_data,
 
     m, results, solver = _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
 
-    md = _save_uc_results(m)
+    md = _save_uc_results(m, relaxed)
     
     if return_model and return_results:
         return md, m, results
