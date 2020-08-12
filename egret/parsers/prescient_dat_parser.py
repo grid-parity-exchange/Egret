@@ -38,7 +38,7 @@ def get_uc_model():
     setup_abstract_model(uc_model)
     return uc_model
 
-def create_model_data_dict_params(params):
+def create_model_data_dict_params(params, keep_names=False):
 
     md_dict = md.ModelData.empty_model_data_dict()
 
@@ -157,7 +157,12 @@ def create_model_data_dict_params(params):
         g_d['p_cost'] =  p_cost
 
         ## NOTE: generators need unique names
-        gen_dict[g+'_t'] = g_d
+        if keep_names:
+            if g in gen_dict:
+                raise RuntimeError("Nonunique generator names")
+            gen_dict[g] = g_d
+        else:
+            gen_dict[g+'_t'] = g_d
         
     for g in sorted(params.AllNondispatchableGenerators):
         g_d = { 'generator_type':'renewable', }
@@ -171,7 +176,12 @@ def create_model_data_dict_params(params):
                             'values': [ params.MaxNondispatchablePower[g,t] for t in params.TimePeriods ]
                        }
         ## NOTE: generators need unique names
-        gen_dict[g+'_r'] = g_d
+        if keep_names:
+            if g in gen_dict:
+                raise RuntimeError("Nonunique generator names")
+            gen_dict[g] = g_d
+        else:
+            gen_dict[g+'_r'] = g_d
 
     elements['generator'] = gen_dict
 
