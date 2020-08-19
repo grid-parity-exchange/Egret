@@ -59,7 +59,7 @@ def create_model_data_dict_params(params, keep_names=False):
     gen_bus_dict = dict()
     renewable_gen_bus_dict = dict()
     storage_bus_dict = dict()
-    for b in sorted(params.Buses):
+    for b in params.Buses:
         if set_reference:
             system['reference_bus'] = b
             system['reference_bus_angle'] = 0.0
@@ -74,7 +74,7 @@ def create_model_data_dict_params(params, keep_names=False):
     elements['bus'] = bus_dict
 
     load_dict = dict()
-    for b in sorted(params.Buses):
+    for b in params.Buses:
         l_d = { 'bus' : b, 
                 'in_service': True,
                 'p_load':
@@ -89,7 +89,7 @@ def create_model_data_dict_params(params, keep_names=False):
     system['reserve_requirement'] = { 'data_type':'time_series', 'values': reserve_dict }
 
     branch_dict = dict()
-    for l in sorted(params.TransmissionLines):
+    for l in params.TransmissionLines:
         b_d = { 'from_bus' : params.BusFrom[l],
                 'to_bus' : params.BusTo[l],
                 'reactance' : params.Impedence[l],
@@ -105,7 +105,7 @@ def create_model_data_dict_params(params, keep_names=False):
     elements['branch'] = branch_dict
 
     interface_dict = dict()
-    for i in sorted(params.Interfaces):
+    for i in params.Interfaces:
         i_d = { 'interface_lines' : list(params.InterfaceLines[l]),
                 'interface_from_limit': params.InterfaceFromLimit[l],
                 'interface_to_limit': params.InterfaceToLimit[l],
@@ -114,7 +114,7 @@ def create_model_data_dict_params(params, keep_names=False):
     elements['interface'] = interface_dict
 
     zone_dict = dict()
-    for z in sorted(params.ReserveZones):
+    for z in params.ReserveZones:
         reserve_dict = [ params.ZonalReserveRequirement[z,t] for t in params.TimePeriods ]
         z_d = { 'reserve_requirement' : {'data_type': 'time_series', 'values' : reserve_dict } }
         zone_dict[z] = z_d
@@ -122,7 +122,7 @@ def create_model_data_dict_params(params, keep_names=False):
 
     gen_dict = dict()
 
-    for g in sorted(params.ThermalGenerators):
+    for g in params.ThermalGenerators:
         g_d = { 'generator_type':'thermal', }
         g_d['bus'] = gen_bus_dict[g]
         g_d['fuel'] = params.ThermalGeneratorType[g]
@@ -164,7 +164,7 @@ def create_model_data_dict_params(params, keep_names=False):
         else:
             gen_dict[g+'_t'] = g_d
         
-    for g in sorted(params.AllNondispatchableGenerators):
+    for g in params.AllNondispatchableGenerators:
         g_d = { 'generator_type':'renewable', }
         g_d['bus'] = renewable_gen_bus_dict[g]
         g_d['in_service'] = True
@@ -186,7 +186,7 @@ def create_model_data_dict_params(params, keep_names=False):
     elements['generator'] = gen_dict
 
     storage_dict = {}
-    for s in sorted(params.Storage):
+    for s in params.Storage:
         s_d = dict()
         s_d['bus'] = storage_bus_dict[s]
         s_d['min_discharge_rate'] = params.MinimumPowerOutputStorage[s]

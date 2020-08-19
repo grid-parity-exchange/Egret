@@ -984,6 +984,27 @@ def _save_uc_results(m, relaxed):
     fs = bool(m.fuel_supply)
     fc = bool(m.fuel_consumption)
 
+    ## all of the potential constraints that could limit maximum output
+    ## Not all unit commitment models have these constraints, so first
+    ## we need check if they're on the model object
+    ramp_up_avail_potential_constrs = [
+                                      'EnforceMaxAvailableRampUpRates',
+                                      'AncillaryServiceRampUpLimit',
+                                      'power_limit_from_start',
+                                      'power_limit_from_stop',
+                                      'power_limit_from_start_stop',
+                                      'power_limit_from_start_stops',
+                                      'max_power_limit_from_starts',
+                                      'EnforceMaxAvailableRampDownRates',
+                                      'EnforceMaxCapacity',
+                                      'OAVUpperBound',
+                                      'EnforceGenerationLimits',
+                                     ]
+    ramp_up_avail_constrs = []
+    for constr in ramp_up_avail_potential_constrs:
+        if hasattr(m, constr):
+            ramp_up_avail_constrs.append(getattr(m, constr))
+
     for g,g_dict in thermal_gens.items():
         pg_dict = _preallocated_list(data_time_periods)
         if reserve_requirement:
@@ -993,23 +1014,6 @@ def _save_uc_results(m, relaxed):
         production_cost_dict = _preallocated_list(data_time_periods)
         ramp_up_avail_dict = _preallocated_list(data_time_periods)
 
-        ## all of the potential constraints that could limit maximum output
-        ## Not all unit commitment models have these constraints, so first
-        ## we need check if they're on the model object
-        ramp_up_avail_potential_constrs = [
-                                          'EnforceMaxAvailableRampUpRates',
-                                          'AncillaryServiceRampUpLimit',
-                                          'power_limit_from_start',
-                                          'power_limit_from_stop',
-                                          'power_limit_from_start_stop',
-                                          'power_limit_from_start_stops',
-                                          'EnforceMaxAvailableRampDownRates',
-                                          'EnforceMaxCapacity',
-                                         ]
-        ramp_up_avail_constrs = []
-        for constr in ramp_up_avail_potential_constrs:
-            if hasattr(m, constr):
-                ramp_up_avail_constrs.append(getattr(m, constr))
 
         if regulation:
             reg_prov = _preallocated_list(data_time_periods)
