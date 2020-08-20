@@ -956,69 +956,8 @@ def _time_series_dict(values):
 def _preallocated_list(other_iter):
     return [ None for _ in other_iter ]
 
-def solve_unit_commitment(model_data,
-                          solver,
-                          mipgap = 0.001,
-                          timelimit = None,
-                          solver_tee = True,
-                          symbolic_solver_labels = False,
-                          solver_options = None,
-                          solve_method_options = None,
-                          uc_model_generator = create_tight_unit_commitment_model,
-                          relaxed = False,
-                          return_model = False,
-                          return_results = False,
-                          **kwargs):
-    '''
-    Create and solve a new unit commitment model
-
-    Parameters
-    ----------
-    model_data : egret.data.ModelData
-        An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
-    solver : str or pyomo.opt.base.solvers.OptSolver
-        Either a string specifying a pyomo solver name, or an instanciated pyomo solver
-    mipgap : float (optional)
-        Mipgap to use for unit commitment solve; default is 0.001
-    timelimit : float (optional)
-        Time limit for unit commitment run. Default of None results in no time
-        limit being set -- runs until mipgap is satisfied
-    solver_tee : bool (optional)
-        Display solver log. Default is True.
-    symbolic_solver_labels : bool (optional)
-        Use symbolic solver labels. Useful for debugging; default is False.
-    solver_options : dict (optional)
-        Other options to pass into the solver. Default is dict().
-    solve_method_options : dict (optional)
-        Other options to pass into the pyomo solve method. Default is dict().
-    uc_model_generator : function (optional)
-        Function for generating the unit commitment model. Default is 
-        egret.models.unit_commitment.create_tight_unit_commitment_model
-    relaxed : bool (optional)
-        If True, creates a relaxed unit commitment model
-    return_model : bool (optional)
-        If True, returns the pyomo model object
-    return_results : bool (optional)
-        If True, returns the pyomo results object
-    kwargs : dictionary (optional)
-        Additional arguments for building model
-    '''
-
+def _save_uc_results(m, relaxed):
     from pyomo.environ import value
-    from egret.common.solver_interface import _solve_model
-
-    m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
-
-    network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
-
-    if relaxed:
-        m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
-
-    if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
-        m, results, solver = _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
-    else:
-        m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True)
 
     md = m.model_data
 
@@ -1045,6 +984,27 @@ def solve_unit_commitment(model_data,
     fs = bool(m.fuel_supply)
     fc = bool(m.fuel_consumption)
 
+    ## all of the potential constraints that could limit maximum output
+    ## Not all unit commitment models have these constraints, so first
+    ## we need check if they're on the model object
+    ramp_up_avail_potential_constrs = [
+                                      'EnforceMaxAvailableRampUpRates',
+                                      'AncillaryServiceRampUpLimit',
+                                      'power_limit_from_start',
+                                      'power_limit_from_stop',
+                                      'power_limit_from_start_stop',
+                                      'power_limit_from_start_stops',
+                                      'max_power_limit_from_starts',
+                                      'EnforceMaxAvailableRampDownRates',
+                                      'EnforceMaxCapacity',
+                                      'OAVUpperBound',
+                                      'EnforceGenerationLimits',
+                                     ]
+    ramp_up_avail_constrs = []
+    for constr in ramp_up_avail_potential_constrs:
+        if hasattr(m, constr):
+            ramp_up_avail_constrs.append(getattr(m, constr))
+
     for g,g_dict in thermal_gens.items():
         pg_dict = _preallocated_list(data_time_periods)
         if reserve_requirement:
@@ -1054,23 +1014,6 @@ def solve_unit_commitment(model_data,
         production_cost_dict = _preallocated_list(data_time_periods)
         ramp_up_avail_dict = _preallocated_list(data_time_periods)
 
-        ## all of the potential constraints that could limit maximum output
-        ## Not all unit commitment models have these constraints, so first
-        ## we need check if they're on the model object
-        ramp_up_avail_potential_constrs = [
-                                          'EnforceMaxAvailableRampUpRates',
-                                          'AncillaryServiceRampUpLimit',
-                                          'power_limit_from_start',
-                                          'power_limit_from_stop',
-                                          'power_limit_from_start_stop',
-                                          'power_limit_from_start_stops',
-                                          'EnforceMaxAvailableRampDownRates',
-                                          'EnforceMaxCapacity',
-                                         ]
-        ramp_up_avail_constrs = []
-        for constr in ramp_up_avail_potential_constrs:
-            if hasattr(m, constr):
-                ramp_up_avail_constrs.append(getattr(m, constr))
 
         if regulation:
             reg_prov = _preallocated_list(data_time_periods)
@@ -1546,6 +1489,75 @@ def solve_unit_commitment(model_data,
     md.data['system']['total_cost'] = value(m.TotalCostObjective)
 
     unscale_ModelData_to_pu(md, inplace=True)
+
+    return md
+
+def _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed ):
+    from egret.common.solver_interface import _solve_model
+    model_data = m.model_data
+    network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
+    if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
+        return _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
+    else:
+        return _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True)
+
+def solve_unit_commitment(model_data,
+                          solver,
+                          mipgap = 0.001,
+                          timelimit = None,
+                          solver_tee = True,
+                          symbolic_solver_labels = False,
+                          solver_options = None,
+                          solve_method_options = None,
+                          uc_model_generator = create_tight_unit_commitment_model,
+                          relaxed = False,
+                          return_model = False,
+                          return_results = False,
+                          **kwargs):
+    '''
+    Create and solve a new unit commitment model
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+        # TODO: describe the required and optional attributes
+    solver : str or pyomo.opt.base.solvers.OptSolver
+        Either a string specifying a pyomo solver name, or an instanciated pyomo solver
+    mipgap : float (optional)
+        Mipgap to use for unit commitment solve; default is 0.001
+    timelimit : float (optional)
+        Time limit for unit commitment run. Default of None results in no time
+        limit being set -- runs until mipgap is satisfied
+    solver_tee : bool (optional)
+        Display solver log. Default is True.
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels. Useful for debugging; default is False.
+    solver_options : dict (optional)
+        Other options to pass into the solver. Default is dict().
+    solve_method_options : dict (optional)
+        Other options to pass into the pyomo solve method. Default is dict().
+    uc_model_generator : function (optional)
+        Function for generating the unit commitment model. Default is 
+        egret.models.unit_commitment.create_tight_unit_commitment_model
+    relaxed : bool (optional)
+        If True, creates a relaxed unit commitment model
+    return_model : bool (optional)
+        If True, returns the pyomo model object
+    return_results : bool (optional)
+        If True, returns the pyomo results object
+    kwargs : dictionary (optional)
+        Additional arguments for building model
+    '''
+
+    m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
+
+    if relaxed:
+        m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+
+    m, results, solver = _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
+
+    md = _save_uc_results(m, relaxed)
     
     if return_model and return_results:
         return md, m, results
