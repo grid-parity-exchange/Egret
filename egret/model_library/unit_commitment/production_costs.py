@@ -489,7 +489,7 @@ def _CW_production_costs_garver(model):
     def piecewise_production_costs_rule(m, g, t):
         return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, i))*m.PiecewiseProductionFrac[g,t,i] for i in range(1, len(m.PowerGenerationPiecewisePoints[g,t])))
 
-    model.ProductionCostConst = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
+    model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
     _compute_total_production_cost(model)
 
@@ -690,7 +690,7 @@ def basic_production_costs_envelope(model):
         intercept = -slope*x0 + y0
         return m.ProductionCost[g,t] >= slope*m.PowerGeneratedAboveMinimum[g,t] + intercept
 
-    model.PiecewiseProductionCost = Constraint(model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_cost_rule)
+    model.ProductionCostConstr = Constraint(model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_cost_rule)
 
     _compute_total_production_cost(model)
 
@@ -723,6 +723,6 @@ def HB_production_costs(model):
         # this will be good regardless
         return m.ProductionCost[g,t] >= slope*m.PowerGeneratedAboveMinimum[g,t] + intercept*m.UnitOn[g,t]
 
-    model.PiecewiseProductionCost = Constraint(model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_cost_rule)
+    model.ProductionCostConstr = Constraint(model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_cost_rule)
 
     _compute_total_production_cost(model)
