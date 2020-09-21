@@ -550,7 +550,7 @@ def create_CA_unit_commitment_model(model_data,
 
 def create_CHP_unit_commitment_model(model_data,
                                      network_constraints='ptdf_power_flow',
-                                     relaxed=True,
+                                     relaxed=False,
                                      **kwargs):
     '''
     Create a new unit commitment model based on the "extensive form" convex hull
@@ -604,7 +604,7 @@ def create_CHP_unit_commitment_model(model_data,
 
 def create_super_tight_unit_commitment_model(model_data,
                                              network_constraints='ptdf_power_flow',
-                                             relaxed=True,
+                                             relaxed=False,
                                              **kwargs):
     '''
     Create a new unit commitment formulation based using the tightest formulation available
