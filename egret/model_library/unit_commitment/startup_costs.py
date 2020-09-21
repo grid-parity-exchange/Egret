@@ -31,7 +31,7 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
 
     #begin ostrowski startup costs
     time_period_list = list(model.TimePeriods)
-    initial_time = model.InitialTime
+    initial_time = model.TimePeriods.first()
     after_last_time = model.TimePeriods.last()+1
     def ValidShutdownTimePeriods_generator(m,g):
         ## for speed, if we don't have different startups
