@@ -28,7 +28,7 @@ def run_logging_ext(level):
                             stderr=subprocess.STDOUT)
     return proc.communicate()
 
-def test_logging():
+def _test_logging():
     # these should not show output by default
     for level in ['debug']:
         out, err = run_logging_ext(level)
