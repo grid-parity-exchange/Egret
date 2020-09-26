@@ -37,7 +37,7 @@ UCFormulation = namedtuple('UCFormulation',
                              ]
                             )
 
-def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_options=None ):
+def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_options=None, PTDF_matrix_dict=None ):
     """
     returns a UC uc_formulation as an abstract model with the 
     components specified in a UCFormulation, with the option
@@ -53,6 +53,10 @@ def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_optio
         Default is False.
     ptdf_options : dict, optional
         Dictionary of options for ptdf transmission model
+    PTDF_matrix_dict : dict, optional
+        Dictionary of egret.data.ptdf_utils.PTDFMatrix objects for use in model construction.
+        WARNING: Nearly zero checking is done on the consistency of this object with the
+                 model_data. Use with extreme caution!
 
     Returns
     -------
@@ -62,7 +66,7 @@ def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_optio
 
     md = model_data.clone_in_service()
     scale_ModelData_to_pu(md, inplace=True)
-    return _generate_model( md, *_get_formulation_from_UCFormulation( uc_formulation ), relax_binaries , ptdf_options )
+    return _generate_model( md, *_get_formulation_from_UCFormulation( uc_formulation ), relax_binaries , ptdf_options, PTDF_matrix_dict )
 
 def _generate_model( model_data,
                     _status_vars,
@@ -79,6 +83,7 @@ def _generate_model( model_data,
                     _objective, 
                     _relax_binaries = False,
                     _ptdf_options = None,
+                    _PTDF_matrix_dict = None,
                     ):
     
     model = pe.ConcreteModel()
@@ -97,6 +102,11 @@ def _generate_model( model_data,
         lpu.check_and_scale_ptdf_options(_ptdf_options, baseMVA)
 
         model._ptdf_options = _ptdf_options
+
+        if _PTDF_matrix_dict is not None:
+            model._PTDFs = _PTDF_matrix_dict
+        else:
+            model._PTDFs = {}
 
     ## enforece time 1 ramp rates
     model.enforce_t1_ramp_rates = True
