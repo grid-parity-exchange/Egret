@@ -19,7 +19,7 @@ component_name = 'reserve_requirement'
 
 def _add_reserve_shortfall(model, fixed=False):
     if fixed:
-        model.ReserveShortfall = Var(model.TimePeriods, bounds=(0.,0.))
+        model.ReserveShortfall = Param(model.TimePeriods, default=0.)
     else:
         # the reserve shortfall can't be more than the reserve requirement in any given time period.
         model.ReserveShortfall = Var(model.TimePeriods, bounds=lambda m,t:(0., m.ReserveRequirement[t]))
@@ -104,8 +104,6 @@ def MLR_reserve_constraints(model):
     formulation for the thermal unit commitment problem. IEEE Transactions on
     Power Systems, 28(4):4897–4908, 2013.
     '''
-
-    _add_reserve_shortfall(model, fixed=True)
 
     if not check_reserve_requirement(model):
         _add_reserve_shortfall(model, fixed=True)
