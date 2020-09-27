@@ -32,7 +32,10 @@ from math import pi, radians
 def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, penalty=1000):
     import egret.model_library.decl as decl
     slack_init = {k: 0 for k in bus_attrs['names']}
-    slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
+
+    sum_p_loads_values = sum(bus_p_loads.values())
+    slack_bounds = {k: (0, sum_p_loads_values) for k in bus_attrs['names']}
+    
     decl.declare_var('p_slack_pos', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )

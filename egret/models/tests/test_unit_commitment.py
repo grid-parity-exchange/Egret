@@ -145,6 +145,8 @@ def test_CA_uc_model():
     lp_obj_list = [4185855.30972, 5423650.80043, 5965411.93718, 5439434.94733, 6029118.03019]
     _test_uc_model(create_CA_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
+# This test sometimes times out Travis, so skip if using cbc or glpk
+@unittest.skipUnless(comm_mip_avail, "Neither Gurobi or CPLEX solver is available")
 def test_CHP_uc_model():
     lp_obj_list = [4195062.031337061, 5441117.29937132, 5989325.835633724, 5454266.5169105325, 6055624.773215021]
     _test_uc_model(create_CHP_unit_commitment_model, relax=True, test_objvals=lp_obj_list)

@@ -159,6 +159,7 @@ def _ptdf_dcopf_network_model(block,tm):
     _setup_interface_slacks(m,block,tm)
 
     ### Get the PTDF matrix from cache, from file, or create a new one
+    ### m._PTDFs set in uc_model_generator
     if branches_out_service not in m._PTDFs:
         buses_idx = tuple(buses.keys())
 
@@ -636,9 +637,6 @@ def copperplate_relaxed_power_flow(model, slacks=True):
                                             'storage_service': None,
                                             })
 def ptdf_power_flow(model, slacks=True):
-    ## allow for this to already exist
-    if not hasattr(model, '_PTDFs'):
-        model._PTDFs = dict()
     _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
 
 @add_model_attr(component_name, requires = {'data_loader': None,

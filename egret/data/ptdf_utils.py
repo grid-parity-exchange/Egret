@@ -124,6 +124,7 @@ class PTDFMatrix(object):
         self._set_lazy_limits(ptdf_options)
 
     def _calculate(self):
+        logger.info("Calculating PTDF Matrix")
         self._calculate_ptdf()
         self._calculate_phi_adjust()
         self._calculate_phase_shift()
@@ -326,6 +327,7 @@ class PTDFMatrix(object):
 class PTDFLossesMatrix(PTDFMatrix):
 
     def _calculate(self):
+        logger.info("Calculating PTDF Matrix")
         self._calculate_ptdf()
         self._calculate_phi_adjust()
         self._calculate_phi_loss_constant()
