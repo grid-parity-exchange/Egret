@@ -399,6 +399,15 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
         md = model_data.clone()
     baseMVA = float(md.data['system']['baseMVA'])
 
+    # multiply/divide by 1. is a no-op
+    # occurs in some unit commitment models
+    # (esp. those without network)
+    if baseMVA == 1.:
+        if inplace:
+            return
+        else:
+            return md
+
     for (attr_type, element_type, element_subtype), attributes in scaled_attributes.items():
 
         if attr_type == 'system_attributes':
