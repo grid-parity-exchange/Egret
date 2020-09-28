@@ -128,10 +128,7 @@ def _damcikurt_basic_ramping(model):
             return Constraint.Skip
         if t == m.InitialTime:
             ## assume m.MinimumPowerOutput[g,T0] == 0
-            return m.PowerGeneratedT0[g] - m.PowerGeneratedAboveMinimum[g, t] <= \
-                    (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g] + \
-                    (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t])*m.UnitStop[g,t]
-                    ## TODO: figure out ScaledShutdownRampLimitT0[g]
+            ## TODO: figure out ScaledShutdownRampLimitT0[g]
             linear_vars = [m.PowerGeneratedAboveMinimum[g,t], m.UnitStop[g,t]]
             linear_coefs = [ 1, (m.ScaledShutdownRampLimitT0[g] - m.MinimumPowerOutput[g,t] - m.ScaledNominalRampDownLimit[g,t]) ]
             LHS = m.PowerGeneratedT0[g] - (m.ScaledNominalRampDownLimit[g,t] + m.MinimumPowerOutput[g,t] - 0)*m.UnitOnT0[g]
