@@ -63,6 +63,18 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
 
 	model = pe.ConcreteModel()
 
+	###declare (and fix) the voltage magnitudes and squares of voltage magnitudes
+
+	bus_voltage_magnitudes = voltages #Assumes voltages is given as a dictionary 
+	libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_voltage_magnitudes)
+	model.vm.fix()
+
+	libbus.declare_var_vmsq(model=model,
+                            index_set=bus_attrs['names'],
+                            initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
+                            bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
+                                             {k: v**2 for k, v in bus_attrs['v_max'].items()}))
+
     ### declare the polar voltages
 
 	libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'])
@@ -112,13 +124,13 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
 		else:
 			s_lbub[k] = (-s_max[k],s_max[k])
 	pf_bounds = s_lbub
-    #pt_bounds = s_lbub
+	pt_bounds = s_lbub
 	qf_bounds = s_lbub
-    #qt_bounds = s_lbub
+	qt_bounds = s_lbub
 	pf_init = dict()
-    #pt_init = dict()
+	pt_init = dict()
 	qf_init = dict()
-   	#qt_init = dict()
+	qt_init = dict()
 	for branch_name, branch in branches.items():
 		from_bus = branch['from_bus']
 		to_bus = branch['to_bus']
@@ -132,9 +144,75 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
 		itj_init = tx_calc.calculate_itj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
 		pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
-        #pt_init[branch_name] = tx_calc.calculate_p(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
+		pt_init[branch_name] = tx_calc.calculate_p(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
 		qf_init[branch_name] = tx_calc.calculate_q(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
-        #qt_init[branch_name] = tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
+		qt_init[branch_name] = tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
+
+
+    ####################
+    #Constraints
+    ####################
+
+    ###Balance equations in a bus 
+
+    #p balance
+
+	libbus.declare_eq_p_balance(model=model,
+                                          index_set=bus_attrs['names'],
+                                          bus_p_loads=bus_p_loads,
+                                          gens_by_bus=gens_by_bus,
+                                          bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                          inlet_branches_by_bus=inlet_branches_by_bus,
+                                          outlet_branches_by_bus=outlet_branches_by_bus,
+                                          approximation_type=ApproximationType.BTHETA,
+                                          **p_rhs_kwargs
+                                          )
+
+    #q balance
+
+	libbus.declare_eq_q_balance(model=model, index_set=bus_attrs['names'],
+                         		bus_q_loads=bus_q_loads,
+                         		gens_by_bus=gens_by_bus,
+                         		bus_bs_fixed_shunts=bus_bs_fixed_shunts,
+                         		inlet_branches_by_bus=inlet_branches_by_bus, 
+                         		outlet_branches_by_bus=outlet_branches_by_bus,
+                        		 **q_rhs_kwargs)
+
+
+    ### Power in a branch
+
+	branch_con_set = decl.declare_set('_con_eq_p_q_lpac_branch_power', model, branch_attrs['names'])
+
+	model.eq_pf_branch_t = pe.Constraint(branch_con_set)
+	model.eq_pt_branch_t = pe.Constraint(branch_con_set)
+	model.eq_qf_branch_t = pe.Constraint(branch_con_set)
+	model.eq_qt_branch_t = pe.Constraint(branch_con_set)
+
+	for branch_name in branch_con_set:
+		branch = branches[branch_name]
+
+		from_bus = branch['from_bus']
+		to_bus = branch['to_bus']
+
+		g = tx_calc.calculate_conductance(branch)
+		b = tx_calc.calculate_susceptance(branch)
+
+		model.eq_pf_branch_t[branch_name] = \
+			model.pf[branch_name] == \
+			g*model.vmsq[from_bus] - model.vm[from_bus]*model.vm[to_bus]*(g * model.cos_hat[branch_name] + b * (model.va[from_bus] - model.va[to_bus]))
+
+		model.eq_pt_branch_t[branch_name] = \
+			model.pt[branch_name] == \
+			g*model.vmsq[to_bus] - model.vm[from_bus]*model.vm[to_bus]*(g * model.cos_hat[branch_name] + b * (model.va[to_bus] - model.va[from_bus]))
+
+		model.eq_qf_branch_t[branch_name] = \
+			model.qf[branch_name] == \
+			-b*model.vmsq[from_bus] - model.vm[from_bus]*model.vm[to_bus]*(g*(model.va[from_bus] - model.va[to_bus]) - b*model.cos_hat[branch_name])
+
+		model.eq_qt_branch_t[branch_name] = \
+			model.qt[branch_name] == \
+			-b*model.vmsq[to_bus] - model.vm[from_bus]*model.vm[to_bus]*(g*(model.va[to_bus] - model.va[from_bus]) - b*model.cos_hat[branch_name])
+
 
     ### Piecewise linear cosine constraints
 
@@ -161,7 +239,7 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
 	return model, md
 
 
-def create_warm_start_lpac_model(model_data, cosine_segment_count = 20, include_feasibility_slack = False):
+def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper_bound = pi/3, cosine_segment_count = 20, include_feasibility_slack = False):
 	"""
 	The warm start LPAC model assumes that target voltages can be given, but not all voltages are known. 
 	"""
@@ -185,6 +263,17 @@ def create_warm_start_lpac_model(model_data, cosine_segment_count = 20, include_
 	gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
 	model = pe.ConcreteModel()
+
+	###declare (and fix) the target voltage magnitudes and squares of voltage magnitudes
+	bus_voltage_magnitudes = voltages
+	libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_voltage_magnitudes)
+	model.vm.fix()
+
+	libbus.declare_var_vmsq(model=model,
+                            index_set=bus_attrs['names'],
+                            initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
+                            bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
+                                             {k: v**2 for k, v in bus_attrs['v_max'].items()}))
 
     ### declare the polar voltages
 	libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'] )
@@ -237,13 +326,13 @@ def create_warm_start_lpac_model(model_data, cosine_segment_count = 20, include_
 		else:
 			s_lbub[k] = (-s_max[k],s_max[k])
 	pf_bounds = s_lbub
-    #pt_bounds = s_lbub
+	pt_bounds = s_lbub
 	qf_bounds = s_lbub
-    #qt_bounds = s_lbub
+	qt_bounds = s_lbub
 	pf_init = dict()
-    #pt_init = dict()
+	pt_init = dict()
 	qf_init = dict()
-   	#qt_init = dict()
+	qt_init = dict()
 	for branch_name, branch in branches.items():
 		from_bus = branch['from_bus']
 		to_bus = branch['to_bus']
@@ -257,10 +346,75 @@ def create_warm_start_lpac_model(model_data, cosine_segment_count = 20, include_
 		itj_init = tx_calc.calculate_itj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
 		pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
-        #pt_init[branch_name] = tx_calc.calculate_p(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
+		pt_init[branch_name] = tx_calc.calculate_p(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
 		qf_init[branch_name] = tx_calc.calculate_q(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
-        #qt_init[branch_name] = tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
+		qt_init[branch_name] = tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
 
+
+    ########################
+    #Constraints
+    ########################
+
+
+    ###Balance equations at a bus
+
+    #p balance
+
+	libbus.declare_eq_p_balance(model=model,
+                                          index_set=bus_attrs['names'],
+                                          bus_p_loads=bus_p_loads,
+                                          gens_by_bus=gens_by_bus,
+                                          bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                          inlet_branches_by_bus=inlet_branches_by_bus,
+                                          outlet_branches_by_bus=outlet_branches_by_bus,
+                                          approximation_type=ApproximationType.BTHETA,
+                                          **p_rhs_kwargs
+                                          )
+
+    #q balance
+
+	libbus.declare_eq_q_balance(model=model, index_set=bus_attrs['names'],
+                         		bus_q_loads=bus_q_loads,
+                         		gens_by_bus=gens_by_bus,
+                         		bus_bs_fixed_shunts=bus_bs_fixed_shunts,
+                         		inlet_branches_by_bus=inlet_branches_by_bus, 
+                         		outlet_branches_by_bus=outlet_branches_by_bus,
+                        		 **q_rhs_kwargs)
+
+
+    ###Constraints for power in a branch
+
+	branch_con_set = decl.declare_set('_con_eq_p_q_lpac_branch_power', model, branch_attrs['names'])
+
+	model.eq_pf_branch_t = pe.Constraint(branch_con_set)
+	model.eq_pt_branch_t = pe.Constraint(branch_con_set)
+	model.eq_qf_branch_t = pe.Constraint(branch_con_set)
+	model.eq_qt_branch_t = pe.Constraint(branch_con_set)
+
+	for branch_name in branch_con_set:
+		branch = branches[branch_name]
+
+		from_bus = branch['from_bus']
+		to_bus = branch['to_bus']
+
+		g = tx_calc.calculate_conductance(branch)
+		b = tx_calc.calculate_susceptance(branch)
+
+		model.eq_pf_branch_t[branch_name] = \
+			model.pf[branch_name] == \
+			g*model.vmsq[from_bus] - model.vm[from_bus]*model.vm[to_bus]*(g * model.cos_hat[branch_name] + b * (model.va[from_bus] - model.va[to_bus]))
+
+		model.eq_pt_branch_t[branch_name] = \
+			model.pt[branch_name] == \
+			g*model.vmsq[to_bus] - model.vm[from_bus]*model.vm[to_bus]*(g * model.cos_hat[branch_name] + b * (model.va[to_bus] - model.va[from_bus]))
+
+		model.eq_qf_branch_t[branch_name] = \
+			model.qf[branch_name] == \
+			-b*model.vmsq[from_bus] - model.vm[from_bus]*model.vm[to_bus]*(g*(model.va[from_bus] - model.va[to_bus]) - b*model.cos_hat[branch_name]) - model.vm[from_bus]*b*(model.phi[from_bus] - model.phi[to_bus]) - (model.vm[from_bus] - model.vm[to_bus])*model.phi[from_bus]
+
+		model.eq_pt_branch_t[branch_name] = \
+			model.qt[branch_name] = \
+			-b*model.vmsq[to_bus] - model.vm[from_bus]*model.vm[to_bus]*(g*(model.va[to_bus] - model.va[from_bus]) - b*model.cos_hat[branch_name]) - model.vm[to_bus]*b*(model.phi[to_bus] - model.phi[from_bus]) - (model.vm[to_bus] - model.vm[from_bus])*model.phi[to_bus]
 
     ### Piecewise linear cosine constraints
 
@@ -419,12 +573,17 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
                              )
 
 
+
+	################################
+	#Constraints
+	################################
+
     ### Balance equations at a bus (based on Kirchhoff Current Law)
 
     #Should be able to just use DC OPF approximation of B-theta type? 
 
     ### declare the p balance
-	libbus.declare_eq_p_balance_dc_approx(model=model,
+	libbus.declare_eq_p_balance(model=model,
                                           index_set=bus_attrs['names'],
                                           bus_p_loads=bus_p_loads,
                                           gens_by_bus=gens_by_bus,
@@ -452,7 +611,9 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
 	branch_con_set = decl.declare_set('_con_eq_p_q_lpac_branch_power', model, branch_attrs['names'])
 
 	model.eq_pf_branch_t = pe.Constraint(branch_con_set)
+	model.eq_pt_branch_t = pe.Constraint(branch_con_set)
 	model.eq_qf_branch_t = pe.Constraint(branch_con_set)
+	model.eq_qt_branch_t = pe.Constraint(branch_con_set)
 
 	for branch_name in branch_con_set:
 		branch = branches[branch_name]
@@ -467,9 +628,17 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
         	model.pf[branch_name] == \
         	g - g * model.cos_hat[branch_name] - b * (model.va[from_bus] - model.va[to_bus])
 
+		model.eq_pt_branch_t[branch_name] = \
+        	model.pt[branch_name] == \
+        	g - g * model.cos_hat[branch_name] - b * (model.va[to_bus] - model.va[from_bus])
+
 		model.eq_qf_branch_t[branch_name] = \
         	model.qf[branch_name] == \
         	-b - g*(model.va[from_bus] - model.va[to_bus]) + b*model.cos_hat[branch_name] - b*(model.phi[from_bus] - model.phi[to_bus])
+
+		model.eq_qt_branch_t[branch_name] = \
+        	model.qt[branch_name] == \
+        	-b - g*(model.va[to_bus] - model.va[from_bus]) +b*model.cos_hat[branch_name] - b*(model.phi[to_bus] - model.phi[from_bus])
 
     ### Piecewise linear cosine constraints
 
@@ -482,10 +651,6 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
     							 upper_bound=upper_bound, 
     							 cosine_segment_count=cosine_segment_count)
 	
-
-
-
-
     ### Objective is to maximize cosine hat variables
 
 	obj_expr = sum(model.cos_hat[branch_name] for branch_name in branch_attrs['names'])
@@ -526,9 +691,9 @@ def solve_lpac(model_data,
         Use symbolic solver labels. Useful for debugging; default is False.
     options : dict (optional)
         Other options to pass into the solver. Default is dict().
-    dcopf_model_generator : function (optional)
-        Function for generating the dcopf model. Default is
-        egret.models.dcopf.create_btheta_dcopf_model
+    lpac_model_generator : function (optional)
+        Function for generating the lpac model. Default is
+        the cold start lpac model
     return_model : bool (optional)
         If True, returns the pyomo model object
     return_results : bool (optional)
@@ -573,7 +738,7 @@ if __name__ == '__main__':
     import os
     from egret.parsers.matpower_parser import create_ModelData
 
-    filename = 'pglib_opf_case30_ieee.m'
+    filename = 'pglib_opf_case14_ieee.m'
     test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
     model_data = create_ModelData(test_case)
     kwargs = {'include_feasibility_slack':False}
