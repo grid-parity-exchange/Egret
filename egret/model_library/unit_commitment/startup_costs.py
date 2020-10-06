@@ -9,10 +9,9 @@
 
 ## file for startup cost formulations
 from pyomo.environ import *
-from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
-from .uc_utils import add_model_attr, is_var, linear_summation
+from .uc_utils import add_model_attr, get_linear_expr
 from .status_vars import _is_relaxed
 component_name = 'startup_costs'
 
@@ -72,10 +71,7 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     else:
         model.StartupIndicator=Var(model.StartupIndicator_domain, within=Binary)
 
-    if is_var(model.UnitStart) and is_var(model.UnitStop):
-        linear_expr = LinearExpression
-    else:
-        linear_expr = linear_summation
+    linear_expr = get_linear_expr(model.UnitStart, model.UnitStop)
 
     ############################################################
     # compute the per-generator, per-time period startup costs #
@@ -116,6 +112,7 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     if add_startup_cost_var:
         model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
 
+    linear_expr = get_linear_expr()
     def ComputeStartupCost2_rule(m,g,t):
         startup_lags = m.ScaledStartupLags[g]
         startup_costs = m.StartupCosts[g]
@@ -133,7 +130,7 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
                     linear_coefs.append(startup_costs[s] - last_startup_cost)
                     break
 
-        return (LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
+        return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
         '''
         return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStart[g,t] + \
                                       sum( (m.StartupCosts[g][s] - m.StartupCosts[g].last()) * \
@@ -175,10 +172,21 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     else:
         model.delta=Var(model.StartupCostsIndexSet, within=Binary)
 
+    linear_expr = get_linear_expr(model.UnitStart)
+
     def delta_eq_rule(m,g,t):
-        return sum(m.delta[g,s,t] for s in m.StartupCostIndices[g])==m.UnitStart[g,t]
+        linear_vars = [m.delta[g,s,t] for s in m.StartupCostIndices[g]]
+        linear_coefs = [1.]*len(linear_vars)
+        linear_vars.append(m.UnitStart[g,t])
+        linear_coefs.append(-1.)
+        return (linear_expr( linear_vars, linear_coefs ), 0.)
     
     model.delta_eq=Constraint(model.ThermalGenerators, model.TimePeriods, rule=delta_eq_rule)
+
+    if model.status_vars == 'garver_2bin_vars':
+        linear_expr = get_linear_expr(model.UnitOn, model.UnitStart)
+    else:
+        linear_expr = get_linear_expr(model.UnitStop)
     
     ## BK -- updated to reflect previous generator condition
     ## BK -- assumes initial time is 1
@@ -194,17 +202,29 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
         
         ## equation (15) in ME
         if next_lag + generator_t0_state < t < next_lag:
-            return m.delta[g,s,t] == 0
+            return (m.delta[g,s,t], 0)
 
         if m.status_vars == 'garver_2bin_vars':
+            linear_vars = [m.UnitStart[g,t-i] for i in range(this_lag, next_lag)]
+            linear_coefs = [-1.]*len(linear_vars)
+            linear_vars += [m.delta[g,s,t], m.UnitOn[g,t-this_lag]]
+            linear_coefs += [1., 1.]
             if t == next_lag:
-                return m.delta[g,s,t] <= m.UnitOnT0[g] - m.UnitOn[g,t-this_lag] + sum(m.UnitStart[g,t-i] for i in range(this_lag, next_lag))
+                return (None, linear_expr(linear_vars, linear_coefs), m.UnitOnT0[g])
+                #return m.delta[g,s,t] <= m.UnitOnT0[g] - m.UnitOn[g,t-this_lag] + sum(m.UnitStart[g,t-i] for i in range(this_lag, next_lag))
             elif t > next_lag:
-                return m.delta[g,s,t] <= m.UnitOn[g,t-next_lag] - m.UnitOn[g,t-this_lag] + sum(m.UnitStart[g,t-i] for i in range(this_lag, next_lag))
+                linear_vars.append(m.UnitOn[g,t-next_lag])
+                linear_coefs.apppend(-1.)
+                return (None, linear_expr(linear_vars, linear_coefs), 0.)
+                #return m.delta[g,s,t] <= m.UnitOn[g,t-next_lag] - m.UnitOn[g,t-this_lag] + sum(m.UnitStart[g,t-i] for i in range(this_lag, next_lag))
         else:
             ## equation (2) in ME
             if t >= next_lag:
-                return m.delta[g,s,t] <= sum(m.UnitStop[g,t-i] for i in range(this_lag, next_lag))
+                linear_vars = [m.UnitStop[g,t-i] for i in range(this_lag, next_lag)]
+                linear_coefs = [-1.]*len(linear_vars)
+                linear_vars.append(m.delta[g,s,t])
+                linear_coefs.append(1.)
+                return (None, linear_expr(linear_vars, linear_coefs), 0.)
     
         return Constraint.Skip
     
@@ -213,8 +233,13 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     if add_startup_cost_var:
         model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
     
+    linear_expr = get_linear_expr()
     def ComputeStartupCost2_rule(m,g,t):
-        return m.StartupCost[g,t] == sum(m.delta[g,s,t]*m.StartupCosts[g][s] for s in m.StartupCostIndices[g])
+        linear_vars = [m.delta[g,s,t] for s in m.StartupCostIndices[g]]
+        linear_coefs = [m.StartupCosts[g][s] for s in m.StartupCostIndices[g]]
+        linear_vars.append(m.StartupCost[g,t])
+        linear_coefs.append(-1.)
+        return (linear_expr(linear_vars, linear_coefs),0.)
     
     model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 

@@ -12,7 +12,7 @@ from pyomo.environ import *
 from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
-from .uc_utils import add_model_attr, is_var, linear_summation
+from .uc_utils import add_model_attr
 from .power_vars import _add_reactive_power_vars
 from .generation_limits import _add_reactive_limits
 
@@ -375,7 +375,7 @@ def _add_system_load_mismatch(model):
     model.NegLoadGenerateMismatchTolerance = Constraint(rule=neg_load_generate_mismatch_tolerance_rule)
 
     def compute_load_mismatch_cost_rule(m, t):
-        linear_vars = list(m.posLoadGenerateMismatch.values())+list(m.negLoadGenerateMismatch.values())
+        linear_vars = [*m.posLoadGenerateMismatch.values(), *m.negLoadGenerateMismatch.values()]
         linear_coefs = [m.LoadMismatchPenalty*m.TimePeriodLengthHours]*len(linear_vars)
         return LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs)
     model.LoadMismatchCost = Expression(model.TimePeriods, rule=compute_load_mismatch_cost_rule)

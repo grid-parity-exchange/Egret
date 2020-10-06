@@ -10,10 +10,9 @@
 
 ## system variables and constraints
 from pyomo.environ import *
-from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
-from .uc_utils import add_model_attr, is_var, linear_summation
+from .uc_utils import add_model_attr, get_linear_expr
 from .reserve_vars import check_reserve_requirement
 component_name = 'reserve_requirement'
 
@@ -49,19 +48,16 @@ def CA_reserve_constraints(model):
     
     # IMPT: In contrast to power balance, reserves are (1) not per-bus and (2) expressed in terms of 
     #       maximum power available, and not actual power generated.
-    if is_var(model.MaximumPowerAvailable) and is_var(model.NondispatchablePowerUsed) and \
-            is_var(model.PowerOutputStorage) and is_var(model.PowerInputStorage) and \
-            is_var(model.LoadGenerateMismatch):
-        linear_expr = LinearExpression
-    else:
-        linear_expr = linear_summation
+    linear_expr = get_linear_expr(model.MaximumPowerAvailable, model.NondispatchablePowerUsed,
+                                  model.PowerOutputStorage, model.PowerInputStorage,
+                                  model.LoadGenerateMismatch)
     
     def enforce_reserve_requirements_rule(m, t):
-        linear_vars = list(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators) \
-                 + list(m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators) \
-                 + list(m.PowerOutputStorage[s,t] for s in m.Storage) \
-                 + list(m.LoadGenerateMismatch[b,t] for b in m.Buses)
-        linear_vars.append(m.ReserveShortfall[t])
+        linear_vars = [*(m.MaximumPowerAvailable[g, t] for g in m.ThermalGenerators),
+                       *(m.NondispatchablePowerUsed[n,t] for n in m.AllNondispatchableGenerators),
+                       *(m.PowerOutputStorage[s,t] for s in m.Storage),
+                       *(m.LoadGenerateMismatch[b,t] for b in m.Buses),
+                       m.ReserveShortfall[t] ]
         linear_coefs = [1.]*len(linear_vars)
 
         neg_vars = list(m.PowerInputStorage[s,t] for s in m.Storage)
@@ -83,11 +79,13 @@ def CA_reserve_constraints(model):
 ## helper for reserve pricing problem
 def _MLR_reserve_constraint(model):
 
+    linear_expr = get_linear_expr(model.ReserveProvided)
+
     def enforce_reserve_requirements_rule(m, t):
-        return sum(m.ReserveProvided[g, t] for g in m.ThermalGenerators) \
-                 + m.ReserveShortfall[t] \
-                 >= \
-                 m.ReserveRequirement[t]
+        linear_vars = list(m.ReserveProvided[g,t] for g in m.ThermalGenerators)
+        linear_vars.append(m.ReserveShortfall[t])
+        linear_coefs = [1.]*len(linear_vars)
+        return (m.ReserveRequirement[t], linear_expr(linear_vars, linear_coefs), None)
     
     model.EnforceReserveRequirements = Constraint(model.TimePeriods, rule=enforce_reserve_requirements_rule)
 

@@ -9,10 +9,9 @@
 
 ## file for minimum uptime/downtime constraints
 from pyomo.environ import *
-from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
-from .uc_utils import add_model_attr, is_var, linear_summation
+from .uc_utils import add_model_attr, get_linear_expr
 component_name = 'uptime_downtime'
 
 def _add_initial(model):
@@ -62,10 +61,7 @@ def _add_fixed_and_initial(model):
 
 def _3bin_logic(model):
     
-    if is_var(model.UnitOn) and is_var(model.UnitStart) and is_var(model.UnitStop):
-        linear_expr = LinearExpression
-    else:
-        linear_expr = linear_summation
+    linear_expr = get_linear_expr(model.UnitOn, model.UnitStart, model.UnitStop)
 
     initial_time = value(model.InitialTime)
     def logical_rule(m,g,t):
@@ -83,11 +79,17 @@ def _3bin_logic(model):
 
 def _2bin_logic(model):
 
+    linear_expr = get_linear_expr(model.UnitOn, model.UnitStart)
+
+    initial_time = value(model.InitialTime)
+
     def logical_rule(m,g,t):
-        if t==value(m.InitialTime):
-            return m.UnitOn[g, t] - m.UnitOnT0[g] <= m.UnitStart[g,t]
-        return m.UnitOn[g,t] - m.UnitOn[g,t-1] <= m.UnitStart[g,t]
-    
+        if t==initial_time:
+            return (None, linear_expr([m.UnitOn[g,t], m.UnitStart[g,t]], [1.,-1.]), m.UnitOnT0[g])
+            #return m.UnitOn[g, t] - m.UnitOnT0[g] <= m.UnitStart[g,t]
+        return (None, linear_expr([m.UnitOn[g,t], m.UnitOn[g,t-1], m.UnitStart[g,t]], [1.,-1.,-1.]), 0.)
+        #return m.UnitOn[g,t] - m.UnitOn[g,t-1] <= m.UnitStart[g,t]
+
     model.Logical = Constraint(model.ThermalGenerators, model.TimePeriods,rule=logical_rule)
 
 def _ALS_logic(model):
@@ -295,10 +297,7 @@ def rajan_takriti_UT_DT(model):
     # up-time constraints #
     #######################
     
-    if is_var(model.UnitOn) and is_var(model.UnitStart) and is_var(model.UnitStop):
-        linear_expr = LinearExpression
-    else:
-        linear_expr = linear_summation
+    linear_expr = get_linear_expr(model.UnitOn, model.UnitStart, model.UnitStop)
 
     def uptime_rule(m,g,t):
         if t < value(m.ScaledMinimumUpTime[g]):

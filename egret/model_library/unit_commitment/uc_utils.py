@@ -16,6 +16,8 @@ working with unit commitment models
 ## some useful functions and function decorators for building these dynamic models
 from functools import wraps
 from pyomo.environ import Var, quicksum
+from pyomo.core.expr.numeric_expr import LinearExpression
+
 import warnings
 
 import logging
@@ -94,5 +96,20 @@ def is_var(v):
     ''' isinstance(v, pyomo.environ.Var) '''
     return isinstance(v, Var)
 
-def linear_summation(linear_coefs, linear_vars, constant=0.):
+def linear_summation(linear_vars, linear_coefs, constant=0.):
     return quicksum((c*v for c,v in zip(linear_coefs, linear_vars)), start=constant, linear=True)
+
+def _linear_expression(linear_vars, linear_coefs, constant=0.):
+    return LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs, constant=constant)
+
+def get_linear_expr(*args):
+    '''
+    Returns a function for creating a linear expression. If all
+    the args are of type pyomo.environ.Var, returns
+    pyomo.core.expr.numeric_expr.LinearExpression. Otherwise
+    returns linear_summation
+    '''
+    for arg in args:
+        if not is_var(arg):
+            return linear_summation
+    return _linear_expression
