@@ -838,7 +838,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
             solver.load_duals()
         return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
 
-def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options, relaxed):
+def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options, relaxed, set_instance=True):
 
     from egret.common.solver_interface import _solve_model
     import time
@@ -888,7 +888,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     if not relaxed and lp_iter_limit > 0:
 
         lpu.uc_instance_binary_relaxer(m, None)
-        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True, vars_to_load = vars_to_load)
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True, vars_to_load = vars_to_load, set_instance=set_instance)
         if lp_warmstart_iter_limit > 0:
             lp_warmstart_termination_cond, results, lp_warmstart_iterations = \
                     _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_warmstart_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[LP warmstart phase] ")
@@ -922,7 +922,7 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 
     ## else if relaxed or lp_iter_limit == 0, do an initial solve
     else:
-        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options, solve_method_options, return_solver=True, vars_to_load=vars_to_load)
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options, solve_method_options, return_solver=True, vars_to_load=vars_to_load, set_instance=set_instance)
 
     iter_limit = m._ptdf_options['iteration_limit']
     
@@ -1492,14 +1492,14 @@ def _save_uc_results(m, relaxed):
 
     return md
 
-def _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed ):
+def _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed, set_instance=True):
     from egret.common.solver_interface import _solve_model
     model_data = m.model_data
     network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
     if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
-        return _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
+        return _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed, set_instance=set_instance )
     else:
-        return _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True)
+        return _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True, set_instance=set_instance)
 
 def solve_unit_commitment(model_data,
                           solver,
