@@ -9,6 +9,7 @@
 
 ## system variables and constraints
 from pyomo.environ import *
+from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
 from .uc_utils import add_model_attr
@@ -348,7 +349,8 @@ def _add_system_load_mismatch(model):
     ## for interfacing with the rest of the model code
     def define_pos_neg_load_generate_mismatch_rule(m, b, t):
         if b == value(m.ReferenceBus):
-            return m.posLoadGenerateMismatch[t] - m.negLoadGenerateMismatch[t]
+            return LinearExpression(linear_vars=[m.posLoadGenerateMismatch[t], m.negLoadGenerateMismatch[t]],
+                                    linear_coefs=[1.,-1.])
         else:
             return 0
     model.LoadGenerateMismatch = Expression(model.Buses, model.TimePeriods, rule = define_pos_neg_load_generate_mismatch_rule )
@@ -361,15 +363,21 @@ def _add_system_load_mismatch(model):
     # buses, but that failed to correct the problem, and caused the solve times to explode.
     
     def pos_load_generate_mismatch_tolerance_rule(m):
-       return sum((m.posLoadGenerateMismatch[t] for t in m.TimePeriods)) >= 0.0
+        linear_vars = list(m.posLoadGenerateMismatch.values())
+        linear_coefs = [1.]*len(linear_vars)
+        return (0., LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
     model.PosLoadGenerateMismatchTolerance = Constraint(rule=pos_load_generate_mismatch_tolerance_rule)
     
     def neg_load_generate_mismatch_tolerance_rule(m):
-       return sum((m.negLoadGenerateMismatch[t] for t in m.TimePeriods)) >= 0.0
+        linear_vars = list(m.negLoadGenerateMismatch.values())
+        linear_coefs = [1.]*len(linear_vars)
+        return (0., LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
     model.NegLoadGenerateMismatchTolerance = Constraint(rule=neg_load_generate_mismatch_tolerance_rule)
 
     def compute_load_mismatch_cost_rule(m, t):
-        return m.LoadMismatchPenalty*m.TimePeriodLengthHours*(m.posLoadGenerateMismatch[t] + m.negLoadGenerateMismatch[t]) 
+        linear_vars = [*m.posLoadGenerateMismatch.values(), *m.negLoadGenerateMismatch.values()]
+        linear_coefs = [m.LoadMismatchPenalty*m.TimePeriodLengthHours]*len(linear_vars)
+        return LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs)
     model.LoadMismatchCost = Expression(model.TimePeriods, rule=compute_load_mismatch_cost_rule)
 
 def _add_load_mismatch(model):
@@ -446,7 +454,9 @@ def _add_load_mismatch(model):
 
     def pos_load_generate_mismatch_tolerance_rule(m, b):
         if load_shed_times_per_bus[b]:
-            return sum(m.LoadShedding[b,t] for t in load_shed_times_per_bus[b]) >= 0
+            linear_vars = list(m.LoadShedding[b,t] for t in load_shed_times_per_bus[b])
+            linear_coefs = [1.]*len(linear_vars)
+            return (0., LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
         else:
             return Constraint.Feasible
     model.PosLoadGenerateMismatchTolerance = Constraint(model.Buses, 
@@ -454,7 +464,9 @@ def _add_load_mismatch(model):
     
     def neg_load_generate_mismatch_tolerance_rule(m, b):
         if over_gen_times_per_bus[b]:
-            return sum(m.OverGeneration[b,t] for t in over_gen_times_per_bus[b]) >= 0
+            linear_vars = list(m.OverGeneration[b,t] for t in over_gen_times_per_bus[b])
+            linear_coefs = [1.]*len(linear_vars)
+            return (0., LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
         else:
             return Constraint.Feasible
     model.NegLoadGenerateMismatchTolerance = Constraint(model.Buses,
@@ -466,7 +478,7 @@ def _add_load_mismatch(model):
     model.LoadGenerateMismatch = Expression(model.Buses, model.TimePeriods)
     for b in model.Buses:
         for t in model.TimePeriods:
-            model.LoadGenerateMismatch[b,t].expr = 0
+            model.LoadGenerateMismatch[b,t].expr = 0.
     for b,t in model.LoadSheddingBusTimes:
         model.LoadGenerateMismatch[b,t].expr += model.LoadShedding[b,t]
     for b,t in model.OverGenerationBusTimes:
@@ -474,7 +486,7 @@ def _add_load_mismatch(model):
 
     model.LoadMismatchCost = Expression(model.TimePeriods)
     for t in model.TimePeriods:
-        model.LoadMismatchCost[t].expr = 0
+        model.LoadMismatchCost[t].expr = 0.
     for b,t in model.LoadSheddingBusTimes:
         model.LoadMismatchCost[t].expr += model.LoadMismatchPenalty*model.TimePeriodLengthHours*model.LoadShedding[b,t]
     for b,t in model.OverGenerationBusTimes:

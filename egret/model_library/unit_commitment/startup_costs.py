@@ -11,7 +11,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, get_linear_expr
 from .status_vars import _is_relaxed
 component_name = 'startup_costs'
 
@@ -29,64 +29,116 @@ def KOW_startup_costs(model, add_startup_cost_var=True):
     '''
 
     #begin ostrowski startup costs
+    time_period_list = list(model.TimePeriods)
+    initial_time = model.TimePeriods.first()
+    after_last_time = model.TimePeriods.last()+1
     def ValidShutdownTimePeriods_generator(m,g):
         ## for speed, if we don't have different startups
         if len(m.ScaledStartupLags[g]) <= 1:
             return []
-                                        ## adds the necessary index for starting-up after a shutdown before the time horizon began
-        return (t for t in (list(m.TimePeriods)+([] if (value(m.UnitOnT0State[g]) >= 0) else [m.InitialTime + int(round(value(m.UnitOnT0State[g]/value(m.TimePeriodLengthHours))))])))
+        ## adds the necessary index for starting-up after a shutdown before the time horizon began
+        unit_on_t0_state = value(m.UnitOnT0State[g])
+        if unit_on_t0_state >= 0:
+            return time_period_list
+        else:
+            return time_period_list+[initial_time + int(round(unit_on_t0_state/value(m.TimePeriodLengthHours)))]
     model.ValidShutdownTimePeriods=Set(model.ThermalGenerators, initialize=ValidShutdownTimePeriods_generator)
     
     def ShutdownHotStartupPairs_generator(m,g):
         ## for speed, if we don't have different startups
         if len(m.ScaledStartupLags[g]) <= 1:
-            return [] 
-        return ((t_prime, t) for t_prime in m.ValidShutdownTimePeriods[g] for t in m.TimePeriods if (m.ScaledStartupLags[g].first() <= t - t_prime < m.ScaledStartupLags[g].last()))
+            return
+        first_lag = m.ScaledStartupLags[g].first()
+        last_lag = m.ScaledStartupLags[g].last()
+        for t_prime in m.ValidShutdownTimePeriods[g]:
+            t_first = first_lag+t_prime
+            t_last = last_lag+t_prime
+            if t_first < initial_time:
+                t_first = initial_time
+            if t_last > after_last_time:
+                t_last = after_last_time
+            for t in range(t_first, t_last):
+                yield (t_prime, t)
     model.ShutdownHotStartupPairs = Set(model.ThermalGenerators, initialize=ShutdownHotStartupPairs_generator, dimen=2)
     
     # (g,t',t) will be an inidicator for g for shutting down at time t' and starting up at time t
     def StartupIndicator_domain_generator(m):
         return ((g,t_prime,t) for g in m.ThermalGenerators for t_prime,t in m.ShutdownHotStartupPairs[g]) 
     model.StartupIndicator_domain=Set(initialize=StartupIndicator_domain_generator, dimen=3)
-    
+
     if _is_relaxed(model):
         model.StartupIndicator=Var(model.StartupIndicator_domain, within=UnitInterval)
     else:
         model.StartupIndicator=Var(model.StartupIndicator_domain, within=Binary)
 
+    linear_expr = get_linear_expr(model.UnitStart, model.UnitStop)
+
     ############################################################
     # compute the per-generator, per-time period startup costs #
     ############################################################
-    
-    def startup_match_rule(m, g, t):
-        return sum(m.StartupIndicator[g, t_prime, s] for (t_prime, s) in m.ShutdownHotStartupPairs[g] if s == t) <= m.UnitStart[g,t]
-    model.StartupMatch = Constraint(model.ThermalGenerators, model.TimePeriods, rule=startup_match_rule)
-    
+
     def GeneratorShutdownPeriods_generator(m):
         return ((g,t) for g in m.ThermalGenerators for t in m.ValidShutdownTimePeriods[g])
     model.GeneratorShutdownPeriods = Set(initialize=GeneratorShutdownPeriods_generator, dimen=2)
-    
+
+    model.ShutdownsByStartups = Set(model.ThermalGenerators, model.TimePeriods)
+    model.StartupsByShutdowns = Set(model.GeneratorShutdownPeriods)
+    for g,t_p,t in model.StartupIndicator_domain:
+        model.ShutdownsByStartups[g,t].add(t_p)
+        model.StartupsByShutdowns[g,t_p].add(t)
+
+    def startup_match_rule(m, g, t):
+        linear_vars = list(m.StartupIndicator[g, t_prime, t] for t_prime in m.ShutdownsByStartups[g,t])
+        linear_coefs = [1.]*len(linear_vars)
+        linear_vars.append(m.UnitStart[g,t])
+        linear_coefs.append(-1.)
+        return (None, linear_expr(linear_coefs=linear_coefs, linear_vars=linear_vars), 0.)
+    model.StartupMatch = Constraint(model.ThermalGenerators, model.TimePeriods, rule=startup_match_rule)
+
     def shutdown_match_rule(m, g, t):
-        if t < m.InitialTime:
-            begin_pairs = [(s, t_prime) for (s, t_prime) in m.ShutdownHotStartupPairs[g] if s == t]
-            if not begin_pairs: ##if this is empty
-                return Constraint.Feasible
-            else:
-                return sum(m.StartupIndicator[g, s, t_prime] for (s, t_prime) in begin_pairs) <= 1
+        begin_times = m.StartupsByShutdowns[g,t]
+        if not begin_times: ##if this is empty
+            return Constraint.Feasible
+        linear_vars = list(m.StartupIndicator[g, t, t_p] for t_p in begin_times)
+        linear_coefs = [1.]*len(linear_vars)
+        if t < initial_time:
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 1.)
         else:
-            return sum(m.StartupIndicator[g, s, t_prime] for (s, t_prime) in m.ShutdownHotStartupPairs[g] if s == t) <= m.UnitStop[g,t]
+            linear_vars.append(m.UnitStop[g,t])
+            linear_coefs.append(-1.)
+            return (None, linear_expr(linear_coefs=linear_coefs, linear_vars=linear_vars), 0.)
     model.ShutdownMatch = Constraint(model.GeneratorShutdownPeriods, rule=shutdown_match_rule)
 
     if add_startup_cost_var:
         model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
-    
+
+    linear_expr = get_linear_expr()
     def ComputeStartupCost2_rule(m,g,t):
+        startup_lags = m.ScaledStartupLags[g]
+        startup_costs = m.StartupCosts[g]
+        last_startup_cost = startup_costs.last()
+
+        linear_vars = [m.StartupCost[g,t], m.UnitStart[g,t]]
+        linear_coefs = [-1., last_startup_cost]
+
+        for tp in m.ShutdownsByStartups[g,t]:
+            for s in m.StartupCostIndices[g]:
+                this_lag = startup_lags[s]
+                next_lag = startup_lags[s+1]
+                if this_lag <= t - tp < next_lag:
+                    linear_vars.append(m.StartupIndicator[g,tp,t])
+                    linear_coefs.append(startup_costs[s] - last_startup_cost)
+                    break
+
+        return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
+        '''
         return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStart[g,t] + \
-                                      sum( (list(m.StartupCosts[g])[s-1] - m.StartupCosts[g].last()) * \
+                                      sum( (m.StartupCosts[g][s] - m.StartupCosts[g].last()) * \
                                          sum( m.StartupIndicator[g,tp,t] for tp in m.ValidShutdownTimePeriods[g] \
-                                           if (list(m.ScaledStartupLags[g])[s-1] <= t - tp < (list(m.ScaledStartupLags[g])[s])) ) \
+                                           if (m.ScaledStartupLags[g][s] <= t - tp < (m.ScaledStartupLags[g][s+1])) ) \
                                          for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
-    
+        '''
+
     model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
     return
@@ -120,10 +172,21 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     else:
         model.delta=Var(model.StartupCostsIndexSet, within=Binary)
 
+    linear_expr = get_linear_expr(model.UnitStart)
+
     def delta_eq_rule(m,g,t):
-        return sum(m.delta[g,s,t] for s in m.StartupCostIndices[g])==m.UnitStart[g,t]
+        linear_vars = [m.delta[g,s,t] for s in m.StartupCostIndices[g]]
+        linear_coefs = [1.]*len(linear_vars)
+        linear_vars.append(m.UnitStart[g,t])
+        linear_coefs.append(-1.)
+        return (linear_expr( linear_vars, linear_coefs ), 0.)
     
     model.delta_eq=Constraint(model.ThermalGenerators, model.TimePeriods, rule=delta_eq_rule)
+
+    if model.status_vars == 'garver_2bin_vars':
+        linear_expr = get_linear_expr(model.UnitOn, model.UnitStart)
+    else:
+        linear_expr = get_linear_expr(model.UnitStop)
     
     ## BK -- updated to reflect previous generator condition
     ## BK -- assumes initial time is 1
@@ -132,24 +195,36 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
         ## the last startup indicator doesn't have a lag
         if s == len(m.StartupCostIndices[g]):
             return Constraint.Skip
-        this_lag = list(m.ScaledStartupLags[g])[s-1]
-        next_lag = list(m.ScaledStartupLags[g])[s]
+        this_lag = m.ScaledStartupLags[g][s]
+        next_lag = m.ScaledStartupLags[g][s+1]
         ## this is negative if the generator has previously been off
         generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
         
         ## equation (15) in ME
         if next_lag + generator_t0_state < t < next_lag:
-            return m.delta[g,s,t] == 0
+            return (m.delta[g,s,t], 0)
 
         if m.status_vars == 'garver_2bin_vars':
+            linear_vars = [m.UnitStart[g,t-i] for i in range(this_lag, next_lag)]
+            linear_coefs = [-1.]*len(linear_vars)
+            linear_vars += [m.delta[g,s,t], m.UnitOn[g,t-this_lag]]
+            linear_coefs += [1., 1.]
             if t == next_lag:
-                return m.delta[g,s,t] <= m.UnitOnT0[g] - m.UnitOn[g,t-this_lag] + sum(m.UnitStart[g,t-i] for i in range(this_lag, next_lag))
+                return (None, linear_expr(linear_vars, linear_coefs), m.UnitOnT0[g])
+                #return m.delta[g,s,t] <= m.UnitOnT0[g] - m.UnitOn[g,t-this_lag] + sum(m.UnitStart[g,t-i] for i in range(this_lag, next_lag))
             elif t > next_lag:
-                return m.delta[g,s,t] <= m.UnitOn[g,t-next_lag] - m.UnitOn[g,t-this_lag] + sum(m.UnitStart[g,t-i] for i in range(this_lag, next_lag))
+                linear_vars.append(m.UnitOn[g,t-next_lag])
+                linear_coefs.apppend(-1.)
+                return (None, linear_expr(linear_vars, linear_coefs), 0.)
+                #return m.delta[g,s,t] <= m.UnitOn[g,t-next_lag] - m.UnitOn[g,t-this_lag] + sum(m.UnitStart[g,t-i] for i in range(this_lag, next_lag))
         else:
             ## equation (2) in ME
             if t >= next_lag:
-                return m.delta[g,s,t] <= sum(m.UnitStop[g,t-i] for i in range(this_lag, next_lag))
+                linear_vars = [m.UnitStop[g,t-i] for i in range(this_lag, next_lag)]
+                linear_coefs = [-1.]*len(linear_vars)
+                linear_vars.append(m.delta[g,s,t])
+                linear_coefs.append(1.)
+                return (None, linear_expr(linear_vars, linear_coefs), 0.)
     
         return Constraint.Skip
     
@@ -158,8 +233,13 @@ def MLR_startup_costs(model, add_startup_cost_var=True):
     if add_startup_cost_var:
         model.StartupCost = Var(model.SingleFuelGenerators, model.TimePeriods, within=Reals)
     
+    linear_expr = get_linear_expr()
     def ComputeStartupCost2_rule(m,g,t):
-        return m.StartupCost[g,t] == sum(m.delta[g,s,t]*list(m.StartupCosts[g])[s-1] for s in m.StartupCostIndices[g])
+        linear_vars = [m.delta[g,s,t] for s in m.StartupCostIndices[g]]
+        linear_coefs = [m.StartupCosts[g][s] for s in m.StartupCostIndices[g]]
+        linear_vars.append(m.StartupCost[g,t])
+        linear_coefs.append(-1.)
+        return (linear_expr(linear_vars, linear_coefs),0.)
     
     model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
@@ -192,11 +272,11 @@ def KOW_3bin_startup_costs(model, add_startup_cost_var=True):
     
     def compute_startup_costs_rule(m, g, t, i):
         # irios, Nov 18th: I had to change this because the last version didn't work with the last update in coopr.
-        this_lag = list(m.ScaledStartupLags[g])[i-1]
-        this_cost = list(m.StartupCosts[g])[i-1]
+        this_lag = m.ScaledStartupLags[g][i]
+        this_cost = m.StartupCosts[g][i]
     
-        startup_lags = list(m.ScaledStartupLags[g])
-        startup_costs = list(m.StartupCosts[g])
+        startup_lags = m.ScaledStartupLags[g]
+        startup_costs = m.StartupCosts[g]
         
         generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
     
@@ -223,14 +303,14 @@ def KOW_3bin_startup_costs(model, add_startup_cost_var=True):
                                                ( (m.UnitOn[g,t-startup_lags[j+1]] if t-startup_lags[j+1] > 0 else ( m.UnitOnT0[g] if t-startup_lags[j+1] == 0 else 0. ))
                                                 - (m.UnitOn[g,t-startup_lags[j]] if t-startup_lags[j] > 0 else ( m.UnitOnT0[g] if t-startup_lags[j] == 0 else 0. ))  
                                                 + sum(m.UnitStart[g, t-k] for k in range(startup_lags[j], startup_lags[j+1]) if k < t ) )
-                                          for j in range(0, i-1) )
+                                          for j in range(1, i) )
         else:
             return m.StartupCost[g, t] >= this_cost * m.UnitStart[g, t] \
                                         - sum(
                                                sum(
                                                     (this_cost - startup_costs[j])*m.UnitStop[g, t-k] 
                                                for k in range(startup_lags[j], startup_lags[j+1]) if k < t )
-                                          for j in range(0, i-1) )
+                                          for j in range(1, i) )
     
     model.ComputeStartupCosts = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
@@ -266,11 +346,11 @@ def CA_SHB_startup_costs(model, add_startup_cost_var=True):
     
     def compute_startup_costs_rule(m, g, t, i):
        # irios, Nov 18th: I had to change this because the last version didn't work with the last update in coopr.
-       this_lag = list(m.ScaledStartupLags[g])[i-1]
-       this_cost = list(m.StartupCosts[g])[i-1]
+       this_lag = m.ScaledStartupLags[g][i]
+       this_cost = m.StartupCosts[g][i]
     
-       startup_lags = list(m.ScaledStartupLags[g])
-       startup_costs = list(m.StartupCosts[g])
+       startup_lags = m.ScaledStartupLags[g]
+       startup_costs = m.StartupCosts[g]
        
        generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
     
@@ -291,9 +371,9 @@ def CA_SHB_startup_costs(model, add_startup_cost_var=True):
        
        # can only "look back" in terms of UnitOn variable state (t-1) or this_lag time periods - whichever is smallest.
        # the rest of the time period is captured in the unit T0 state, and is handled in the logic above.
-       return m.StartupCost[g, t] >= this_cost * m.UnitOn[g, t] - sum( (this_cost)*m.UnitOn[g, t - k] for k in range(1, min(t, startup_lags[0]+1))) \
+       return m.StartupCost[g, t] >= this_cost * m.UnitOn[g, t] - sum( (this_cost)*m.UnitOn[g, t - k] for k in range(1, min(t, startup_lags[1]+1))) \
                                                                 - sum( sum( (this_cost - startup_costs[j])*m.UnitOn[g, t-k] for k in range(startup_lags[j]+1, startup_lags[j+1]+1) if k < t )\
-                                                                        for j in range(0, i-1) )
+                                                                        for j in range(1, i) )
     
     model.ComputeStartupCosts = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
@@ -326,8 +406,8 @@ def CA_startup_costs(model, add_startup_cost_var=True):
     
     def compute_startup_costs_rule(m, g, t, i):
        # irios, Nov 18th: I had to change this because the last version didn't work with the last update in coopr.
-       this_lag = list(m.ScaledStartupLags[g])[i-1]
-       this_cost = list(m.StartupCosts[g])[i-1]
+       this_lag = m.ScaledStartupLags[g][i]
+       this_cost = m.StartupCosts[g][i]
     
        generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
     
@@ -382,11 +462,11 @@ def ALS_startup_costs(model, add_startup_cost_var=True):
         if i == 1:
             return Constraint.Skip
         # irios, Nov 18th: I had to change this because the last version didn't work with the last update in coopr.
-        this_lag = list(m.ScaledStartupLags[g])[i-1]
-        this_cost = list(m.StartupCosts[g])[i-1]
+        this_lag = m.ScaledStartupLags[g][i]
+        this_cost = m.StartupCosts[g][i]
     
-        startup_lags = list(m.ScaledStartupLags[g])
-        startup_costs = list(m.StartupCosts[g])
+        startup_lags = m.ScaledStartupLags[g]
+        startup_costs = m.StartupCosts[g]
         
         generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
     
@@ -460,12 +540,9 @@ def YZJMXD_startup_costs(model, add_startup_cost_var=True):
         if i == 1:
             return Constraint.Skip
         # irios, Nov 18th: I had to change this because the last version didn't work with the last update in coopr.
-        this_lag = list(m.ScaledStartupLags[g])[i-1]
-        this_cost = list(m.StartupCosts[g])[i-1]
+        this_lag = m.ScaledStartupLags[g][i]
+        this_cost = m.StartupCosts[g][i]
     
-        startup_lags = list(m.ScaledStartupLags[g])
-        startup_costs = list(m.StartupCosts[g])
-        
         generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
     
         # if the lag involves time periods preceding t=1, then we need to determine if the T0 
@@ -524,11 +601,11 @@ def KOW_3bin_startup_costs2(model, add_startup_cost_var=True):
         if i == 1:
             return Constraint.Skip
         # irios, Nov 18th: I had to change this because the last version didn't work with the last update in coopr.
-        this_lag = list(m.ScaledStartupLags[g])[i-1]
-        this_cost = list(m.StartupCosts[g])[i-1]
+        this_lag = m.ScaledStartupLags[g][i]
+        this_cost = m.StartupCosts[g][i]
     
-        startup_lags = list(m.ScaledStartupLags[g])
-        startup_costs = list(m.StartupCosts[g])
+        startup_lags = m.ScaledStartupLags[g]
+        startup_costs = m.StartupCosts[g]
         
         generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
     
@@ -555,14 +632,14 @@ def KOW_3bin_startup_costs2(model, add_startup_cost_var=True):
                                                ( (m.UnitOn[g,t-startup_lags[j+1]] if t-startup_lags[j+1] > 0 else ( m.UnitOnT0[g] if t-startup_lags[j+1] == 0 else 0. ))
                                                 - (m.UnitOn[g,t-startup_lags[j]] if t-startup_lags[j] > 0 else ( m.UnitOnT0[g] if t-startup_lags[j] == 0 else 0. ))  
                                                 + sum(m.UnitStart[g, t-k] for k in range(startup_lags[j], startup_lags[j+1]) if k < t ) )
-                                          for j in range(0, i-1) )
+                                          for j in range(1, i) )
         else:
             return m.StartupCostOverHot[g, t] >= (this_cost -m.StartupCosts[g].first())* m.UnitStart[g, t] \
                                         - sum(
                                                sum(
                                                     (this_cost - startup_costs[j])*m.UnitStop[g, t-k] 
                                                for k in range(startup_lags[j], startup_lags[j+1]) if k < t )
-                                          for j in range(0, i-1) )
+                                          for j in range(1, i) )
     
     model.ComputeStartupCostsOverHot = Constraint(model.StartupCostsIndexSet, rule=compute_startup_costs_rule)
 
@@ -614,8 +691,8 @@ def MLR_startup_costs2(model, add_startup_cost_var=True):
         assert(m.InitialTime == 1)
         if s == len(m.StartupCostIndices[g]):
             return Constraint.Skip
-        this_lag = list(m.ScaledStartupLags[g])[s-1]
-        next_lag = list(m.ScaledStartupLags[g])[s]
+        this_lag = m.ScaledStartupLags[g][s]
+        next_lag = m.ScaledStartupLags[g][s+1]
         ## this is negative if the generator has previously been off
         generator_t0_state = int(round(value(m.UnitOnT0State[g])/value(m.TimePeriodLengthHours)))
         
@@ -642,7 +719,7 @@ def MLR_startup_costs2(model, add_startup_cost_var=True):
 
     def ComputeStartupCost2_rule(m,g,t):
         return m.StartupCost[g,t] ==  m.StartupCosts[g].last()*m.UnitStart[g,t] + \
-                sum(m.delta[g,s,t]*(list(m.StartupCosts[g])[s-1] - m.StartupCosts[g].last()) for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
+                sum(m.delta[g,s,t]*(m.StartupCosts[g][s] - m.StartupCosts[g].last()) for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
     model.ComputeStartupCosts=Constraint(model.SingleFuelGenerators, model.TimePeriods, rule=ComputeStartupCost2_rule)
 
     return
@@ -749,8 +826,8 @@ def pochet_wolsey_startup_costs(model, add_startup_cost_var=True):
 
     def ComputeStartupCost_rule(m,g,t):
         return m.StartupCost[g,t] == m.StartupCosts[g].last()*m.UnitStart[g,t] + \
-                                      sum( (list(m.StartupCosts[g])[s-1] - m.StartupCosts[g].last()) * \
+                                      sum( (m.StartupCosts[g][s] - m.StartupCosts[g].last()) * \
                                          sum( m.ShutdownStartupIndicator[g,tp,t] for tp in m.ShutdownTimePeriods[g] \
-                                           if (list(m.StartupLags[g])[s-1] <= t - tp < (list(m.StartupLags[g])[s])) ) \
+                                           if (m.StartupLags[g][s] <= t - tp < (m.StartupLags[g][s+1])) ) \
                                          for s in m.StartupCostIndices[g] if s < len(m.StartupCostIndices[g]))
     model.ComputeStartupCost=Constraint(model.ThermalGenerators, model.TimePeriods, rule=ComputeStartupCost_rule)
