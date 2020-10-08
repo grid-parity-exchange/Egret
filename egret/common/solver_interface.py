@@ -74,7 +74,7 @@ def _set_options(solver, mipgap=None, timelimit=None, other_options=None):
 
 def _solve_model(model,
                  solver,
-                 mipgap=0.001,
+                 mipgap=None,
                  timelimit = None,
                  solver_tee = True,
                  symbolic_solver_labels = False,
