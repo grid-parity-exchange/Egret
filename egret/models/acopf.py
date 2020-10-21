@@ -26,7 +26,9 @@ from math import pi, radians
 from collections import OrderedDict
 
 
-def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads, penalty=1000):
+def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads,
+                               p_marginal_slack_penalty, q_marginal_slack_penalty):
+    
     import egret.model_library.decl as decl
     slack_init = {k: 0 for k in bus_attrs['names']}
     slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
@@ -46,16 +48,17 @@ def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_l
     p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
     q_rhs_kwargs = {'include_feasibility_slack_pos':'q_slack_pos','include_feasibility_slack_neg':'q_slack_neg'}
 
-    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
-    q_penalty = penalty * (max(gen_attrs.get('q_cost', gen_attrs['p_cost'])[k]['values'][1] for k in gen_attrs['names']) + 1)
-
-    penalty_expr = sum(p_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
-                    + q_penalty * (model.q_slack_pos[bus_name] + model.q_slack_neg[bus_name])
+    penalty_expr = sum(p_marginal_slack_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
+                     + q_marginal_slack_penalty * (model.q_slack_pos[bus_name] + model.q_slack_neg[bus_name])
                     for bus_name in bus_attrs['names'])
     return p_rhs_kwargs, q_rhs_kwargs, penalty_expr
 
+def _validate_and_extract_slack_penalties(model_data):
+    assert('load_mismatch_cost' in model_data.data['system'])
+    assert('q_load_mismatch_cost' in model_data.data['system'])
+    return model_data.data['system']['load_mismatch_cost'], model_data.data['system']['q_load_mismatch_cost']
 
-def _create_base_ac_model(model_data, include_feasibility_slack=False):
+def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -101,7 +104,11 @@ def _create_base_ac_model(model_data, include_feasibility_slack=False):
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
+        p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(model_data)
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
+                                                                              bus_p_loads, bus_q_loads,
+                                                                              p_marginal_slack_penalty,
+                                                                              q_marginal_slack_penalty)
 
     ### declare the generator real and reactive power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -230,7 +237,7 @@ def _create_base_ac_model(model_data, include_feasibility_slack=False):
 
 
 def create_psv_acopf_model(model_data, include_feasibility_slack=False):
-    model, md = _create_base_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -274,7 +281,7 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
 
 
 def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
-    model, md = _create_base_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -364,7 +371,11 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
+        p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(model_data)        
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
+                                                                              bus_p_loads, bus_q_loads,
+                                                                              p_marginal_slack_penalty,
+                                                                              q_marginal_slack_penalty)        
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
