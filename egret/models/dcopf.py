@@ -29,7 +29,7 @@ from egret.common.log import logger
 from math import pi, radians
 
 
-def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, penalty=1000):
+def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, p_marginal_slack_penalty):
     import egret.model_library.decl as decl
     slack_init = {k: 0 for k in bus_attrs['names']}
 
@@ -44,12 +44,13 @@ def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, penalty
                      )
     p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
 
-    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
-
-    penalty_expr = sum(p_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
+    penalty_expr = sum(p_marginal_slack_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
                     for bus_name in bus_attrs['names'])
     return p_rhs_kwargs, penalty_expr
 
+def _validate_and_extract_slack_penalty(model_data):
+    assert('load_mismatch_cost' in model_data.data['system'])
+    return model_data.data['system']['load_mismatch_cost']
 
 def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False):
     md = model_data.clone_in_service()
@@ -90,7 +91,9 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     p_rhs_kwargs = {}
     penalty_expr = None
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(model_data)        
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
+                                                                bus_p_loads, p_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -226,6 +229,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ### include the feasibility slack for the system balance
     p_rhs_kwargs = {}
     if include_feasibility_slack:
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(model_data)                
         p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
 
     ### declare the p balance
