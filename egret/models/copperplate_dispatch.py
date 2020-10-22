@@ -34,7 +34,7 @@ def _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_
 
     load_shed_bounds = (0, tx_utils.load_shed_limit(load, gen_attrs['names'], gen_attrs['p_min']))
     decl.declare_var('p_load_shed', model=model, index_set=None,
-                     initialize=0., bounds=slack_bounds
+                     initialize=0., bounds=load_shed_bounds
                      )
 
     p_rhs_kwargs = {'include_feasibility_slack_pos':'p_over_generation','include_feasibility_slack_neg':'p_load_shed'}
