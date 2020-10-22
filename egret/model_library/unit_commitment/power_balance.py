@@ -410,7 +410,7 @@ def _add_load_mismatch(model):
                 if p_max > 0:
                     max_injections += p_max
                 if p_min < 0:
-                    max_withdrawls += -pmin
+                    max_withdrawls += -p_min
 
             for n in model.NondispatchableGeneratorsAtBus[b]:
                 p_max = value(model.MaxNondispatchablePower[n,t])

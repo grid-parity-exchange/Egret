@@ -26,25 +26,32 @@ from math import pi, radians
 from collections import OrderedDict
 
 
-def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads,
+def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
+                               gens_by_bus, gens_attrs,
                                p_marginal_slack_penalty, q_marginal_slack_penalty):
     
     import egret.model_library.decl as decl
-    slack_init = {k: 0 for k in bus_attrs['names']}
-    slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
+
+    p_over_gen_bounds = {k: (0, tx_utils.over_gen_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_max'])) for k in bus_names}
     decl.declare_var('p_over_generation', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
+                     initialize=0., bounds=p_over_gen_bounds
                      )
+
+    p_load_shed_bounds  = {k: (0, tx_utils.load_shed_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_min'])) for k in bus_names}
     decl.declare_var('p_load_shed', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
+                     initialize=0., bounds=p_load_shed_bounds
                      )
-    slack_bounds = {k: (0, sum(bus_q_loads.values())) for k in bus_attrs['names']}
+
+    q_over_gen_bounds = {k: (0, tx_utils.over_gen_limit(bus_q_loads[k], gens_by_bus[k], gen_attrs['q_max'])) for k in bus_names}
     decl.declare_var('q_over_generation', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
+                     initialize=0., bounds=q_over_gen_bounds
                      )
+
+    q_load_shed_bounds  = {k: (0, tx_utils.load_shed_limit(bus_q_loads[k], gens_by_bus[k], gen_attrs['q_min'])) for k in bus_names}
     decl.declare_var('q_load_shed', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
+                     initialize=0., bounds=q_load_shed_bounds
                      )
+
     p_rhs_kwargs = {'include_feasibility_slack_pos':'p_over_generation','include_feasibility_slack_neg':'p_load_shed'}
     q_rhs_kwargs = {'include_feasibility_slack_pos':'q_over_generation','include_feasibility_slack_neg':'q_load_shed'}
 
@@ -105,8 +112,9 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
     q_rhs_kwargs = {}
     if include_feasibility_slack:
         p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(md)
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'],
                                                                               bus_p_loads, bus_q_loads,
+                                                                              gens_by_bus, gen_attrs,
                                                                               p_marginal_slack_penalty,
                                                                               q_marginal_slack_penalty)
 
@@ -372,10 +380,11 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
     q_rhs_kwargs = {}
     if include_feasibility_slack:
         p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(md)
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'],
                                                                               bus_p_loads, bus_q_loads,
+                                                                              gens_by_bus, gen_attrs,
                                                                               p_marginal_slack_penalty,
-                                                                              q_marginal_slack_penalty)        
+                                                                              q_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
