@@ -23,7 +23,6 @@ from egret.model_library.defn import ApproximationType
 from egret.data.data_utils import map_items, zip_items
 from math import pi
 
-
 def _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_slack_penalty):
     import egret.model_library.decl as decl
     slack_init = 0

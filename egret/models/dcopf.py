@@ -24,7 +24,9 @@ import egret.data.ptdf_utils as ptdf_utils
 
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
 from egret.data.data_utils import map_items, zip_items
-from egret.models.copperplate_dispatch import _include_system_feasibility_slack, create_copperplate_dispatch_approx_model
+from egret.models.copperplate_dispatch import (_include_system_feasibility_slack,
+                                               _validate_and_extract_slack_penalty,
+                                               create_copperplate_dispatch_approx_model)
 from egret.common.log import logger
 from math import pi, radians
 
@@ -45,10 +47,6 @@ def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, p_margi
     penalty_expr = sum(p_marginal_slack_penalty * (model.p_over_generation[bus_name] + model.p_load_shed[bus_name])
                     for bus_name in bus_attrs['names'])
     return p_rhs_kwargs, penalty_expr
-
-def _validate_and_extract_slack_penalty(model_data):
-    assert('load_mismatch_cost' in model_data.data['system'])
-    return model_data.data['system']['load_mismatch_cost']
 
 def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False):
     md = model_data.clone_in_service()

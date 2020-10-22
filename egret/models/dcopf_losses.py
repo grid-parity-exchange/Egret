@@ -28,8 +28,8 @@ import egret.common.lazy_ptdf_utils as lpu
 
 from egret.model_library.defn import CoordinateType, ApproximationType, RelaxationType, BasePointType
 from egret.data.data_utils import map_items, zip_items
-from egret.models.copperplate_dispatch import _include_system_feasibility_slack
-from egret.models.dcopf import _include_feasibility_slack, _valdiate_and_extract_slack_penalty
+from egret.models.copperplate_dispatch import _include_system_feasibility_slack, _validate_and_extract_slack_penalty
+from egret.models.dcopf import _include_feasibility_slack
 from math import pi, radians
 
 
