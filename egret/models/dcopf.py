@@ -29,27 +29,26 @@ from egret.common.log import logger
 from math import pi, radians
 
 
-def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, penalty=1000):
+def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, p_marginal_slack_penalty):
     import egret.model_library.decl as decl
     slack_init = {k: 0 for k in bus_attrs['names']}
 
-    sum_p_loads_values = sum(bus_p_loads.values())
-    slack_bounds = {k: (0, sum_p_loads_values) for k in bus_attrs['names']}
-    
-    decl.declare_var('p_slack_pos', model=model, index_set=bus_attrs['names'],
+    slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
+    decl.declare_var('p_over_generation', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
-    decl.declare_var('p_slack_neg', model=model, index_set=bus_attrs['names'],
+    decl.declare_var('p_load_shed', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
+    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_over_generation','include_feasibility_slack_neg':'p_load_shed'}
 
-    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
-
-    penalty_expr = sum(p_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
+    penalty_expr = sum(p_marginal_slack_penalty * (model.p_over_generation[bus_name] + model.p_load_shed[bus_name])
                     for bus_name in bus_attrs['names'])
     return p_rhs_kwargs, penalty_expr
 
+def _validate_and_extract_slack_penalties(model_data):
+    assert('load_mismatch_cost' in model_data.data['system'])
+    return model_data.data['system']['load_mismatch_cost']
 
 def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False):
     md = model_data.clone_in_service()
@@ -90,7 +89,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     p_rhs_kwargs = {}
     penalty_expr = None
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalties(md)
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -226,7 +226,8 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ### include the feasibility slack for the system balance
     p_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalties(md)
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
@@ -483,6 +484,8 @@ def solve_dcopf(model_data,
             k_dict['pf'] = value(m.pf[k])
 
     if dcopf_model_generator == create_ptdf_dcopf_model:
+        if hasattr(m, 'p_load_shed'):
+            md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
         buses_idx = PTDF.buses_keys
         LMPE = value(m.dual[m.eq_p_balance])
         for i,b in enumerate(buses_idx):
@@ -491,6 +494,8 @@ def solve_dcopf(model_data,
             b_dict['pl'] = value(m.pl[b])
     else:
         for b,b_dict in buses.items():
+            if hasattr(m, 'p_load_shed'):
+                b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
             b_dict['pl'] = value(m.pl[b])
             if dcopf_model_generator == create_btheta_dcopf_model:
                 b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
