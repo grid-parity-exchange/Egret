@@ -28,15 +28,15 @@ def _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_
     import egret.model_library.decl as decl
     slack_init = 0
     slack_bounds = (0, sum(bus_p_loads.values()))
-    decl.declare_var('p_slack_pos', model=model, index_set=None,
+    decl.declare_var('p_over_generation', model=model, index_set=None,
                      initialize=slack_init, bounds=slack_bounds
                      )
-    decl.declare_var('p_slack_neg', model=model, index_set=None,
+    decl.declare_var('p_load_shed', model=model, index_set=None,
                      initialize=slack_init, bounds=slack_bounds
                      )
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
+    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_over_generation','include_feasibility_slack_neg':'p_load_shed'}
 
-    penalty_expr = p_marginal_slack_penalty * (model.p_slack_pos + model.p_slack_neg)
+    penalty_expr = p_marginal_slack_penalty * (model.p_over_generation + model.p_load_shed)
     return p_rhs_kwargs, penalty_expr
 
 def _validate_and_extract_slack_penalty(model_data):
@@ -166,6 +166,8 @@ def solve_copperplate_dispatch(model_data,
     buses = dict(md.elements(element_type='bus'))
 
     md.data['system']['total_cost'] = value(m.obj)
+    if hasattr(m, 'p_load_shed'):
+        md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])

@@ -79,9 +79,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     p_rhs_kwargs = {}
     penalty_expr = None
     if include_feasibility_slack:
-        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(model_data)                
-        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
-                                                                bus_p_loads, p_marginal_slack_penalty)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)                
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -233,7 +232,8 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
     ### include the feasibility slack for the system balance
     p_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
 
     ### declare net withdraw expression for use in PTDF power flows
     libbus.declare_expr_p_net_withdraw_at_bus(model=model,
@@ -383,12 +383,17 @@ def solve_dcopf_losses(model_data,
             b_dict.pop('qlmp',None)
             b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
             b_dict['va'] = value(m.va[b])
+            if hasattr(m, 'p_load_shed'):
+                b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
     elif dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:
         PTDF = m._PTDF
         ptdf_r = PTDF.PTDFM
         ldf = PTDF.LDF
         buses_idx = PTDF.buses_keys
         branches_idx = PTDF.branches_keys
+
+        if hasattr(m, 'p_load_shed'):
+            md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
 
         for j, b in enumerate(buses_idx):
             b_dict = buses[b]

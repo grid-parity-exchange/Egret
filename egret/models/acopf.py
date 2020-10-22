@@ -32,24 +32,24 @@ def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_l
     import egret.model_library.decl as decl
     slack_init = {k: 0 for k in bus_attrs['names']}
     slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
-    decl.declare_var('p_slack_pos', model=model, index_set=bus_attrs['names'],
+    decl.declare_var('p_over_generation', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
-    decl.declare_var('p_slack_neg', model=model, index_set=bus_attrs['names'],
+    decl.declare_var('p_load_shed', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
     slack_bounds = {k: (0, sum(bus_q_loads.values())) for k in bus_attrs['names']}
-    decl.declare_var('q_slack_pos', model=model, index_set=bus_attrs['names'],
+    decl.declare_var('q_over_generation', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
-    decl.declare_var('q_slack_neg', model=model, index_set=bus_attrs['names'],
+    decl.declare_var('q_load_shed', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
-    q_rhs_kwargs = {'include_feasibility_slack_pos':'q_slack_pos','include_feasibility_slack_neg':'q_slack_neg'}
+    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_over_generation','include_feasibility_slack_neg':'p_load_shed'}
+    q_rhs_kwargs = {'include_feasibility_slack_pos':'q_over_generation','include_feasibility_slack_neg':'q_load_shed'}
 
-    penalty_expr = sum(p_marginal_slack_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
-                     + q_marginal_slack_penalty * (model.q_slack_pos[bus_name] + model.q_slack_neg[bus_name])
+    penalty_expr = sum(p_marginal_slack_penalty * (model.p_over_generation[bus_name] + model.p_load_shed[bus_name])
+                     + q_marginal_slack_penalty * (model.q_over_generation[bus_name] + model.q_load_shed[bus_name])
                     for bus_name in bus_attrs['names'])
     return p_rhs_kwargs, q_rhs_kwargs, penalty_expr
 
@@ -104,7 +104,7 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(model_data)
+        p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(md)
         p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
                                                                               bus_p_loads, bus_q_loads,
                                                                               p_marginal_slack_penalty,
@@ -371,7 +371,7 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(model_data)        
+        p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(md)
         p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
                                                                               bus_p_loads, bus_q_loads,
                                                                               p_marginal_slack_penalty,
@@ -620,6 +620,10 @@ def solve_acopf(model_data,
         else:
             b_dict['vm'] = value(m.vm[b])
             b_dict['va'] = value(m.va[b])
+        if hasattr(m, 'p_load_shed'):
+            b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
+        if hasattr(m, 'q_load_shed'):
+            b_dict['q_balance_violation'] = value(m.q_load_shed[b]) - value(m.q_over_generation[b])
 
     for k, k_dict in branches.items():
         if hasattr(m,'pf'):
@@ -634,7 +638,6 @@ def solve_acopf(model_data,
             b = k_dict['to_bus']
             k_dict['pt'] = value(tx_calc.calculate_p(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
             k_dict['qt'] = value(tx_calc.calculate_q(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
-
 
     unscale_ModelData_to_pu(md, inplace=True)
 
