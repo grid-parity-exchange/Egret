@@ -779,12 +779,11 @@ def solve_lpac(model_data,
     	voltages = dict({})
     	for bus in ac_md.elements(element_type="bus"):
     		voltages[bus[0]] = bus[1]['vm']
-    	print(voltages)
+    	#print(voltages)
     	m, md = lpac_model_generator(model_data, voltages, **kwargs)
     else:
     	m, md = lpac_model_generator(model_data, **kwargs)
 
-    #m, md = lpac_model_generator(model_data, **kwargs)
 
     m, results, solver = _solve_model(m, solver, timelimit=timelimit, solver_tee=solver_tee, \
     									symbolic_solver_labels = symbolic_solver_labels, solver_options=options, return_solver=True)
@@ -857,57 +856,9 @@ if __name__ == '__main__':
     #md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True,**kwargs)
     #md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True,**kwargs)
     md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    ac_md, ac_m, ac_results = solve_acopf(model_data, "knitroampl", options=knitro_options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
     
-    #print(ac_results)
-    lpac_pg_gens = []
-    lpac_qg_gens = []
-    for gen in md.elements(element_type="generator"):
-    	lpac_pg_gens.append(gen[1]['pg'])
-    	lpac_qg_gens.append(gen[1]['qg'])
     
-    acopf_pg_gens = []
-    acopf_qg_gens = []
-    for gen in ac_md.elements(element_type="generator"):
-    	acopf_pg_gens.append(gen[1]['pg'])
-    	acopf_qg_gens.append(gen[1]['qg'])
     
-    for bus in ac_md.elements(element_type="bus"):
-    	print(bus[0])
-    	print(bus[1])
 
 
-    print("LPAC objective: ", pe.value(m.obj()))
-    print("AC objective: ", pe.value(ac_m.obj()))
-    print("\n")
-    print("Real Power\n")
-    pg_differences = [lpac_pg_gens[i] - acopf_pg_gens[i] for i in range(len(lpac_pg_gens))]
-    #print("Actual differences between lpac and ac: ", pg_differences)
-    abs_pg_differences = [abs(pg_differences[i]) for i in range(len(lpac_pg_gens))]
-    #print("Absolute value of differences: ", abs_pg_differences)
-    print("L_1 norm: ", sum(abs_pg_differences))
-    average_diff = sum(abs_pg_differences)/(len(abs_pg_differences))
-    print("Average difference of absolute values: ", average_diff)
-    max_abs_diff = max(abs_pg_differences)
-    print("L_infty norm: ", max_abs_diff)
-    square_diff = sqrt(sum(abs_pg_differences[i]**2 for i in range(len(lpac_pg_gens))))
-    print("L_2 norm: ", square_diff)
-
-    print("\n")
-
-    print("Reactive Power\n")
-    qg_differences = [lpac_qg_gens[i] - acopf_qg_gens[i] for i in range(len(lpac_qg_gens))]
-    #print("Actual differences between lpac and ac: ", qg_differences)
-    abs_qg_differences = [abs(qg_differences[i]) for i in range(len(lpac_qg_gens))]
-    #print("Absolute value of differences: ", abs_qg_differences)
-    print("L_1 norm: ", sum(abs_qg_differences))
-    average_diff = sum(abs_qg_differences)/(len(abs_qg_differences))
-    print("Average difference of absolute values: ", average_diff)
-    max_abs_diff = max(abs_qg_differences)
-    print("L_infty norm: ", max_abs_diff)
-    square_diff = sqrt(sum(abs_qg_differences[i]**2 for i in range(len(lpac_qg_gens))))
-    print("L_2 norm: ", square_diff)
-
-
-    #md,m,results = solve_lpac(model_data, "knitroampl",lpac_model_generator=create_warm_start_lpac_model ,return_model=True, return_results=True,**kwargs)
-    #md,m,results = solve_lpac(model_data, "knitroampl",lpac_model_generator=create_hot_start_lpac_model ,return_model=True, return_results=True,**kwargs)
+    
