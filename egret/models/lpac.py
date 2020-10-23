@@ -88,6 +88,9 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
     #ref_angle = md.data['system']['reference_bus_angle']
 	model.va[ref_bus].fix(radians(0.0))
 
+	### declare the fixed shunts at the buses
+	bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+
     ### declare (and fix) the loads at the buses
 	bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
 
@@ -148,6 +151,27 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
 		qf_init[branch_name] = tx_calc.calculate_q(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
 		qt_init[branch_name] = tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
 
+	libbranch.declare_var_pf(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=pf_init,
+                             bounds=pf_bounds
+                             )
+	libbranch.declare_var_pt(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=pt_init,
+                             bounds=pt_bounds
+                            )
+	libbranch.declare_var_qf(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=qf_init,
+                             bounds=qf_bounds
+                             )
+	libbranch.declare_var_qt(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=qt_init,
+                             bounds=qt_bounds
+                             )
+
 
     ####################
     #Constraints
@@ -164,7 +188,6 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
                                           bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                           inlet_branches_by_bus=inlet_branches_by_bus,
                                           outlet_branches_by_bus=outlet_branches_by_bus,
-                                          approximation_type=ApproximationType.BTHETA,
                                           **p_rhs_kwargs
                                           )
 
@@ -290,6 +313,9 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
     #ref_angle = md.data['system']['reference_bus_angle']
 	model.va[ref_bus].fix(radians(0.0))
 
+    ### declare the fixed shunts at the buses
+	bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+
     ### declare (and fix) the loads at the buses
 	bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
 
@@ -350,6 +376,27 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
 		qf_init[branch_name] = tx_calc.calculate_q(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
 		qt_init[branch_name] = tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus])
 
+	libbranch.declare_var_pf(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=pf_init,
+                             bounds=pf_bounds
+                             )
+	libbranch.declare_var_pt(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=pt_init,
+                             bounds=pt_bounds
+                            )
+	libbranch.declare_var_qf(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=qf_init,
+                             bounds=qf_bounds
+                             )
+	libbranch.declare_var_qt(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=qt_init,
+                             bounds=qt_bounds
+                             )
+
 
     ########################
     #Constraints
@@ -367,7 +414,6 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
                                           bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                           inlet_branches_by_bus=inlet_branches_by_bus,
                                           outlet_branches_by_bus=outlet_branches_by_bus,
-                                          approximation_type=ApproximationType.BTHETA,
                                           **p_rhs_kwargs
                                           )
 
@@ -412,8 +458,8 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
 			model.qf[branch_name] == \
 			-b*model.vmsq[from_bus] - model.vm[from_bus]*model.vm[to_bus]*(g*(model.va[from_bus] - model.va[to_bus]) - b*model.cos_hat[branch_name]) - model.vm[from_bus]*b*(model.phi[from_bus] - model.phi[to_bus]) - (model.vm[from_bus] - model.vm[to_bus])*model.phi[from_bus]
 
-		model.eq_pt_branch_t[branch_name] = \
-			model.qt[branch_name] = \
+		model.eq_qt_branch_t[branch_name] = \
+			model.qt[branch_name] == \
 			-b*model.vmsq[to_bus] - model.vm[from_bus]*model.vm[to_bus]*(g*(model.va[to_bus] - model.va[from_bus]) - b*model.cos_hat[branch_name]) - model.vm[to_bus]*b*(model.phi[to_bus] - model.phi[from_bus]) - (model.vm[to_bus] - model.vm[from_bus])*model.phi[to_bus]
 
     ### Piecewise linear cosine constraints
@@ -728,7 +774,17 @@ def solve_lpac(model_data,
     		scale_ModelData_to_pu, unscale_ModelData_to_pu
 
 
-    m, md = lpac_model_generator(model_data, **kwargs)
+    if lpac_model_generator == create_hot_start_lpac_model or lpac_model_generator == create_warm_start_lpac_model:
+    	ac_md, ac_m, ac_results = solve_acopf(model_data, solver, options=options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
+    	voltages = dict({})
+    	for bus in ac_md.elements(element_type="bus"):
+    		voltages[bus[0]] = bus[1]['vm']
+    	print(voltages)
+    	m, md = lpac_model_generator(model_data, voltages, **kwargs)
+    else:
+    	m, md = lpac_model_generator(model_data, **kwargs)
+
+    #m, md = lpac_model_generator(model_data, **kwargs)
 
     m, results, solver = _solve_model(m, solver, timelimit=timelimit, solver_tee=solver_tee, \
     									symbolic_solver_labels = symbolic_solver_labels, solver_options=options, return_solver=True)
@@ -775,7 +831,7 @@ def solve_lpac(model_data,
 
     unscale_ModelData_to_pu(md, inplace=True)
 
-    # print(buses)
+    #print(buses)
     #print(gens)
     # print(branches)
 
@@ -791,15 +847,19 @@ if __name__ == '__main__':
     import os
     from egret.parsers.matpower_parser import create_ModelData
 
-    filename = 'pglib_opf_case13659_pegase.m'
+    filename = 'pglib_opf_case14_ieee.m'
     test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
     model_data = create_ModelData(test_case)
-    #baron_options = {'CplexLibName': "C:/Program Files/IBM/ILOG/CPLEX_Studio128/cplex/bin/x64_win64/cplex1280.dll"}
-    knitro_options = {'maxit': 40000}
+    baron_options = {'LPSol': 3, 'CplexLibName': "C:/Program Files/IBM/ILOG/CPLEX_Studio129/cplex/bin/x64_win64/cplex1290.dll"}
+    knitro_options = {'maxit': 20000}
     kwargs = {'include_feasibility_slack':False}
+    #md,m,results = solve_lpac(model_data, "baron",options=baron_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
+    #md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True,**kwargs)
+    #md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True,**kwargs)
     md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
     ac_md, ac_m, ac_results = solve_acopf(model_data, "knitroampl", options=knitro_options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
     
+    #print(ac_results)
     lpac_pg_gens = []
     lpac_qg_gens = []
     for gen in md.elements(element_type="generator"):
@@ -812,7 +872,11 @@ if __name__ == '__main__':
     	acopf_pg_gens.append(gen[1]['pg'])
     	acopf_qg_gens.append(gen[1]['qg'])
     
-    
+    for bus in ac_md.elements(element_type="bus"):
+    	print(bus[0])
+    	print(bus[1])
+
+
     print("LPAC objective: ", pe.value(m.obj()))
     print("AC objective: ", pe.value(ac_m.obj()))
     print("\n")
