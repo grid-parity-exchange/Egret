@@ -15,7 +15,7 @@ from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
 from egret.data.data_utils import map_items, zip_items
 from math import pi, radians, sqrt
 
-from egret.models.acopf import _include_feasibility_slack, solve_acopf, create_psv_acopf_model
+from egret.models.acopf import _include_feasibility_slack, solve_acopf, create_psv_acopf_model, create_rsv_acopf_model
 
 def declare_pwl_cosine_bounds(model, index_set, branches, lower_bound, upper_bound, cosine_segment_count):
 	"""
@@ -729,6 +729,7 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
 
 def solve_lpac(model_data,
                 solver,
+                ac_solver = None,
                 timelimit = None,
                 solver_tee = True,
                 symbolic_solver_labels = False,
@@ -746,6 +747,9 @@ def solve_lpac(model_data,
         An egret ModelData object with the appropriate data loaded.
     solver : str or pyomo.opt.base.solvers.OptSolver
         Either a string specifying a pyomo solver name, or an instantiated pyomo solver
+    ac_solver : str or pyomo.opt.base.solvers.OptSolver (optional)
+    	Either a string specifying a pyomo solver name, or an instantiated pyomo solver.
+    	Default is None for the cold start lpac model. 
     timelimit : float (optional)
         Time limit for dcopf run. Default of None results in no time
         limit being set.
@@ -775,7 +779,10 @@ def solve_lpac(model_data,
 
 
     if lpac_model_generator == create_hot_start_lpac_model or lpac_model_generator == create_warm_start_lpac_model:
-    	ac_md, ac_m, ac_results = solve_acopf(model_data, solver, options=options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
+    	if ac_solver != None:
+    		ac_md, ac_m, ac_results = solve_acopf(model_data, ac_solver, options=options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
+    	else:
+    		ac_md, ac_m, ac_results = solve_acopf(model_data, solver, options=options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
     	voltages = dict({})
     	for bus in ac_md.elements(element_type="bus"):
     		voltages[bus[0]] = bus[1]['vm']
@@ -849,13 +856,14 @@ if __name__ == '__main__':
     filename = 'pglib_opf_case14_ieee.m'
     test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
     model_data = create_ModelData(test_case)
-    baron_options = {'LPSol': 3, 'CplexLibName': "C:/Program Files/IBM/ILOG/CPLEX_Studio129/cplex/bin/x64_win64/cplex1290.dll"}
+    baron_options = {'LPSol': 3, 'CplexLibName': "C:/Program Files/IBM/ILOG/CPLEX_Studio129/cplex/bin/x64_win64/cplex1290.dll", 'summary': 1, 'SumName': "summary"}
     knitro_options = {'maxit': 20000}
     kwargs = {'include_feasibility_slack':False}
-    #md,m,results = solve_lpac(model_data, "baron",options=baron_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    #md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    #md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True,**kwargs)
+    #md,m,results = solve_lpac(model_data, "baron", lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
+    md,m,results = solve_lpac(model_data, "cplex", ac_solver = "knitroampl",lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True,**kwargs)
+    md,m,results = solve_lpac(model_data, "knitroampl",lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True,**kwargs)
     md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
+    #ac_md, ac_m, ac_results = solve_acopf(model_data, "knitroampl", options=knitro_options,acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
     
     
     
