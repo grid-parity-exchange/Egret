@@ -1380,16 +1380,4 @@ def load_params(model, model_data):
                                             initialize=storage_attrs.get('initial_charge_rate', dict()))
     model.StorageSocOnT0         = Param(model.Storage, within=PercentFraction,
                                             default=0.5, initialize=storage_attrs.get('initial_state_of_charge', dict()))
-
-    ##############################################################
-    # failure probability for each generator, in any given hour. #
-    # not used within the model itself at present, but rather    #
-    # used by scripts that read / manipulate the model.          #
-    ##############################################################
-    
-    def probability_failure_validator(m, v, g):
-       return v >= 0.0 and v <= 1.0
-    
-    model.FailureProbability = Param(model.ThermalGenerators, validate=probability_failure_validator, default=0.0)
-    
     return model
