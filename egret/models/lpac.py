@@ -17,13 +17,30 @@ from math import pi, radians, sqrt
 
 from egret.models.acopf import _include_feasibility_slack, solve_acopf, create_psv_acopf_model, create_rsv_acopf_model
 
-def declare_pwl_cosine_bounds(model, index_set, branches, lower_bound, upper_bound, cosine_segment_count):
+def eq_cosine_partition(lower_bound, upper_bound, Q):
+	#Divides the domain [lower_bound, upper_bound] into Q pieces of equal curvature for the cosine function. Domain must be contained in (-pi/2, pi/2)
+	if Q==1:
+		return [lower_bound, upper_bound]
+	total_curvature = pe.atan(pe.sin(upper_bound)) - pe.atan(pe.sin(lower_bound))
+	breakpoints = [lower_bound]
+	for i in range(Q-1):
+		breakpoints.append(pe.asin(pe.tan(total_curvature/Q + pe.atan(pe.sin(breakpoints[i])))))
+	breakpoints.append(upper_bound)
+	return breakpoints
+
+def declare_pwl_cosine_bounds(model, index_set, branches, lower_bound, upper_bound, cosine_segment_count, mode="uniform"):
 	"""
 	Add piecewise linear constraints for the cosine hat variables. The constraints are indexed over the branches and the number of cosine segments. 
+	
+	mode has two options: "uniform" (divide the domain into equal pieces based on length of the domain, as in Coffrin and Van Hentrencyk); 
+						 or "curvature" (divide the domain into equal pieces based on accumulated curvature of the cosine function, as in Aravene et al. (2018))
 	"""
 	cons_index_set = pe.Set(initialize = model.N * index_set)
 
 	increment = (upper_bound - lower_bound)/(cosine_segment_count + 1)
+
+	breakpoints = eq_cosine_partition(lower_bound, upper_bound, cosine_segment_count)
+	
 	def pwl_cosine_rule(model, i, branch_name):
 		branch = branches[branch_name]
 
@@ -32,13 +49,19 @@ def declare_pwl_cosine_bounds(model, index_set, branches, lower_bound, upper_bou
 		if i==0:
 			return model.cos_hat[branch_name] - ((pe.cos(upper_bound) - pe.cos(lower_bound))/(upper_bound - lower_bound) * ((model.va[from_bus] - model.va[to_bus]) - lower_bound) + pe.cos(lower_bound)) >= 0
 		else:
-			a = lower_bound + i*increment
-			return 0 <= (-pe.sin(a)*(model.va[from_bus] - model.va[to_bus] - a) + pe.cos(a)) - model.cos_hat[branch_name]
+			if mode == "uniform":
+				a = lower_bound + i*increment
+				return 0 <= (-pe.sin(a)*(model.va[from_bus] - model.va[to_bus] - a) + pe.cos(a)) - model.cos_hat[branch_name]
+			elif mode == "curvature":
+				a = breakpoints[i]
+				return 0 <= (-pe.sin(a)*(model.va[from_bus] - model.va[to_bus] - a) + pe.cos(a)) - model.cos_hat[branch_name]
+			else:
+				raise ValueError('Mode must be "uniform" or "curvature" ')
 
 	model.pwl_cosine_bounds = pe.Constraint(cons_index_set, rule=pwl_cosine_rule)
 
 
-def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper_bound = pi/3, cosine_segment_count = 20, include_feasibility_slack = False):
+def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper_bound = pi/3, cosine_segment_count = 20, include_feasibility_slack = False, mode="uniform"):
 	"""
 	The hot start LPAC model assumes that voltages are known, e.g. from an AC base point solution.
 	"""
@@ -246,7 +269,8 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
     							 branches=branches, 
     							 lower_bound=lower_bound, 
     							 upper_bound=upper_bound, 
-    							 cosine_segment_count=cosine_segment_count)
+    							 cosine_segment_count=cosine_segment_count,
+    							 mode=mode)
 
 
 
@@ -262,7 +286,7 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
 	return model, md
 
 
-def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper_bound = pi/3, cosine_segment_count = 20, include_feasibility_slack = False):
+def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper_bound = pi/3, cosine_segment_count = 20, include_feasibility_slack = False, mode="uniform"):
 	"""
 	The warm start LPAC model assumes that target voltages can be given, but not all voltages are known. 
 	"""
@@ -471,7 +495,8 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
     							 branches=branches, 
     							 lower_bound=lower_bound, 
     							 upper_bound=upper_bound, 
-    							 cosine_segment_count=cosine_segment_count)
+    							 cosine_segment_count=cosine_segment_count,
+    							 mode=mode)
 
 
 
@@ -487,7 +512,7 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
 	return model, md
 
 
-def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bound = -pi/3, upper_bound = pi/3, include_feasibility_slack = False):
+def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bound = -pi/3, upper_bound = pi/3, include_feasibility_slack = False, mode="uniform"):
 	"""
 	The cold start LPAC model assumes that no target voltages are available and that all voltages are initially approximated as 1 pu. 
 	"""
@@ -695,7 +720,8 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
     							 branches=branches, 
     							 lower_bound=lower_bound, 
     							 upper_bound=upper_bound, 
-    							 cosine_segment_count=cosine_segment_count)
+    							 cosine_segment_count=cosine_segment_count,
+    							 mode=mode)
 	
     ### Objective is to maximize cosine hat variables
 
@@ -737,7 +763,8 @@ def solve_lpac(model_data,
                 lpac_model_generator = create_cold_start_lpac_model,
                 return_model = False,
                 return_results = False,
-                **kwargs):
+                kwargs = {},
+                kwargs_for_lpac = {}):
     '''
     Create and solve a new lpac model
 
@@ -767,7 +794,9 @@ def solve_lpac(model_data,
     return_results : bool (optional)
         If True, returns the pyomo results object
     kwargs : dictionary (optional)
-        Additional arguments for building model
+        Additional arguments for building model. 
+    kwargs_for_lpac : dictionary (optional)
+    	Additional arguments for building lpac model (not used in ACOPF model)
     '''
 
     import pyomo.environ as pe
@@ -787,9 +816,9 @@ def solve_lpac(model_data,
     	for bus in ac_md.elements(element_type="bus"):
     		voltages[bus[0]] = bus[1]['vm']
     	#print(voltages)
-    	m, md = lpac_model_generator(model_data, voltages, **kwargs)
+    	m, md = lpac_model_generator(model_data, voltages, **kwargs, **kwargs_for_lpac)
     else:
-    	m, md = lpac_model_generator(model_data, **kwargs)
+    	m, md = lpac_model_generator(model_data, **kwargs, **kwargs_for_lpac)
 
 
     m, results, solver = _solve_model(m, solver, timelimit=timelimit, solver_tee=solver_tee, \
@@ -853,16 +882,17 @@ if __name__ == '__main__':
     import os
     from egret.parsers.matpower_parser import create_ModelData
 
-    filename = 'pglib_opf_case14_ieee.m'
+    filename = 'pglib_opf_case30_ieee.m'
     test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
     model_data = create_ModelData(test_case)
     baron_options = {'LPSol': 3, 'CplexLibName': "C:/Program Files/IBM/ILOG/CPLEX_Studio129/cplex/bin/x64_win64/cplex1290.dll", 'summary': 1, 'SumName': "summary"}
     knitro_options = {'maxit': 20000}
     kwargs = {'include_feasibility_slack':False}
+    kwargs_for_lpac = {'mode': "uniform"}
     #md,m,results = solve_lpac(model_data, "baron", lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    md,m,results = solve_lpac(model_data, "cplex", ac_solver = "knitroampl",lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    md,m,results = solve_lpac(model_data, "knitroampl",lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
+    md,m,results = solve_lpac(model_data, "cplex", ac_solver = "knitroampl",lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    md,m,results = solve_lpac(model_data, "knitroampl",lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
     #ac_md, ac_m, ac_results = solve_acopf(model_data, "knitroampl", options=knitro_options,acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
     
     
