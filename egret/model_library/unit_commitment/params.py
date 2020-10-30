@@ -487,7 +487,7 @@ def load_params(model, model_data):
     # the value cannot be 0, by definition.
     
     def t0_state_nonzero_validator(m, v, g):
-        return v != 0
+        return v != 0.
     
     model.UnitOnT0State = Param(model.ThermalGenerators,
                                 within=Reals,
@@ -496,7 +496,7 @@ def load_params(model, model_data):
                                 initialize=thermal_gen_attrs['initial_status'])
     
     def t0_unit_on_rule(m, g):
-        return int(value(m.UnitOnT0State[g]) >= 0)
+        return int(value(m.UnitOnT0State[g]) > 0.)
     
     model.UnitOnT0 = Param(model.ThermalGenerators,
                             within=Binary,
