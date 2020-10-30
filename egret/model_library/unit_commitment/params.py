@@ -496,7 +496,7 @@ def load_params(model, model_data):
                                 initialize=thermal_gen_attrs['initial_status'])
     
     def t0_unit_on_rule(m, g):
-        return int(value(m.UnitOnT0State[g]) >= 1)
+        return int(value(m.UnitOnT0State[g]) >= 0)
     
     model.UnitOnT0 = Param(model.ThermalGenerators,
                             within=Binary,
