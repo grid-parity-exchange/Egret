@@ -760,6 +760,7 @@ def solve_lpac(model_data,
                 solver_tee = True,
                 symbolic_solver_labels = False,
                 options = None,
+                ac_options = None,
                 lpac_model_generator = create_cold_start_lpac_model,
                 return_model = False,
                 return_results = False,
@@ -785,7 +786,9 @@ def solve_lpac(model_data,
     symbolic_solver_labels : bool (optional)
         Use symbolic solver labels. Useful for debugging; default is False.
     options : dict (optional)
-        Other options to pass into the solver. Default is dict().
+        Other options to pass into the (LPAC) solver. Default is dict().
+    ac_options : dict (optional)
+    	Other options to pass into the ACOPF solver. Default is dict().
     lpac_model_generator : function (optional)
         Function for generating the lpac model. Default is
         the cold start lpac model
@@ -809,7 +812,7 @@ def solve_lpac(model_data,
 
     if lpac_model_generator == create_hot_start_lpac_model or lpac_model_generator == create_warm_start_lpac_model:
     	if ac_solver != None:
-    		ac_md, ac_m, ac_results = solve_acopf(model_data, ac_solver, options=options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
+    		ac_md, ac_m, ac_results = solve_acopf(model_data, ac_solver, options=ac_options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
     	else:
     		ac_md, ac_m, ac_results = solve_acopf(model_data, solver, options=options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
     	voltages = dict({})
@@ -890,7 +893,7 @@ if __name__ == '__main__':
     kwargs = {'include_feasibility_slack':False}
     kwargs_for_lpac = {'mode': "uniform"}
     #md,m,results = solve_lpac(model_data, "baron", lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    md,m,results = solve_lpac(model_data, "cplex", ac_solver = "knitroampl",lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    md,m,results = solve_lpac(model_data, "cplex", ac_solver = "knitroampl", ac_options=knitro_options,lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
     md,m,results = solve_lpac(model_data, "knitroampl",lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
     md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
     #ac_md, ac_m, ac_results = solve_acopf(model_data, "knitroampl", options=knitro_options,acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
