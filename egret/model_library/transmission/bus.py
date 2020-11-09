@@ -226,10 +226,10 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
-            if idx == 'include_feasibility_slack_pos':
-                p_expr -= eval("m." + val)
-            if idx == 'include_feasibility_slack_neg':
+            if idx == 'include_feasibility_load_shed':
                 p_expr += eval("m." + val)
+            if idx == 'include_feasibility_over_generation':
+                p_expr -= eval("m." + val)
             if idx == 'include_losses':
                 p_expr -= sum(m.pfl[branch_name] for branch_name in val)
             if idx == 'relax_balance':
@@ -283,10 +283,10 @@ def declare_eq_p_balance_dc_approx(model, index_set,
                     k = (key,bus_name)
                 if not k in eval("m." + val).index_set():
                     continue
-                if idx == 'include_feasibility_slack_pos':
-                    p_expr -= eval("m." + val)[k]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     p_expr += eval("m." + val)[k]
+                if idx == 'include_feasibility_over_generation':
+                    p_expr -= eval("m." + val)[k]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
@@ -326,10 +326,10 @@ def declare_eq_p_balance(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    p_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     p_expr += eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_over_generation':
+                    p_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
@@ -362,10 +362,10 @@ def declare_eq_p_balance_with_i_aggregation(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    p_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     p_expr += eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_over_generation':
+                    p_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
@@ -404,10 +404,10 @@ def declare_eq_q_balance(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    q_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     q_expr += eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_over_generation':
+                    q_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
@@ -440,10 +440,10 @@ def declare_eq_q_balance_with_i_aggregation(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    q_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     q_expr += eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_over_generation':
+                    q_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
