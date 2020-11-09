@@ -36,15 +36,16 @@ def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, p_margi
     slack_init = {k: 0 for k in bus_attrs['names']}
 
     slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
+    decl.declare_var('p_load_shed', model=model, index_set=bus_attrs['names'],
+                     initialize=slack_init, bounds=slack_bounds
+                     )    
     decl.declare_var('p_over_generation', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
-    decl.declare_var('p_load_shed', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_over_generation','include_feasibility_slack_neg':'p_load_shed'}
 
-    penalty_expr = sum(p_marginal_slack_penalty * (model.p_over_generation[bus_name] + model.p_load_shed[bus_name])
+    p_rhs_kwargs = {'include_feasibility_load_shed':'p_load_shed', 'include_feasibility_over_generation':'p_over_generation'}
+
+    penalty_expr = sum(p_marginal_slack_penalty * (model.p_load_shed[bus_name] + model.p_over_generation[bus_name])
                     for bus_name in bus_attrs['names'])
     return p_rhs_kwargs, penalty_expr
 
