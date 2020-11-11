@@ -36,10 +36,8 @@ def _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_
     decl.declare_var('p_load_shed', model=model, index_set=None,
                      initialize=0., bounds=load_shed_bounds
                      )
-
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_over_generation','include_feasibility_slack_neg':'p_load_shed'}
-
-    penalty_expr = p_marginal_slack_penalty * (model.p_over_generation + model.p_load_shed)
+    p_rhs_kwargs = {'include_feasibility_load_shed':'p_load_shed', 'include_feasibility_over_generation':'p_over_generation'}
+    penalty_expr = p_marginal_slack_penalty * (model.p_load_shed + model.p_over_generation)
     return p_rhs_kwargs, penalty_expr
 
 def _validate_and_extract_slack_penalty(model_data):

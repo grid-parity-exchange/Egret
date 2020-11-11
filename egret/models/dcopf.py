@@ -34,19 +34,18 @@ from math import pi, radians
 def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_attrs, p_marginal_slack_penalty):
     import egret.model_library.decl as decl
 
+    load_shed_bounds  = {k: (0, tx_utils.load_shed_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_min'])) for k in bus_names}
+    decl.declare_var('p_load_shed', model=model, index_set=bus_names,
+                     initialize=0., bounds=load_shed_bounds
+                     )
     over_gen_bounds = {k: (0, tx_utils.over_gen_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_max'])) for k in bus_names}
     decl.declare_var('p_over_generation', model=model, index_set=bus_names,
                      initialize=0., bounds=over_gen_bounds
                      )
 
-    load_shed_bounds  = {k: (0, tx_utils.load_shed_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_min'])) for k in bus_names}
-    decl.declare_var('p_load_shed', model=model, index_set=bus_names,
-                     initialize=0., bounds=load_shed_bounds
-                     )
+    p_rhs_kwargs = {'include_feasibility_load_shed':'p_load_shed', 'include_feasibility_over_generation':'p_over_generation'}
 
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_over_generation','include_feasibility_slack_neg':'p_load_shed'}
-
-    penalty_expr = sum(p_marginal_slack_penalty * (model.p_over_generation[bus_name] + model.p_load_shed[bus_name])
+    penalty_expr = sum(p_marginal_slack_penalty * (model.p_load_shed[bus_name] + model.p_over_generation[bus_name])
                     for bus_name in bus_names)
     return p_rhs_kwargs, penalty_expr
 
