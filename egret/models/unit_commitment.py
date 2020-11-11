@@ -971,6 +971,7 @@ def _save_uc_results(m, relaxed):
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
     pg_security_constraints = dict(md.elements(element_type='security_constraint', security_constraint_type='pg'))
+    dc_branches = dict(md.elements(element_type='dc_branch'))
 
     data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
@@ -1202,6 +1203,12 @@ def _save_uc_results(m, relaxed):
                     pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pfi_slack_pos[i] - m.TransmissionBlock[mt].pfi_slack_neg[i])
                 i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
+        for k,k_dict in dc_branches.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.HVDCLinePower[k,mt])
+            k_dict['pf'] = _time_series_dict(pf_dict)
+
     elif m.power_balance == 'ptdf_power_flow':
         flows_dict = dict()
         interface_flows_dict = dict()
@@ -1292,6 +1299,12 @@ def _save_uc_results(m, relaxed):
                     lmp_dict[dt] = lmps_dict[mt][b]
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
+        for k,k_dict in dc_branches.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.HVDCLinePower[k,mt])
+            k_dict['pf'] = _time_series_dict(pf_dict)
+
     elif m.power_balance == 'power_balance_constraints':
         for l,l_dict in branches.items():
             pf_dict = _preallocated_list(data_time_periods)
@@ -1328,6 +1341,12 @@ def _save_uc_results(m, relaxed):
                 for dt, mt in enumerate(m.TimePeriods):
                     pf_violation_dict[dt] = value(m.InterfaceSlackPos[i,mt] - m.InterfaceSlackNeg[i,mt])
                 i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
+        for k,k_dict in dc_branches.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.HVDCLinePower[k,mt])
+            k_dict['pf'] = _time_series_dict(pf_dict)
 
     elif m.power_balance in ['copperplate_power_flow', 'copperplate_relaxed_power_flow']:
         sys_dict = md.data['system']

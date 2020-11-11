@@ -555,7 +555,6 @@ def solve_dcopf(model_data,
 
     for k, k_dict in dc_branches.items():
         k_dict['pf'] = value(m.dcpf[k])
-        k_dict['pt'] = -k_dict['pf']
 
     unscale_ModelData_to_pu(md, inplace=True)
 
