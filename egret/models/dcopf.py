@@ -59,6 +59,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     loads = dict(md.elements(element_type='load'))
     shunts = dict(md.elements(element_type='shunt'))
 
+    dc_branches = dict(md.elements(element_type='dc_branch'))
+
     gen_attrs = md.attributes(element_type='generator')
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
@@ -132,6 +134,26 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
                              bounds=pf_bounds
                              )
 
+    if dc_branches:
+        dcpf_bounds = dict()
+        for k, k_dict in dc_branches.items():
+            kp_max = k_dict['rating_long_term']
+            if kp_max is None:
+                dcpf_bounds[k] = (None, None)
+            else:
+                dcpf_bounds[k] = (-kp_max, kp_max)
+        libbranch.declare_var_dcpf(model=model,
+                                   index_set=dc_branches.keys(),
+                                   initialize=0.,
+                                   bounds=dcpf_bounds,
+                                  )
+        dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = \
+                tx_utils.inlet_outlet_branches_by_bus(dc_branches, buses)
+    else:
+        dc_inlet_branches_by_bus = None
+        dc_outlet_branches_by_bus = None
+
+
     ### declare the branch power flow approximation constraints
     libbranch.declare_eq_branch_power_btheta_approx(model=model,
                                                     index_set=branch_attrs['names'],
@@ -147,6 +169,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
                                           inlet_branches_by_bus=inlet_branches_by_bus,
                                           outlet_branches_by_bus=outlet_branches_by_bus,
                                           approximation_type=ApproximationType.BTHETA,
+                                          dc_inlet_branches_by_bus=dc_inlet_branches_by_bus,
+                                          dc_outlet_branches_by_bus=dc_outlet_branches_by_bus,
                                           **p_rhs_kwargs
                                           )
 
@@ -197,6 +221,8 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     loads = dict(md.elements(element_type='load'))
     shunts = dict(md.elements(element_type='shunt'))
 
+    dc_branches = dict(md.elements(element_type='dc_branch'))
+
     gen_attrs = md.attributes(element_type='generator')
     ## to keep things in order
     buses_idx = tuple(buses.keys())
@@ -229,6 +255,26 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
         p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)                
         p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
 
+    if dc_branches:
+        dcpf_bounds = dict()
+        dc_loss_multiplier = dict()
+        for k, k_dict in dc_branches.items():
+            kp_max = k_dict['rating_long_term']
+            if kp_max is None:
+                dcpf_bounds[k] = (None, None)
+            else:
+                dcpf_bounds[k] = (-kp_max, kp_max)
+        libbranch.declare_var_dcpf(model=model,
+                                   index_set=dc_branches.keys(),
+                                   initialize=0.,
+                                   bounds=dcpf_bounds,
+                                  )
+        dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = \
+                tx_utils.inlet_outlet_branches_by_bus(dc_branches, buses)
+    else:
+        dc_inlet_branches_by_bus = None
+        dc_outlet_branches_by_bus = None
+
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
                                    index_set=buses_idx,
@@ -244,6 +290,8 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                               bus_p_loads=bus_p_loads,
                                               gens_by_bus=gens_by_bus,
                                               bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                              dc_inlet_branches_by_bus=dc_inlet_branches_by_bus,
+                                              dc_outlet_branches_by_bus=dc_outlet_branches_by_bus,
                                               )
     
     ### add "blank" power flow expressions
@@ -453,6 +501,8 @@ def solve_dcopf(model_data,
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
 
+    dc_branches = dict(md.elements(element_type='dc_branch'))
+
     md.data['system']['total_cost'] = value(m.obj)
 
     for g,g_dict in gens.items():
@@ -502,6 +552,10 @@ def solve_dcopf(model_data,
                 b_dict['va'] = value(m.va[b])
             else:
                 raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
+
+    for k, k_dict in dc_branches.items():
+        k_dict['pf'] = value(m.dcpf[k])
+        k_dict['pt'] = -k_dict['pf']
 
     unscale_ModelData_to_pu(md, inplace=True)
 
