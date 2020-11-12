@@ -23,18 +23,20 @@ from egret.model_library.defn import ApproximationType
 from egret.data.data_utils import map_items, zip_items
 from math import pi
 
-def _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_slack_penalty):
+def _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty):
     import egret.model_library.decl as decl
-    slack_init = 0
-    slack_bounds = (0, sum(bus_p_loads.values()))
+    load = sum(bus_p_loads.values())
+
+    over_gen_bounds = (0, tx_utils.over_gen_limit(load, gen_attrs['names'], gen_attrs['p_max']))
     decl.declare_var('p_over_generation', model=model, index_set=None,
-                     initialize=slack_init, bounds=slack_bounds
+                     initialize=0., bounds=over_gen_bounds
                      )
+
+    load_shed_bounds = (0, tx_utils.load_shed_limit(load, gen_attrs['names'], gen_attrs['p_min']))
     decl.declare_var('p_load_shed', model=model, index_set=None,
-                     initialize=slack_init, bounds=slack_bounds
+                     initialize=0., bounds=load_shed_bounds
                      )
     p_rhs_kwargs = {'include_feasibility_load_shed':'p_load_shed', 'include_feasibility_over_generation':'p_over_generation'}
-
     penalty_expr = p_marginal_slack_penalty * (model.p_load_shed + model.p_over_generation)
     return p_rhs_kwargs, penalty_expr
 
@@ -80,7 +82,7 @@ def create_copperplate_dispatch_approx_model(model_data, include_feasibility_sla
     p_rhs_kwargs = {}
     if include_feasibility_slack:
         p_marginal_slack_penalty = _validate_and_extract_slack_penalty(model_data)                
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty)
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,

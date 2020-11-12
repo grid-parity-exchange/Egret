@@ -80,7 +80,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     penalty_expr = None
     if include_feasibility_slack:
         p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)                
-        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'], bus_p_loads,
+                                                                gens_by_bus, gen_attrs, p_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -233,7 +234,7 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
     p_rhs_kwargs = {}
     if include_feasibility_slack:
         p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty)
 
     ### declare net withdraw expression for use in PTDF power flows
     libbus.declare_expr_p_net_withdraw_at_bus(model=model,

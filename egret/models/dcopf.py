@@ -31,22 +31,22 @@ from egret.common.log import logger
 from math import pi, radians
 
 
-def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, p_marginal_slack_penalty):
+def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_attrs, p_marginal_slack_penalty):
     import egret.model_library.decl as decl
-    slack_init = {k: 0 for k in bus_attrs['names']}
 
-    slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
-    decl.declare_var('p_load_shed', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
-                     )    
-    decl.declare_var('p_over_generation', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
+    load_shed_bounds  = {k: (0, tx_utils.load_shed_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_min'])) for k in bus_names}
+    decl.declare_var('p_load_shed', model=model, index_set=bus_names,
+                     initialize=0., bounds=load_shed_bounds
+                     )
+    over_gen_bounds = {k: (0, tx_utils.over_gen_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_max'])) for k in bus_names}
+    decl.declare_var('p_over_generation', model=model, index_set=bus_names,
+                     initialize=0., bounds=over_gen_bounds
                      )
 
     p_rhs_kwargs = {'include_feasibility_load_shed':'p_load_shed', 'include_feasibility_over_generation':'p_over_generation'}
 
     penalty_expr = sum(p_marginal_slack_penalty * (model.p_load_shed[bus_name] + model.p_over_generation[bus_name])
-                    for bus_name in bus_attrs['names'])
+                    for bus_name in bus_names)
     return p_rhs_kwargs, penalty_expr
 
 def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False):
@@ -89,8 +89,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     penalty_expr = None
     if include_feasibility_slack:
         p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)        
-        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs,
-                                                                bus_p_loads, p_marginal_slack_penalty)
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'], bus_p_loads,
+                                                                gens_by_bus, gen_attrs, p_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -227,7 +227,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     p_rhs_kwargs = {}
     if include_feasibility_slack:
         p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)                
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, p_marginal_slack_penalty)
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty)
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
