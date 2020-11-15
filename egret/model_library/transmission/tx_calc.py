@@ -619,11 +619,11 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
             except la.LinAlgError:
                 logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
                 SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-                PTDF = np.matmul(B_dA.A,SENSI)
+                PTDF = B_dA@SENSI
         else:
             logger.warning("Using pseudo-inverse method as network is disconnected")
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-            PTDF = np.matmul(B_dA.A,SENSI)
+            PTDF = B_dA@SENSI
 
         # insert 0 column for reference bus
         PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(_len_branch), axis=1)
@@ -637,18 +637,20 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         B = np.array([], dtype=np.int64).reshape(_len_bus + 1,0)
         _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
 
+        J0_T = J0.T.tocsr()
+
         ## TODO: Maybe just keep the sparse PTDFs as a dict of ndarrays?
         ## Right now the return type depends on the options 
         ## passed in
         for idx, branch_name in _sparse_mapping_branch.items():
             b = np.zeros((_len_branch,1))
             b[idx] = 1
-            _tmp = np.matmul(J.transpose(),b)
+            _tmp = J.T@b
             _tmp = np.vstack([_tmp,0])
             B = np.concatenate((B,_tmp), axis=1)
         row_idx = list(_sparse_mapping_branch.keys())
         PTDF = sp.lil_matrix((_len_branch,_len_bus))
-        _ptdf = sp.linalg.spsolve(J0.transpose().tocsr(), B).T
+        _ptdf = sp.linalg.spsolve(J0_T, B).T
         PTDF[row_idx] = _ptdf[:,:-1]
 
     return PTDF
@@ -724,32 +726,34 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
         SENSI = SENSI[:-1,:-1]
 
-        PTDF = np.matmul(J.A, SENSI)
-        LDF = np.matmul(L.A, SENSI)
+        PTDF = J@SENSI
+        LDF = L@SENSI
     elif len(sparse_index_set_branch) < _len_branch:
         B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         B_L = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
 
+        J0_T = J0.T.tocsr()
+
         for idx, branch_name in _sparse_mapping_branch.items():
             b = np.zeros((_len_branch, 1))
             b[idx] = 1
 
-            _tmp_J = np.matmul(J.transpose(), b)
+            _tmp_J = J.T@b
             _tmp_J = np.vstack([_tmp_J, 0])
             B_J = np.concatenate((B_J, _tmp_J), axis=1)
 
-            _tmp_L = np.matmul(L.transpose(), b)
+            _tmp_L = L.T@b
             _tmp_L = np.vstack([_tmp_L, 0])
             B_L = np.concatenate((B_L, _tmp_L), axis=1)
 
         row_idx = list(_sparse_mapping_branch.keys())
         PTDF = sp.lil_matrix((_len_branch, _len_bus))
-        _ptdf = sp.linalg.spsolve(J0.transpose().tocsr(), B_J).T
+        _ptdf = sp.linalg.spsolve(J0_T, B_J).T
         PTDF[row_idx] = _ptdf[:, :-1]
 
         LDF = sp.lil_matrix((_len_branch, _len_bus))
-        _ldf = sp.linalg.spsolve(J0.transpose().tocsr(), B_L).T
+        _ldf = sp.linalg.spsolve(J0_T, B_L).T
         LDF[row_idx] = _ldf[:, :-1]
 
     M1 = A@Jc
