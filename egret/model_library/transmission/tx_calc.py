@@ -323,7 +323,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         data.append(-val)
 
     J11 = sp.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
-    return J11.tocsc()
+    return J11.tocsr()
 
 
 def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
@@ -371,7 +371,7 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         data.append(-val)
 
     L11 = sp.coo_matrix((data,(row,col)),shape=(_len_branch,_len_bus))
-    return L11.tocsc()
+    return L11.tocsr()
 
 
 def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
