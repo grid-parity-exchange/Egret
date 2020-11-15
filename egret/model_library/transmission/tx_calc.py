@@ -323,7 +323,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         data.append(-val)
 
     J11 = sp.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
-    return J11.tocsr()
+    return J11.tocsc()
 
 
 def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
@@ -371,7 +371,7 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         data.append(-val)
 
     L11 = sp.coo_matrix((data,(row,col)),shape=(_len_branch,_len_bus))
-    return L11.tocsr()
+    return L11.tocsc()
 
 
 def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
@@ -588,27 +588,43 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
     M = A@J
 
-    ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
-    ref_bus_col = sp.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
- 
-    J0 = sp.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
-
     if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
         ## the resulting matrix after inversion will be fairly dense,
         ## the scipy documenation recommends using dense for the inversion
         ## as well
+
+        ref_bus_mask = np.ones(_len_bus, dtype=bool)
+        ref_bus_mask[_ref_bus_idx] = False
+
+        # M is now (A^T B_d A) with
+        # row and column of reference
+        # bus removed
+        J0 = M[ref_bus_mask,:][:,ref_bus_mask]
+
+        # (B_d A) with reference bus column removed
+        B_dA = J[:,ref_bus_mask].A
+
         if connected:
             try:
-                SENSI = np.linalg.inv(J0.A)
+                PTDF = np.linalg.solve(J0.T.A, B_dA.T).T
             except np.linalg.LinAlgError:
                 logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
                 SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
+                PTDF = np.matmul(B_dA,SENSI)
         else:
             logger.warning("Using pseudo-inverse method as network is disconnected")
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-        SENSI = SENSI[:-1,:-1]
-        PTDF = np.matmul(J.A,SENSI)
+            PTDF = np.matmul(B_dA,SENSI)
+
+        # insert 0 column for reference bus
+        PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(_len_branch), axis=1)
+
     elif len(sparse_index_set_branch) < _len_branch:
+        ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
+        ref_bus_col = sp.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
+
+        J0 = sp.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
+
         B = np.array([], dtype=np.int64).reshape(_len_bus + 1,0)
         _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
 
