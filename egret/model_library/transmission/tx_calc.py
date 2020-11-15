@@ -754,7 +754,7 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
             PTDF = np.matmul(B_dA,SENSI)
 
         # insert 0 column for reference bus
-        PTDF = np.insert(PTDF, 1, np.zeros(_len_branch), axis=1)
+        PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(_len_branch), axis=1)
 
     elif len(sparse_index_set_branch) < _len_branch:
         ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
