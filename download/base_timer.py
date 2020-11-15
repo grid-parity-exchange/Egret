@@ -102,6 +102,8 @@ else:
     PTDF = PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, populate_default_ptdf_options(None))
     tt_timer.toc(f'Calculated PTDF Matrix!')
 
+    print(PTDF.PTDFM)
+
     '''
     tt_timer.tic(f'getting a PTDF row')
     { bus_n : val for bus_n, val in PTDF.get_branch_ptdf_iterator(index_set_branch[0]) }

@@ -644,6 +644,9 @@ class PTDFMatrix(_PTDFManagerBase):
         PTDF_I_row = self.PTDFM_I[row_idx]
         yield from zip(self.buses_keys, PTDF_I_row)
 
+    def bus_iterator(self):
+        yield from self.buses_keys
+
     def calculate_PFV(self,mb):
         NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys), float, count=len(self.buses_keys))
         NWV += self.phi_adjust_array
