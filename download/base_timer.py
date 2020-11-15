@@ -50,10 +50,48 @@ if use_factorization:
     #tt_timer.tic(f'calculating ptdf factorization')
     #calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,reference_bus,mapping_bus_to_idx=bus_index_mapping)
     #tt_timer.toc(f'calculated ptdf factorization')
+    import scipy.linalg as la
 
-    tt_timer.tic(f'Calculating Virtual PTDF Matrix; initializing data')
+    tt_timer.tic(f'Calculating Virtual PTDF Matrix; then PTDF matrix')
     PTDF = VirtualPTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, populate_default_ptdf_options(None))
-    tt_timer.toc(f'Calculated Virtual PTDF Matrix!')
+    self = PTDF
+    b_da = self.B_dA.A.T
+    #tt_timer.tic(f'Calling lu_solve')
+    PTDFM = la.lu_solve(self.MLU, b_da, trans=1, overwrite_b=True, check_finite=False)
+    tt_timer.toc(f'Calculated PTDF Matrix!')
+
+    '''
+
+    tt_timer.tic(f'getting a PTDF row')
+    branch_name = index_set_branch[0]
+    tt_timer.tic(f'looking up index')
+    branch_idx = self._branchname_to_index_map[branch_name]
+    tt_timer.tic(f'munging B_dA')
+    b_da = self.B_dA[branch_idx].A[0]
+    tt_timer.toc(f'<- TIME FOR making B_dA dense')
+    tt_timer.tic(f'Calling lu_solve')
+    PTDF_row = la.lu_solve(self.MLU, b_da, trans=1, overwrite_b=True, check_finite=False)
+    tt_timer.toc(f'<- TIME FOR lu_solve')
+    tt_timer.tic(f'Transposing row')
+    PTDF_row = PTDF_row.T
+    tt_timer.toc(f'Transposed')
+    tt_timer.tic(f'adding to dictionary cache')
+    self._ptdf_rows[branch_name] = PTDF_row
+    tt_timer.tic(f'making dict for pyomo')
+    { bus_n : val for bus_n, val in zip(self.buses_keys, PTDF_row) }
+    tt_timer.toc(f'GOT PTDF row!')
+
+    tt_timer.tic(f'calculating system flows')
+    PFV, _ = PTDF.calculate_PFV(mb)
+    tt_timer.toc(f'calculated system flows')
+
+    tt_timer.tic(f'calculating whole PTDF matrix using back solve')
+    tt_timer.tic(f'transposing/densifying B_dA')
+    b_da = self.B_dA.A.T
+    tt_timer.tic(f'Calling lu_solve')
+    PTDF = la.lu_solve(self.MLU, b_da, trans=1, overwrite_b=True, check_finite=False)
+    tt_timer.toc(f'<- TIME FOR lu_solve')
+    '''
 
 else:
     #tt_timer.tic(f'calculating ptdf matrix')
@@ -64,12 +102,14 @@ else:
     PTDF = PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, populate_default_ptdf_options(None))
     tt_timer.toc(f'Calculated PTDF Matrix!')
 
-tt_timer.tic(f'getting a PTDF row')
-{ bus_n : val for bus_n, val in PTDF.get_branch_ptdf_iterator(index_set_branch[0]) }
-tt_timer.toc(f'GOT PTDF row!')
+    '''
+    tt_timer.tic(f'getting a PTDF row')
+    { bus_n : val for bus_n, val in PTDF.get_branch_ptdf_iterator(index_set_branch[0]) }
+    tt_timer.toc(f'GOT PTDF row!')
 
-tt_timer.tic(f'calculating system flows')
-PFV, _ = PTDF.calculate_PFV(mb)
-tt_timer.toc(f'calculated system flows')
+    tt_timer.tic(f'calculating system flows')
+    PFV, _ = PTDF.calculate_PFV(mb)
+    tt_timer.toc(f'calculated system flows')
+    '''
 
 tt_timer.tic("DONE")
