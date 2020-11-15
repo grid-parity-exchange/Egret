@@ -110,17 +110,6 @@ def add_monitored_flow_tracker(mb):
     mb._idx_monitored = list()
     mb._interfaces_monitored = list()
 
-def calculate_PFV(mb, PTDF):
-    NWV = np.fromiter((pe.value(mb.p_nw[b]) for b in PTDF.bus_iterator()), float, count=len(PTDF.buses_keys))
-    NWV += PTDF.phi_adjust_array
-
-    PFV  = PTDF.PTDFM_masked.dot(NWV)
-    PFV += PTDF.phase_shift_array_masked
-
-    PFV_I = PTDF.PTDFM_I.dot(NWV)
-    PFV_I += PTDF.PTDFM_I_const
-
-    return PFV, PFV_I
 
 def _get_viol_viol_lazy(limit_type, flow, lazy_limits, enforced_limits, mon_idx):
     assert limit_type in ['ub', 'lb']
@@ -155,7 +144,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
     ## PFV -- power flow vector
     ## PFV_I -- interface power flow vector
-    PFV, PFV_I = calculate_PFV(mb, PTDF)
+    PFV, PFV_I = PTDF.calculate_PFV(mb)
 
     ## get the lines we're monitoring
     idx_monitored = mb._idx_monitored

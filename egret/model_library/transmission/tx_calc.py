@@ -14,6 +14,8 @@ different computations for transmission models
 import math
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg
+import scipy.linalg as la
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
@@ -300,17 +302,15 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             b = calculate_susceptance(branch)/tau
 
         if base_point == BasePointType.FLATSTART:
-            vn = 1.
-            vm = 1.
-            tn = 0.
-            tm = 0.
+            val = -b
+
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
-        val = -b * vn * vm * cos(tn - tm)
+            val = -b * vn * vm * cos(tn - tm)
 
         idx_col = mapping_bus_to_idx[from_bus]
         row.append(idx_row)
@@ -463,6 +463,13 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
 
     return phi_loss_from.tocsr(), phi_loss_to.tocsr()
 
+def calculate_phase_shift_vector(branches, index_set_branch):
+    from math import radians
+    return np.fromiter( ( radians(branch['transformer_phase_shift']) 
+                          if (branch['branch_type'] == 'transformer') else 
+                          0. 
+                          for branch in (branches[bn] for bn in index_set_branch)
+                        ), float, count=len(index_set_branch) )
 
 def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
     """
@@ -547,6 +554,137 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
     return pfl_constant
 
+def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,reference_bus,
+                                 base_point=BasePointType.FLATSTART,
+                                 mapping_bus_to_idx=None):
+
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
+
+    ## check if the network is connected
+    connected = check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx)
+
+    if not connected:
+        raise RuntimeError("Network is not connected, cannot use PTDF formulation")
+
+    #(B_d A)
+    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
+    #(A^T)
+    At = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
+
+    ref_bus_mask = np.ones(_len_bus, dtype=bool)
+    ref_bus_mask[_ref_bus_idx] = False
+
+    # M is now (A^T B_d A) with
+    # row and column of reference
+    # bus removed
+    M = (At@J)[ref_bus_mask,:][:,ref_bus_mask]
+
+    # (B_d A) with reference bus column removed
+    B_dA = J[:,ref_bus_mask] 
+
+    ## LU factorization
+    MLU = M.A
+    MLU_MP = la.lu_factor(MLU, overwrite_a=True, check_finite=False)
+
+    return MLU_MP, B_dA, ref_bus_mask
+
+def _calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART):
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
+
+    ## check if the network is connected
+    connected = check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx)
+
+    if not connected:
+        raise RuntimeError("Network is not connected, cannot use PTDF formulation")
+
+    #(B_d A)
+    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
+    #(A^T)
+    At = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
+
+    ref_bus_mask = np.ones(_len_bus, dtype=bool)
+    ref_bus_mask[_ref_bus_idx] = False
+
+    # M is now (A^T B_d A) with
+    # row and column of reference
+    # bus removed
+    M = (At@J)[ref_bus_mask,:][:,ref_bus_mask]
+
+    # (B_d A) with reference bus column removed
+    B_dA = J[:,ref_bus_mask] 
+
+
+    ## LU factorization
+    MLU = M.A
+    MLU_MP = la.lu_factor(MLU, overwrite_a=True, check_finite=False)
+    # since we maybe overwrote it
+    del MLU
+
+    ## NOTES: now we can efficiently compute \deltas (for non-ref buses)
+    ##        (difference in bus angles) as:
+    ## E.g., solve:    M.deltas == net_injections[ref_bus_mask]
+    deltas = la.lu_solve(MLU_MP, net_injections[ref_bus_mask], overwrite_b=False)
+
+    ## then the flows are a multiply
+    flows = B_dA.dot(deltas)
+
+    PTDF = la.lu_solve(MLU_MP, B_dA.T.A, trans=1).T
+
+    ## also get a single row
+    ## E.g., solve: PTDF_row.M = B_dA[branch]
+    PTDF_row = la.lu_solve(MLU_MP, B_dA[branch_idx].A[0], trans=1, overwrite_b=False).T
+
+    PTDF_row == PTDF[branch_idx]
+
+    ## also get a multiple rows
+    ## E.g., solve: PTDF_rows.M = B_dA[branch]
+    PTDF_rows = la.lu_solve(MLU_MP, B_dA[branch_idxs].T.A, trans=1, overwrite_b=False).T
+
+    PTDF_rows == PTDF[branch_idxs]
+    ## END LU
+
+
+    ## WITH CHOLESKY (FASTER, ASSUME SYMMETRY, positive definite)
+    MCL = -M.A
+    MCL = la.cho_factor(MCL, overwrite_a=True, check_finite=False)
+
+    ## NOTES: now we can efficiently compute \deltas (for non-ref buses)
+    ##        (difference in bus angles) as:
+    ## E.g., solve:    M.deltas == net_injections[ref_bus_mask]
+    deltas = -la.cho_solve(MCL, net_injections[ref_bus_mask], overwrite_b=False)
+
+    ## then the flows are a multiply
+    flows = B_dA.dot(deltas)
+
+    PTDF = -la.cho_solve(MCL, B_dA.T.A).T
+
+    ## also get a single row
+    ## E.g., solve: PTDF_row.M = B_dA[branch]
+    PTDF_row = -la.cho_solve(MCL, B_dA[branch_idx].A[0], overwrite_b=False).T
+
+    PTDF_row == PTDF[branch_idx]
+
+    ## also get a multiple rows
+    ## E.g., solve: PTDF_rows.M = B_dA[branch]
+    PTDF_rows = -la.cho_solve(MCL, B_dA[branch_idxs].T.A, overwrite_b=False).T
+
+    PTDF_rows == PTDF[branch_idxs]
+    ## END CHOLESKY
+
 
 def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """
@@ -618,9 +756,11 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         for idx, branch_name in _sparse_mapping_branch.items():
             b = np.zeros((_len_branch,1))
             b[idx] = 1
-            _tmp = np.matmul(J.transpose(),b)
+            _tmp = J.transpose()@b
             _tmp = np.vstack([_tmp,0])
             B = np.concatenate((B,_tmp), axis=1)
+        print(f"B: {B}")
+        print(f"J0: {J0.A}")
         row_idx = list(_sparse_mapping_branch.keys())
         PTDF = sp.lil_matrix((_len_branch,_len_bus))
         _ptdf = sp.linalg.spsolve(J0.transpose().tocsr(), B).T
