@@ -14,6 +14,8 @@ different computations for transmission models
 import math
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg
+import scipy.linalg as la
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
@@ -602,19 +604,26 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         J0 = M[ref_bus_mask,:][:,ref_bus_mask]
 
         # (B_d A) with reference bus column removed
-        B_dA = J[:,ref_bus_mask].A
+        B_dA = J[:,ref_bus_mask]
 
         if connected:
             try:
-                PTDF = np.linalg.solve(J0.T.A, B_dA.T).T
-            except np.linalg.LinAlgError:
+                ## NOTE: J0.T.A, B_dA.T.A allocate memory for the dense form of
+                ##       the matrices, so that memory can be overwritten in the solve
+                ##       computation. The flags overwrite_a, overwrite_b use this memory.
+                ##       Without these flags, the memory consumption is double for
+                ##       this computation. No need for this function to check for inf/nans,
+                ##       something above should have failed
+                PTDF = la.solve(J0.T.A, B_dA.T.A,
+                        overwrite_a=True, overwrite_b=True, check_finite=False).T
+            except la.LinAlgError:
                 logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
                 SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-                PTDF = np.matmul(B_dA,SENSI)
+                PTDF = np.matmul(B_dA.A,SENSI)
         else:
             logger.warning("Using pseudo-inverse method as network is disconnected")
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-            PTDF = np.matmul(B_dA,SENSI)
+            PTDF = np.matmul(B_dA.A,SENSI)
 
         # insert 0 column for reference bus
         PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(_len_branch), axis=1)
