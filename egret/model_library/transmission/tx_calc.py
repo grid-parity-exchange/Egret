@@ -806,7 +806,7 @@ def calculate_interface_sensitivities(interfaces,index_set_interface,PTDFM,phase
             else:
                 branch_idx = mapping_branch_to_idx[l]
                 PTDF_row = PTDFM[branch_idx]
-                PTDF_row_const = phase_shift_array[branch_idx] + PTDF_row.dot(phi_adjust_array)
+                PTDF_row_const = phase_shift_array[branch_idx]
                 if val == 1:
                     PTDF_I_row += PTDF_row
                     const += PTDF_row_const
@@ -818,7 +818,7 @@ def calculate_interface_sensitivities(interfaces,index_set_interface,PTDFM,phase
                             "not in [-1,0,1].".format(i_n, l, val))
         PTDF_I_const[idx] = const
 
-    return PTDF_I, PTDF_I_const
+    return PTDF_I, PTDF_I_phase_shift
 
 
 def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):

@@ -173,7 +173,7 @@ class PTDFMatrix(object):
     def _calculate_ptdf_interface(self, interfaces):
         self.interface_keys = tuple(interfaces.keys())
 
-        self.PTDFM_I, self.PTDFM_I_const \
+        self.PTDFM_I, self.PTDFM_I_phase_shift \
                 = tx_calc.calculate_interface_sensitivities(interfaces,
                                             self.interface_keys,
                                             self.PTDFM_masked,
@@ -183,7 +183,7 @@ class PTDFMatrix(object):
 
         ## protect the array using numpy
         self.PTDFM_I.flags.writeable = False
-        self.PTDFM_I_const.flags.writeable = False
+        self.PTDFM_I_phase_shift.flags.writeable = False
 
         self.interfacename_to_index_map = \
                 { i_n: idx for idx, i_n in enumerate(self.interface_keys) }
@@ -336,7 +336,9 @@ class PTDFMatrix(object):
         yield from self.buses_keys
 
     def get_interface_const(self, interface_name):
-        return self.PTDFM_I_const[self.interfacename_to_index_map[interface_name]]
+        row_idx = self.interfacename_to_index_map[interface_name]
+        PTDF_I_row = self.PTDF_I[row_idx]
+        return PTDFM_I_row.dot(self.phi_adjust_array) + self.PTDFM_I_phase_shift[row_idx]
 
     def get_interface_ptdf_abs_max(self, interface_name):
         row_idx = self.interfacename_to_index_map[interface_name]
@@ -358,7 +360,7 @@ class PTDFMatrix(object):
         PFV += self.phase_shift_array_masked
 
         PFV_I = self.PTDFM_I@NWV
-        PFV_I += self.PTDFM_I_const
+        PFV_I += self.PTDFM_I_phase_shift
 
         return PFV, PFV_I
 
@@ -383,7 +385,7 @@ class PTDFMatrix(object):
         PFV += self.phase_shift_array
 
         PFV_I = self.PTDFM_I@NWV
-        PFV_I += self.PTDFM_I_const
+        PFV_I += self.PTDFM_I_phase_shift
 
         return PFV, PFV_I, VA
 
