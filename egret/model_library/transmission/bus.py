@@ -143,31 +143,57 @@ def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
                 m.shunt_p[bus_name] = shunt_attrs['gs'][bus_name]*vmsq
                 m.shunt_q[bus_name] = -shunt_attrs['bs'][bus_name]*vmsq
 
-def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+def _get_dc_dicts(dc_inlet_branches_by_bus, dc_outlet_branches_by_bus, con_set):
+    if dc_inlet_branches_by_bus is None:
+        assert dc_outlet_branches_by_bus is None
+        dc_inlet_branches_by_bus = {bn:() for bn in con_set}
+    if dc_outlet_branches_by_bus is None:
+        dc_outlet_branches_by_bus = dc_inlet_branches_by_bus
+    return dc_inlet_branches_by_bus, dc_outlet_branches_by_bus
+
+def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts,
+                                       dc_inlet_branches_by_bus=None, dc_outlet_branches_by_bus=None):
     """
     Create a named pyomo expression for bus net withdraw
     """
     m = model
     decl.declare_expr('p_nw', model, index_set)
 
+    dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = _get_dc_dicts(dc_inlet_branches_by_bus,
+                                                                        dc_outlet_branches_by_bus,
+                                                                        index_set)
+
     for b in index_set:
         m.p_nw[b] = ( bus_gs_fixed_shunts[b] 
                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
-                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+                    - sum( m.pg[g] for g in gens_by_bus[b] ) 
+                    + sum(m.dcpf[branch_name] for branch_name in dc_outlet_branches_by_bus[b])
+                    - sum(m.dcpf[branch_name] for branch_name in dc_inlet_branches_by_bus[b])
+                    )
         
-def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts,
+                                     dc_inlet_branches_by_bus=None, dc_outlet_branches_by_bus=None):
     """
     Create a named pyomo expression for bus net withdraw
     """
     m = model
     con_set = decl.declare_set('_con_eq_p_net_withdraw_at_bus', model, index_set)
 
+    dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = _get_dc_dicts(dc_inlet_branches_by_bus,
+                                                                        dc_outlet_branches_by_bus,
+                                                                        index_set)
+
     m.eq_p_net_withdraw_at_bus = pe.Constraint(con_set)
 
     for b in index_set:
         m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] 
                                                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
-                                                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+                                                    - sum( m.pg[g] for g in gens_by_bus[b] )
+                                                    + sum(m.dcpf[branch_name] for branch_name
+                                                           in dc_outlet_branches_by_bus[b])
+                                                    - sum(m.dcpf[branch_name] for branch_name
+                                                           in dc_inlet_branches_by_bus[b])
+                                                    )
                     
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """
@@ -240,13 +266,14 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     else:
         m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
-
 def declare_eq_p_balance_dc_approx(model, index_set,
                                    bus_p_loads,
                                    gens_by_bus,
                                    bus_gs_fixed_shunts,
                                    inlet_branches_by_bus, outlet_branches_by_bus,
                                    approximation_type=ApproximationType.BTHETA,
+                                   dc_inlet_branches_by_bus=None,
+                                   dc_outlet_branches_by_bus=None,
                                    **rhs_kwargs):
     """
     Create the equality constraints for the real power balance
@@ -261,13 +288,17 @@ def declare_eq_p_balance_dc_approx(model, index_set,
 
     for bus_name in con_set:
         if approximation_type == ApproximationType.BTHETA:
-            p_expr = -sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-            p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr = -sum(m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name])
+            p_expr += sum(m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name])
         elif approximation_type == ApproximationType.BTHETA_LOSSES:
-            p_expr = -0.5*sum([m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
-            p_expr -= 0.5*sum([m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-            p_expr -= sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-            p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr = -0.5*sum(m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name])
+            p_expr -= 0.5*sum(m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name])
+            p_expr -= sum(m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name])
+            p_expr += sum(m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name])
+
+        if dc_inlet_branches_by_bus is not None:
+            p_expr -= sum(m.dcpf[branch_name] for branch_name in dc_outlet_branches_by_bus[bus_name])
+            p_expr += sum(m.dcpf[branch_name] for branch_name in dc_inlet_branches_by_bus[bus_name])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
             p_expr -= bus_gs_fixed_shunts[bus_name]

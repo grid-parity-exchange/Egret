@@ -315,6 +315,17 @@ scaled_attributes = {
                                                         'violation_penalty',
                                                         'pf_violation',
                                                         ],
+                       ('element_type','dc_branch', None) : [
+                                                        'rating_long_term',
+                                                        'rating_short_term',
+                                                        'rating_emergency',
+                                                        'pf',
+                                                        'qf',
+                                                        'pt',
+                                                        'qt',
+                                                        'violation_penalty',
+                                                        'pf_violation',
+                                                        ],
                        ('element_type', 'shunt', None) : [
                                                       'bs',
                                                       'gs',
