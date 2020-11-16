@@ -374,7 +374,7 @@ class PTDFMatrix(object):
 
             VA = la.lu_solve(self.J0LU, NWV[ref_bus_mask], overwrite_b=False, check_finite=False)
 
-            PFV = self.B_dA@va
+            PFV = self.B_dA@VA
 
         else:
             PFV  = self.PTDFM_masked@NWV
