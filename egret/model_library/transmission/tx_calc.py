@@ -550,7 +550,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     return pfl_constant
 
 
-def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None):
+def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None, mapping_branch_to_idx=None, interfaces=None, branch_mask=None):
     """
     Calculates the sensitivity of the voltage angle to real power injections
     Parameters
@@ -573,7 +573,23 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     mapping_bus_to_idx: dict
         A map from bus names to indices for matrix construction. If None,
         will be inferred from index_set_bus.
+    mapping_branch_to_idx: dict
+        A map from branch names to indices for matrix construction. If None,
+        will be inferred from index_set_branch.
+    interfaces: dict{}
+        The dictionary of interfaces for the test case
+    branch_mask: np.array
+        Branch mask, another way of specifying sparse_index_set_branch
     """
+    assert interfaces is None
+    print("SOMEBODY NEEDS TO IMPLEMENT INTERFACES")
+
+    assert branch_mask is None or sparse_index_set_branch is None
+    if sparse_index_set_branch is not None:
+        if mapping_branch_to_idx is None:
+            mapping_branch_to_idx = {branch_n: i for i, branch_n in enumerate(index_set_branch)}
+        branch_mask = [mapping_branch_to_idx[bn] for bn in sparse_index_set_branch]
+
     _len_bus = len(index_set_bus)
 
     if mapping_bus_to_idx is None:
@@ -590,71 +606,51 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
     M = A@J
 
-    if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
-        ## the resulting matrix after inversion will be fairly dense,
-        ## the scipy documenation recommends using dense for the inversion
-        ## as well
+    ## the resulting matrix after inversion will be fairly dense,
+    ## the scipy documenation recommends using dense for the inversion
+    ## as well
 
-        ref_bus_mask = np.ones(_len_bus, dtype=bool)
-        ref_bus_mask[_ref_bus_idx] = False
+    ref_bus_mask = np.ones(_len_bus, dtype=bool)
+    ref_bus_mask[_ref_bus_idx] = False
 
-        # M is now (A^T B_d A) with
-        # row and column of reference
-        # bus removed
-        J0 = M[ref_bus_mask,:][:,ref_bus_mask]
+    # M is now (A^T B_d A) with
+    # row and column of reference
+    # bus removed
+    J0 = M[ref_bus_mask,:][:,ref_bus_mask]
 
-        # (B_d A) with reference bus column removed
-        B_dA = J[:,ref_bus_mask]
+    # (B_d A) with reference bus column removed
+    B_dA = J[:,ref_bus_mask]
 
-        if connected:
-            try:
-                ## NOTE: J0.T.A, B_dA.T.A allocate memory for the dense form of
-                ##       the matrices, so that memory can be overwritten in the solve
-                ##       computation. The flags overwrite_a, overwrite_b use this memory.
-                ##       Without these flags, the memory consumption is double for
-                ##       this computation. No need for this function to check for inf/nans,
-                ##       something above should have failed
-                PTDF = la.solve(J0.T.A, B_dA.T.A,
-                        overwrite_a=True, overwrite_b=True, check_finite=False).T
-            except la.LinAlgError:
-                logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
-                SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-                PTDF = B_dA@SENSI
-        else:
-            logger.warning("Using pseudo-inverse method as network is disconnected")
+    if branch_mask is None:
+        B_dA_masked = B_dA
+    else:
+        B_dA_masked = B_dA[branch_mask]
+
+    if connected:
+        try:
+            ## NOTE: J0.T.A, B_dA_masked.T.A allocate memory for the dense form of
+            ##       the matrices, so that memory can be overwritten in the solve
+            ##       computation. The flags overwrite_a, overwrite_b use this memory.
+            ##       Without these flags, the memory consumption is double for
+            ##       this computation. No need for this function to check for inf/nans,
+            ##       something above should have failed
+            PTDF = la.solve(J0.T.A, B_dA_masked.T.A,
+                    overwrite_a=True, overwrite_b=True, check_finite=False).T
+        except la.LinAlgError:
+            logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-            PTDF = B_dA@SENSI
+            PTDF = B_dA_masked@SENSI
+    else:
+        logger.warning("Using pseudo-inverse method as network is disconnected")
+        SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
+        PTDF = B_dA_masked@SENSI
 
-        # insert 0 column for reference bus
-        PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(_len_branch), axis=1)
+    # insert 0 column for reference bus
+    PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(_len_branch), axis=1)
 
-    elif len(sparse_index_set_branch) < _len_branch:
-        ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
-        ref_bus_col = sp.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
+    PTDF_I = None
 
-        J0 = sp.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
-
-        B = np.array([], dtype=np.int64).reshape(_len_bus + 1,0)
-        _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
-
-        J0_T = J0.T.tocsr()
-
-        ## TODO: Maybe just keep the sparse PTDFs as a dict of ndarrays?
-        ## Right now the return type depends on the options 
-        ## passed in
-        for idx, branch_name in _sparse_mapping_branch.items():
-            b = np.zeros((_len_branch,1))
-            b[idx] = 1
-            _tmp = J.T@b
-            _tmp = np.vstack([_tmp,0])
-            B = np.concatenate((B,_tmp), axis=1)
-        row_idx = list(_sparse_mapping_branch.keys())
-        PTDF = sp.lil_matrix((_len_branch,_len_bus))
-        _ptdf = sp.linalg.spsolve(J0_T, B).T
-        PTDF[row_idx] = _ptdf[:,:-1]
-
-    return PTDF
-
+    return PTDF, PTDF_I, J0, B_dA
 
 def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """

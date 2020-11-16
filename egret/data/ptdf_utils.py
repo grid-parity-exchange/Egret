@@ -14,6 +14,7 @@ modifying the data dictionary
 import abc
 import pickle
 import numpy as np
+import scipy.linalg as la
 import egret.model_library.transmission.tx_calc as tx_calc
 
 from math import radians
@@ -115,6 +116,10 @@ class PTDFMatrix(object):
         self.branch_limits_array = np.fromiter((branches[branch]['rating_long_term'] for branch in self.branches_keys), float, count=len(self.branches_keys))
         self.branch_limits_array.flags.writeable = False
 
+        self._calculate_phi_adjust()
+        self._calculate_phase_shift()
+        self._get_filtered_lines(ptdf_options)
+
         self._base_point = base_point
         self._calculate()
 
@@ -127,21 +132,33 @@ class PTDFMatrix(object):
     def _calculate(self):
         logger.info("Calculating PTDF Matrix")
         self._calculate_ptdf()
-        self._calculate_phi_adjust()
-        self._calculate_phase_shift()
 
     def _calculate_ptdf(self):
         '''
         do the PTDF calculation
         '''
-        ## calculate and store the PTDF matrix
-        PTDFM = tx_calc.calculate_ptdf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point,
-                                        mapping_bus_to_idx=self._busname_to_index_map)
+        if self.masked:
+            branch_mask = self.branch_mask
+        else:
+            branch_mask = None
+        ## calculate and store the sensitivites
+        PTDFM_masked, PTDF_I, J0, B_dA = tx_calc.calculate_ptdf(self._branches,
+                                                                self._buses,
+                                                                self.branches_keys,
+                                                                self.buses_keys,
+                                                                self._reference_bus,
+                                                                self._base_point,
+                                                                mapping_bus_to_idx=self._busname_to_index_map,
+                                                                branch_mask = branch_mask)
 
-        self.PTDFM = PTDFM
+        self.PTDFM_masked = PTDFM_masked
 
         ## protect the array using numpy
-        self.PTDFM.flags.writeable = False
+        self.PTDFM_masked.flags.writeable = False
+
+        if self.masked:
+            self.J0 = J0
+            self.B_dA = B_dA
 
     def _calculate_ptdf_interface(self, interfaces):
         self.interface_keys = tuple(interfaces.keys())
@@ -149,7 +166,7 @@ class PTDFMatrix(object):
         self.PTDFM_I, self.PTDFM_I_const \
                 = tx_calc.calculate_interface_sensitivities(interfaces,
                                             self.interface_keys,
-                                            self.PTDFM,
+                                            self.PTDFM_masked,
                                             self.phase_shift_array,
                                             self.phi_adjust_array,
                                             self._branchname_to_index_map)
@@ -171,11 +188,11 @@ class PTDFMatrix(object):
         self.interface_max_limits = np.fromiter(_interface_limit_iter('maximum_limit', np.inf), float, count=len(self.interface_keys))
         self.interface_min_limits = np.fromiter(_interface_limit_iter('minimum_limit', -np.inf), float, count=len(self.interface_keys))
 
-    def _calculate_phi_from_phi_to(self):
-        return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF, mapping_bus_to_idx=self._busname_to_index_map)
-
     def _calculate_phi_adjust(self):
-        phi_from, phi_to = self._calculate_phi_from_phi_to()
+        phi_from, phi_to = tx_calc.calculate_phi_constant(self._branches,
+                                                          self.branches_keys,
+                                                          self.buses_keys,ApproximationType.PTDF,
+                                                          mapping_bus_to_idx=self._busname_to_index_map)
         
         ## hold onto these for line outages
         self._phi_from = phi_from
@@ -205,11 +222,12 @@ class PTDFMatrix(object):
             self.branch_mask = np.arange(len(self.branch_limits_array))
             self.branches_keys_masked = self.branches_keys
             self.branchname_to_index_masked_map = self._branchname_to_index_map
-            self.PTDFM_masked = self.PTDFM
             self.phase_shift_array_masked = self.phase_shift_array
             self.branch_limits_array_masked = self.branch_limits_array
+            self.masked = False
             return
 
+        self.masked = True
         branches = self._branches
         buses = self._buses
         branch_mask = list()
@@ -244,13 +262,11 @@ class PTDFMatrix(object):
         self.branch_mask = np.array(branch_mask)
         self.branches_keys_masked = tuple(self.branches_keys[i] for i in self.branch_mask)
         self.branchname_to_index_masked_map = { bn : i for i,bn in enumerate(self.branches_keys_masked) }
-        self.PTDFM_masked = self.PTDFM[branch_mask]
         self.phase_shift_array_masked = self.phase_shift_array[branch_mask]
         self.branch_limits_array_masked = self.branch_limits_array[branch_mask]
 
     def _set_lazy_limits(self, ptdf_options):
         if ptdf_options['lazy']:
-            self._get_filtered_lines(ptdf_options)
             ## add / reset the relative limits based on the current options
             branch_limits = self.branch_limits_array_masked
             interface_max_limits = self.interface_max_limits
@@ -283,15 +299,15 @@ class PTDFMatrix(object):
                                 self.enforced_interface_min_limits)
 
     def get_branch_ptdf_iterator(self, branch_name):
-        row_idx = self._branchname_to_index_map[branch_name]
+        row_idx = self.branchname_to_index_masked_map[branch_name]
         ## get the row slice
-        PTDF_row = self.PTDFM[row_idx]
+        PTDF_row = self.PTDFM_masked[row_idx]
         yield from zip(self.buses_keys, PTDF_row)
 
     def get_branch_ptdf_abs_max(self, branch_name):
-        row_idx = self._branchname_to_index_map[branch_name]
+        row_idx = self.branchname_to_index_masked_map[branch_name]
         ## get the row slice
-        PTDF_row = self.PTDFM[row_idx]
+        PTDF_row = self.PTDFM_masked[row_idx]
         return np.abs(PTDF_row).max()
 
     def get_branch_phase_shift(self, branch_name):
@@ -301,9 +317,9 @@ class PTDFMatrix(object):
         return self.phi_adjust_array[self._busname_to_index_map[bus_name]]
 
     def get_branch_phi_adj(self, branch_name):
-        row_idx = self._branchname_to_index_map[branch_name]
+        row_idx = self.branchname_to_index_masked_map[branch_name]
         ## get the row slice
-        PTDF_row = self.PTDFM[row_idx]
+        PTDF_row = self.PTDFM_masked[row_idx]
         return PTDF_row.dot(self.phi_adjust_array)
 
     def bus_iterator(self):
@@ -340,7 +356,20 @@ class PTDFMatrix(object):
         NWV = np.fromiter((value(mb.p_nw[b]) for b in self.bus_iterator()), float, count=len(self.buses_keys))
         NWV += self.phi_adjust_array
 
-        PFV  = self.PTDFM.dot(NWV)
+        if self.masked:
+            ## do a back solve
+            ref_bus_mask = np.ones(len(self.buses.keys, dtype=bool))
+            _ref_bus_idx = self._busname_to_index_map[self._reference_bus]
+            ref_bus_mask[_ref_bus_idx] = False
+
+            deltas = la.solve(J0.A, NWV[ref_bus_mask], overwrite_a=True, overwrite_b=True, check_finite=False)
+            del NWV
+
+            PFV = self.B_dA@deltas
+
+        else:
+            PFV  = self.PTDFM_masked.dot(NWV)
+
         PFV += self.phase_shift_array
 
         PFV_I = self.PTDFM_I.dot(NWV)
