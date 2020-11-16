@@ -623,8 +623,12 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
 
     if branch_mask is None:
         B_dA_masked = B_dA
+        ptdf_len = _len_branch
+        full_ptdf = True
     else:
         B_dA_masked = B_dA[branch_mask]
+        ptdf_len = B_dA_masked.shape[0]
+        full_ptdf = False
 
     if connected:
         try:
@@ -634,23 +638,30 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
             ##       Without these flags, the memory consumption is double for
             ##       this computation. No need for this function to check for inf/nans,
             ##       something above should have failed
-            PTDF = la.solve(J0.T.A, B_dA_masked.T.A,
-                    overwrite_a=True, overwrite_b=True, check_finite=False).T
+            if full_ptdf:
+                PTDF = la.solve(J0.T.A, B_dA_masked.T.A,
+                        overwrite_a=True, overwrite_b=True, check_finite=False).T
+                J0LU = None
+            else:
+                J0LU = la.lu_factor(J0.A, overwrite_a=True, check_finite=False)
+                PTDF = la.lu_solve(J0LU, B_dA_masked.T.A, trans=1, overwrite_b=True, check_finite=False).T
         except la.LinAlgError:
             logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
             PTDF = B_dA_masked@SENSI
+            J0LU = None
     else:
         logger.warning("Using pseudo-inverse method as network is disconnected")
         SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
         PTDF = B_dA_masked@SENSI
+        J0LU = None
 
     # insert 0 column for reference bus
-    PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(_len_branch), axis=1)
+    PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(ptdf_len), axis=1)
 
     PTDF_I = None
 
-    return PTDF, PTDF_I, J0, B_dA
+    return PTDF, PTDF_I, J0LU, B_dA
 
 def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """

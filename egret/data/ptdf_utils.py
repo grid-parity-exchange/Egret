@@ -142,7 +142,7 @@ class PTDFMatrix(object):
         else:
             branch_mask = None
         ## calculate and store the sensitivites
-        PTDFM_masked, PTDF_I, J0, B_dA = tx_calc.calculate_ptdf(self._branches,
+        PTDFM_masked, PTDF_I, J0LU, B_dA = tx_calc.calculate_ptdf(self._branches,
                                                                 self._buses,
                                                                 self.branches_keys,
                                                                 self.buses_keys,
@@ -151,13 +151,23 @@ class PTDFMatrix(object):
                                                                 mapping_bus_to_idx=self._busname_to_index_map,
                                                                 branch_mask = branch_mask)
 
+        ## there could be numerical issues
+        ## with the solve, in which case
+        ## there won't be a factorization,
+        ## and PTDFM_masked will be the whole
+        ## thing
+        if J0LU is None:
+            self.masked = False
+        else:
+            assert self.masked is True
+
         self.PTDFM_masked = PTDFM_masked
 
         ## protect the array using numpy
         self.PTDFM_masked.flags.writeable = False
 
         if self.masked:
-            self.J0 = J0
+            self.J0LU = J0LU
             self.B_dA = B_dA
 
     def _calculate_ptdf_interface(self, interfaces):
@@ -344,10 +354,10 @@ class PTDFMatrix(object):
         NWV = np.fromiter((value(mb.p_nw[b]) for b in self.bus_iterator()), float, count=len(self.buses_keys))
         NWV += self.phi_adjust_array
 
-        PFV  = self.PTDFM_masked.dot(NWV)
+        PFV  = self.PTDFM_masked@NWV
         PFV += self.phase_shift_array_masked
 
-        PFV_I = self.PTDFM_I.dot(NWV)
+        PFV_I = self.PTDFM_I@NWV
         PFV_I += self.PTDFM_I_const
 
         return PFV, PFV_I
@@ -358,21 +368,20 @@ class PTDFMatrix(object):
 
         if self.masked:
             ## do a back solve
-            ref_bus_mask = np.ones(len(self.buses.keys, dtype=bool))
+            ref_bus_mask = np.ones(len(self.buses_keys), dtype=bool)
             _ref_bus_idx = self._busname_to_index_map[self._reference_bus]
             ref_bus_mask[_ref_bus_idx] = False
 
-            deltas = la.solve(J0.A, NWV[ref_bus_mask], overwrite_a=True, overwrite_b=True, check_finite=False)
-            del NWV
+            deltas = la.lu_solve(self.J0LU, NWV[ref_bus_mask], overwrite_b=False, check_finite=False)
 
             PFV = self.B_dA@deltas
 
         else:
-            PFV  = self.PTDFM_masked.dot(NWV)
+            PFV  = self.PTDFM_masked@NWV
 
         PFV += self.phase_shift_array
 
-        PFV_I = self.PTDFM_I.dot(NWV)
+        PFV_I = self.PTDFM_I@NWV
         PFV_I += self.PTDFM_I_const
 
         return PFV, PFV_I
