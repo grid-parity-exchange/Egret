@@ -1212,30 +1212,23 @@ def _save_uc_results(m, relaxed):
             PTDF = b._PTDF
 
             branches_idx = PTDF.branches_keys
-            PTDFM = PTDF.PTDFM
 
-            NWV = np.array([value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
-            NWV += PTDF.phi_adjust_array
-
-            PFV = np.dot(PTDFM, NWV)
-            PFV += PTDF.phase_shift_array
+            PFV, PFIV = PTDF.calculate_all_flows(b)
 
             flows_dict[mt] = dict()
             for i,bn in enumerate(branches_idx):
                 flows_dict[mt][bn] = PFV[i]
 
             interface_idx = PTDF.interface_keys
-            PTDFM_I = PTDF.PTDFM_I
-            PFIV = np.dot(PTDFM_I, NWV)
-            PFIV += PTDF.PTDFM_I_const
-
             interface_flows_dict[mt] = dict()
             for i, i_n in enumerate(interface_idx):
                 interface_flows_dict[mt][i_n] = PFIV[i]
 
             if relaxed:
-                PFD = np.zeros(len(branches_idx))
-                for i,bn in enumerate(branches_idx):
+                ## NOTE: unmonitored lines can't contribute to LMPC
+                branches_idx_masked = PTDF.branches_keys_masked
+                PFD = np.zeros(len(branches_idx_masked))
+                for i,bn in enumerate(branches_idx_masked):
                     if bn in b.ineq_pf_branch_thermal_bounds:
                         PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_bounds[bn]])
                 ## interface constributions to LMP
@@ -1246,8 +1239,9 @@ def _save_uc_results(m, relaxed):
 
                 ## TODO: PFD is likely to be sparse, implying we just need a few
                 ##       rows of the PTDF matrix (or columns in its transpose).
-                LMPC = np.dot(-PTDFM.T, PFD)
-                LMPI = np.dot(-PTDFM_I.T, PFID)
+                ## NOTE: No need to calculate LMPC for unmonitored lines
+                LMPC = np.dot(-PTDF.PTDFM_masked.T, PFD)
+                LMPI = np.dot(-PTDF.PTDFM_I.T, PFID)
                 LMPE = value(m.dual[b.eq_p_balance])
                 buses_idx = PTDF.buses_keys
                 lmps_dict[mt] = dict()

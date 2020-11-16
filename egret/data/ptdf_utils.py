@@ -16,9 +16,10 @@ import pickle
 import numpy as np
 import egret.model_library.transmission.tx_calc as tx_calc
 
+from math import radians
+from pyomo.environ import value
 from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
-from math import radians
 
 def get_ptdf_potentially_from_file(ptdf_options, branches_keys,
                                    buses_keys, interfaces=None):
@@ -322,6 +323,30 @@ class PTDFMatrix(object):
         ## get the row slice
         PTDF_I_row = self.PTDFM_I[row_idx]
         yield from zip(self.buses_keys, PTDF_I_row)
+
+    def calculate_monitored_flows(self, mb):
+        NWV = np.fromiter((value(mb.p_nw[b]) for b in self.bus_iterator()), float, count=len(self.buses_keys))
+        NWV += self.phi_adjust_array
+
+        PFV  = self.PTDFM_masked.dot(NWV)
+        PFV += self.phase_shift_array_masked
+
+        PFV_I = self.PTDFM_I.dot(NWV)
+        PFV_I += self.PTDFM_I_const
+
+        return PFV, PFV_I
+
+    def calculate_all_flows(self, mb):
+        NWV = np.fromiter((value(mb.p_nw[b]) for b in self.bus_iterator()), float, count=len(self.buses_keys))
+        NWV += self.phi_adjust_array
+
+        PFV  = self.PTDFM.dot(NWV)
+        PFV += self.phase_shift_array
+
+        PFV_I = self.PTDFM_I.dot(NWV)
+        PFV_I += self.PTDFM_I_const
+
+        return PFV, PFV_I
 
 
 class PTDFLossesMatrix(PTDFMatrix):

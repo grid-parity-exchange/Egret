@@ -462,23 +462,21 @@ def solve_dcopf(model_data,
     ## calculate the LMPC (LMP congestion) using numpy
     if dcopf_model_generator == create_ptdf_dcopf_model:
         PTDF = m._PTDF
-        PTDFM = PTDF.PTDFM
+        PFV, _ = PTDF.calculate_all_flows(m)
+
         branches_idx = PTDF.branches_keys
-
-        NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
-        NWV += PTDF.phi_adjust_array
-
-        PFV  = PTDFM.dot(NWV)
-        PFV += PTDF.phase_shift_array
-
-        PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
             branches[bn]['pf'] = PFV[i]
+
+        branches_idx_masked = PTDF.branches_keys_masked
+        PFD = np.zeros(len(branches_idx_masked))
+        for i,bn in enumerate(branches_idx_masked):
             if bn in m.ineq_pf_branch_thermal_bounds:
                 PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_bounds[bn]])
         ## TODO: PFD is likely to be sparse, implying we just need a few
         ##       rows of the PTDF matrix (or columns in its transpose).
-        LMPC = -PTDFM.T.dot(PFD)
+        ## NOTE: No need to calculate LMPC for unmonitored lines
+        LMPC = -PTDF.PTDFM_masked.T.dot(PFD)
     else:
         for k, k_dict in branches.items():
             k_dict['pf'] = value(m.pf[k])
