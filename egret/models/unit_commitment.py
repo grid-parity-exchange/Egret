@@ -1205,6 +1205,7 @@ def _save_uc_results(m, relaxed):
     elif m.power_balance == 'ptdf_power_flow':
         flows_dict = dict()
         interface_flows_dict = dict()
+        voltage_angle_dict = None
         if relaxed:
             lmps_dict = dict()
         for mt in m.TimePeriods:
@@ -1213,7 +1214,7 @@ def _save_uc_results(m, relaxed):
 
             branches_idx = PTDF.branches_keys
 
-            PFV, PFIV = PTDF.calculate_all_flows(b)
+            PFV, PFIV, VA = PTDF.calculate_all_flows(b)
 
             flows_dict[mt] = dict()
             for i,bn in enumerate(branches_idx):
@@ -1223,6 +1224,17 @@ def _save_uc_results(m, relaxed):
             interface_flows_dict[mt] = dict()
             for i, i_n in enumerate(interface_idx):
                 interface_flows_dict[mt][i_n] = PFIV[i]
+
+            buses_idx = PTDF.buses_keys
+            if VA is not None:
+                if voltage_angle_dict is None:
+                    voltage_angle_dict = dict()
+                voltage_angle_dict[mt] = dict()
+                for i,bn in enumerate(buses_idx):
+                    voltage_angle_dict[mt][bn] = VA[i]
+            else:
+                assert voltage_angle_dict is None
+                voltage_angle_dict[mt] = None
 
             if relaxed:
                 ## NOTE: unmonitored lines can't contribute to LMPC
@@ -1243,7 +1255,6 @@ def _save_uc_results(m, relaxed):
                 LMPC = np.dot(-PTDF.PTDFM_masked.T, PFD)
                 LMPI = np.dot(-PTDF.PTDFM_I.T, PFID)
                 LMPE = value(m.dual[b.eq_p_balance])
-                buses_idx = PTDF.buses_keys
                 lmps_dict[mt] = dict()
                 for i,bn in enumerate(buses_idx):
                     lmps_dict[mt][bn] = LMPE + LMPC[i] + LMPI[i]
@@ -1272,7 +1283,6 @@ def _save_uc_results(m, relaxed):
                 l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
-            va_dict = _preallocated_list(data_time_periods)
             p_balance_violation_dict = _preallocated_list(data_time_periods)
             pl_dict = _preallocated_list(data_time_periods)
             for dt, mt in enumerate(m.TimePeriods):
@@ -1280,6 +1290,11 @@ def _save_uc_results(m, relaxed):
                 pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             b_dict['pl'] = _time_series_dict(pl_dict)
+            if voltage_angle_dict is not None:
+                va_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    va_dict[dt] = voltage_angle_dict[mt][b]
+                b_dict['va'] = _time_series_dict(va_dict)
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):

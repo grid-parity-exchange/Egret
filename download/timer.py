@@ -57,7 +57,7 @@ PTDF = PTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, popul
 tt.toc(f"COMPUTED full PTDF")
 
 tt.tic(f"computing flows with full PTDF")
-PFV, _ = PTDF.calculate_all_flows(mb)
+PFV, _, _ = PTDF.calculate_all_flows(mb)
 tt.toc(f"COMPUTED flows with full PTDF")
 #print(f"PTDF: {PTDF.PTDFM_masked}")
 print(f"masked: {PTDF.masked}")
@@ -80,7 +80,7 @@ PTDF.calculate_monitored_flows(mb)
 tt.toc(f'COMPUTED monitored flows')
 
 tt.tic(f"computing flows with lu_solve")
-PFV_BS, _ = PTDF.calculate_all_flows(mb)
+PFV_BS, _, _ = PTDF.calculate_all_flows(mb)
 tt.toc(f"COMPUTED flows with lu_solve")
 #print(f"PTDF: {PTDF.PTDFM_masked}")
 print(f"masked: {PTDF.masked}")

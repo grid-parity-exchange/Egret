@@ -372,20 +372,20 @@ class PTDFMatrix(object):
             _ref_bus_idx = self._busname_to_index_map[self._reference_bus]
             ref_bus_mask[_ref_bus_idx] = False
 
-            deltas = la.lu_solve(self.J0LU, NWV[ref_bus_mask], overwrite_b=False, check_finite=False)
+            VA = la.lu_solve(self.J0LU, NWV[ref_bus_mask], overwrite_b=False, check_finite=False)
 
-            PFV = self.B_dA@deltas
+            PFV = self.B_dA@va
 
         else:
             PFV  = self.PTDFM_masked@NWV
+            VA = None
 
         PFV += self.phase_shift_array
 
         PFV_I = self.PTDFM_I@NWV
         PFV_I += self.PTDFM_I_const
 
-        return PFV, PFV_I
-
+        return PFV, PFV_I, VA
 
 class PTDFLossesMatrix(PTDFMatrix):
 

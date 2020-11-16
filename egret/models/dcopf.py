@@ -462,7 +462,12 @@ def solve_dcopf(model_data,
     ## calculate the LMPC (LMP congestion) using numpy
     if dcopf_model_generator == create_ptdf_dcopf_model:
         PTDF = m._PTDF
-        PFV, _ = PTDF.calculate_all_flows(m)
+        PFV, _, VA = PTDF.calculate_all_flows(m)
+
+        if VA is not None:
+            buses_idx = PTDF.buses_keys
+            for i,bn in enumerate(buses_idx):
+                buses[bn]['va'] = VA[i]
 
         branches_idx = PTDF.branches_keys
         for i,bn in enumerate(branches_idx):
