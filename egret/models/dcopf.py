@@ -257,7 +257,6 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
 
     if dc_branches:
         dcpf_bounds = dict()
-        dc_loss_multiplier = dict()
         for k, k_dict in dc_branches.items():
             kp_max = k_dict['rating_long_term']
             if kp_max is None:
