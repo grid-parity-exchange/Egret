@@ -171,8 +171,8 @@ def test_uc_transmission_models():
     ## the network tests can optionally specify some kwargs so we can pass them into solve_unit_commitment
     tc_networks = {'btheta_power_flow': [dict()], 'ptdf_power_flow':[{'ptdf_options': {'lazy':False}}, dict()], 'power_balance_constraints':[dict()],}
     no_network = 'copperplate_power_flow'
-    test_names = ['tiny_uc_tc', 'tiny_uc_tc_2','tiny_uc_tc_3', 'tiny_uc_tc_4', 'tiny_uc_tc_5', 'tiny_uc_tc_6']
-    ## based on tiny_uc, tiny_uc_tc_2 has an interface, tiny_uc_tc_3 has a relaxed interface, tiny_uc_tc_4 has a relaxed flow limit
+    test_names = ['tiny_uc_tc'] + ['tiny_uc_tc_{}'.format(i) for i in range(2,7+1)]
+    ## based on tiny_uc, tiny_uc_tc_2 has an interface, tiny_uc_tc_3 has a relaxed interface, tiny_uc_tc_4 has a relaxed flow limit; tiny_uc_tc_7 has a HVDC line
 
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')

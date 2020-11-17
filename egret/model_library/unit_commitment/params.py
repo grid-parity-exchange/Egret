@@ -92,6 +92,8 @@ def load_params(model, model_data):
         elements['interface'] = dict()
     if 'storage' not in elements:
         elements['storage'] = dict()
+    if 'dc_branch' not in elements:
+        elements['dc_branch'] = dict()
 
     ## NOTE: generator, bus, and load should be in here for a well-defined problem
 
@@ -103,6 +105,7 @@ def load_params(model, model_data):
     branches = dict(md.elements(element_type='branch'))
     interfaces = dict(md.elements(element_type='interface'))
     storage = dict(md.elements(element_type='storage'))
+    dc_branches = dict(md.elements(element_type='dc_branch'))
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
     renewable_gen_attrs = md.attributes(element_type='generator', generator_type='renewable')
@@ -111,10 +114,13 @@ def load_params(model, model_data):
     load_attrs = md.attributes(element_type='load')
     interface_attrs = md.attributes(element_type='interface')
     storage_attrs = md.attributes(element_type='storage')
+    dc_branch_attrs = md.attributes(element_type='dc_branch')
 
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+    dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = \
+        tx_utils.inlet_outlet_branches_by_bus(dc_branches, buses)
     thermal_gens_by_bus = tx_utils.gens_by_bus(buses, thermal_gens)
     renewable_gens_by_bus = tx_utils.gens_by_bus(buses, renewable_gens)
     storage_by_bus = tx_utils.gens_by_bus(buses, storage)
@@ -129,6 +135,7 @@ def load_params(model, model_data):
     model._shunts = shunts
     model._bus_gs_fixed_shunts = bus_gs_fixed_shunts
     model._interfaces = interfaces
+    model._dc_branches = dc_branches
     #model._TimeMapper = TimeMapper
 
     #
@@ -186,12 +193,19 @@ def load_params(model, model_data):
     ##############################################
     
     model.TransmissionLines = Set(initialize=branch_attrs['names'])
+    model.HVDCLines = Set(initialize=dc_branch_attrs['names'])
     
     model.BusFrom = Param(model.TransmissionLines, within=model.Buses, initialize=branch_attrs.get('from_bus', dict()))
     model.BusTo   = Param(model.TransmissionLines, within=model.Buses, initialize=branch_attrs.get('to_bus', dict()))
 
+    model.HVDCBusFrom = Param(model.HVDCLines, within=model.Buses, initialize=dc_branch_attrs.get('from_bus', dict()))
+    model.HVDCBusTo   = Param(model.HVDCLines, within=model.Buses, initialize=dc_branch_attrs.get('to_bus', dict()))
+
     model.LinesTo = Set(model.Buses, initialize=inlet_branches_by_bus)
     model.LinesFrom = Set(model.Buses, initialize=outlet_branches_by_bus)
+
+    model.HVDCLinesTo = Set(model.Buses, initialize=dc_inlet_branches_by_bus)
+    model.HVDCLinesFrom = Set(model.Buses, initialize=dc_outlet_branches_by_bus)
 
     def _warn_neg_impedence(m, v, l):
         if v == 0.:
@@ -206,9 +220,13 @@ def load_params(model, model_data):
     model.Impedence = Param(model.TransmissionLines, within=Reals, initialize=branch_attrs.get('reactance', dict()), validate=_warn_neg_impedence)
 
     model.ThermalLimit = Param(model.TransmissionLines, initialize=branch_attrs.get('rating_long_term', dict())) # max flow across the line
+    model.HVDCThermalLimit = Param(model.HVDCLines, initialize=dc_branch_attrs.get('rating_long_term', dict())) # max flow across the line
 
     model.LineOutOfService = Param(model.TransmissionLines, model.TimePeriods, within=Boolean, default=False,
                                     initialize=TimeMapper(branch_attrs.get('planned_outage', dict())))
+
+    model.HVDCLineOutOfService = Param(model.HVDCLines, model.TimePeriods, within=Boolean, default=False,
+                                       initialize=TimeMapper(dc_branch_attrs.get('planned_outage', dict())))
 
     _branch_penalties = dict()
     _md_violation_penalties = branch_attrs.get('violation_penalty')

@@ -104,6 +104,11 @@ def declare_var_pfi_slack_neg(model, index_set, **kwargs):
     """
     decl.declare_var('pfi_slack_neg', model=model, index_set=index_set, **kwargs)
 
+def declare_var_dcpf(model, index_set, **kwargs):
+    """
+    Create the variable for the real power flow through a HVDC line
+    """
+    decl.declare_var('dcpf', model=model, index_set=index_set, **kwargs)
 
 def declare_var_qf(model, index_set, **kwargs):
     """

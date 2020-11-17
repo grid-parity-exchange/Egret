@@ -71,6 +71,7 @@ def _setup_egret_network_topology(m,tm):
     buses = m._buses
     branches = m._branches
     interfaces = m._interfaces
+
     branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
 
     ## this will serve as a key into our dict of PTDF matricies,
@@ -538,6 +539,13 @@ def _add_blank_q_load_mismatch(model):
     model.negLoadGenerateMismatchReactive = Param(model.Buses, model.TimePeriods, default=0.)
     model.LoadMismatchCostReactive = Param(model.TimePeriods, default=0.)
 
+def _add_hvdc(model):
+    def dc_line_power_bounds_rule(m, k, t):
+        if value(m.HVDCLineOutOfService[k,t]):
+            return (0., 0.)
+        return (-m.HVDCThermalLimit[k], m.HVDCThermalLimit[k])
+    model.HVDCLinePower = Var(model.HVDCLines, model.TimePeriods, bounds=dc_line_power_bounds_rule)
+
 ## helper defining real power injection at a bus
 def _get_pg_expr_rule(t):
     def pg_expr_rule(block,b):
@@ -547,6 +555,8 @@ def _get_pg_expr_rule(t):
                 + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
                 - sum(m.PowerInputStorage[s, t] for s in m.StorageAtBus[b])\
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
+                + sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesTo[b]) \
+                - sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesFrom[b]) \
                 + m.LoadGenerateMismatch[b,t]
     return pg_expr_rule
 
@@ -581,6 +591,8 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
             _add_blank_system_load_mismatch(model)
         else:
             _add_blank_load_mismatch(model)
+
+    _add_hvdc(model)
 
     if reactive_power:
         if system_load_mismatch:
@@ -665,6 +677,8 @@ def power_balance_constraints(model, slacks=True):
         return (None, None)
     model.LinePower = Var(model.TransmissionLines, model.TimePeriods, bounds=line_power_bounds_rule)
 
+    _add_hvdc(model)
+
     model.BranchSlackPos = Var(model.BranchesWithSlack, model.TimePeriods, within=NonNegativeReals)
     model.BranchSlackNeg = Var(model.BranchesWithSlack, model.TimePeriods, within=NonNegativeReals)
     
@@ -737,6 +751,8 @@ def power_balance_constraints(model, slacks=True):
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
                 + sum(m.LinePower[l,t] for l in m.LinesTo[b]) \
                 - sum(m.LinePower[l,t] for l in m.LinesFrom[b]) \
+                + sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesTo[b]) \
+                - sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesFrom[b]) \
                 + m.LoadGenerateMismatch[b,t] \
                 == m.Demand[b, t] 
     model.PowerBalance = Constraint(model.Buses, model.TimePeriods, rule=power_balance)

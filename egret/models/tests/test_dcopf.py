@@ -17,12 +17,15 @@ from pyomo.opt import SolverFactory, TerminationCondition
 from egret.models.dcopf import *
 from egret.data.model_data import ModelData
 from parameterized import parameterized
-from egret.parsers.matpower_parser import create_ModelData
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee']
 test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
 soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'dcopf_solution_files', '{}_dcopf_solution.json'.format(i)) for i in case_names]
+
+builtin_case_names = ['hvdc_test_case3']
+test_cases.extend(os.path.join(current_dir, 'transmission_test_instances', 'test_instances', '{}.json'.format(i)) for i in builtin_case_names)
+soln_cases.extend(os.path.join(current_dir, 'transmission_test_instances', 'dcopf_solution_files', '{}_dcopf_solution.json'.format(i)) for i in builtin_case_names)
 
 class TestDCOPF(unittest.TestCase):
     show_output = True
@@ -40,7 +43,7 @@ class TestDCOPF(unittest.TestCase):
 
         md_soln = ModelData.read(soln_case)
 
-        md_dict = create_ModelData(test_case)
+        md_dict = ModelData.read(test_case)
 
         kwargs = {}
         if include_kwargs:
@@ -58,7 +61,7 @@ class TestDCOPF(unittest.TestCase):
 
         md_soln = ModelData.read(soln_case)
 
-        md_dict = create_ModelData(test_case)
+        md_dict = ModelData.read(test_case)
 
         kwargs = {}
         if include_kwargs:
@@ -68,7 +71,6 @@ class TestDCOPF(unittest.TestCase):
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
-
 
 if __name__ == '__main__':
      unittest.main()
