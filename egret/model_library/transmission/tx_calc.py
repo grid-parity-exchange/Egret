@@ -549,8 +549,36 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
     return pfl_constant
 
+def _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx):
+    """
+    calculate an interface matrix, where a the rows correspond to each interface, and 
+    the columns correspond to each branch
+    """
+    _len_interface = len(index_set_interface)
+    _len_branch = len(mapping_branch_to_idx)
 
-def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None, mapping_branch_to_idx=None, interfaces=None, branch_mask=None):
+    row = []
+    col = []
+    data = []
+
+    for idx, i_n in enumerate(index_set_interface):
+        interface = interfaces[i_n]
+        for l, val in zip(interface['lines'], interface['line_orientation']):
+            if val == 0:
+                continue
+            elif val == -1 or val == 1:
+                branch_idx = mapping_branch_to_idx[l]
+                row.append(idx)
+                col.append(branch_idx)
+                data.append(val)
+            else:
+                ## TODO: do we need enforce this requirement?
+                raise Exception("Interface {} has line {} with line_orientation {} "
+                        "not in [-1,0,1].".format(i_n, l, val))
+    I = sp.coo_matrix((data,(row,col)),shape=(_len_interface,_len_branch))
+    return I.tocsr()
+
+def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None,mapping_branch_to_idx=None,interfaces=None,index_set_interface=None,branch_mask=None):
     """
     Calculates the sensitivity of the voltage angle to real power injections
     Parameters
@@ -565,24 +593,28 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         The list of keys for buses for the test case
     reference_bus: key value
         The reference bus key value
-    base_point: egret.model_library_defn.BasePointType
+    base_point: egret.model_library_defn.BasePointType (optional)
         The base-point type for calculating the PTDF matrix
-    sparse_index_set_branch: list
+    sparse_index_set_branch: list (optional)
         The list of keys for branches needed to compute a sparse PTDF matrix
         If this is None, a dense PTDF matrix is returned
-    mapping_bus_to_idx: dict
+    mapping_bus_to_idx: dict (optional)
         A map from bus names to indices for matrix construction. If None,
         will be inferred from index_set_bus.
-    mapping_branch_to_idx: dict
+    mapping_branch_to_idx: dict (optional)
         A map from branch names to indices for matrix construction. If None,
         will be inferred from index_set_branch.
-    interfaces: dict{}
+    interfaces: dict (optional)
         The dictionary of interfaces for the test case
-    branch_mask: np.array
+    index_set_interface: dict (optional)
+        The list of keys for interfaces for the test case
+    branch_mask: np.array or list (optional)
         Branch mask, another way of specifying sparse_index_set_branch
     """
-    assert interfaces is None
-    print("SOMEBODY NEEDS TO IMPLEMENT INTERFACES")
+    if interfaces is None:
+        assert index_set_interface is None
+    if index_set_interface is None:
+        assert interfaces is None
 
     assert branch_mask is None or sparse_index_set_branch is None
     if sparse_index_set_branch is not None:
@@ -630,6 +662,16 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         ptdf_len = B_dA_masked.shape[0]
         full_ptdf = False
 
+    if interfaces is not None:
+        if mapping_branch_to_idx is None:
+            mapping_branch_to_idx = {branch_n: i for i, branch_n in enumerate(index_set_branch)}
+        I = _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx)
+        ## add the interface rows to B_dA_masked
+        B_dA_masked = sp.vstack([B_dA_masked, I@B_dA])
+
+        branches_ptdf_len = ptdf_len
+        ptdf_len = B_dA_masked.shape[0]
+
     if connected:
         try:
             ## NOTE: J0.T.A, B_dA_masked.T.A allocate memory for the dense form of
@@ -659,9 +701,14 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     # insert 0 column for reference bus
     PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(ptdf_len), axis=1)
 
-    PTDF_I = None
+    if interfaces is None:
+        return PTDF, J0LU, B_dA
+    else:
+        ## split sensitivies off PTDF
+        PTDF_I = PTDF[branches_ptdf_len:]
+        PTDF = PTDF[:branches_ptdf_len]
 
-    return PTDF, PTDF_I, J0LU, B_dA
+        return PTDF, J0LU, B_dA, PTDF_I, I
 
 def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """
@@ -769,57 +816,6 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     LDF_constant = -LDF@M + Lc
 
     return PTDF, LDF, LDF_constant
-
-
-def calculate_interface_sensitivities(interfaces,index_set_interface,PTDFM,phase_shift_array,phi_adjust_array,mapping_branch_to_idx):
-    """
-    Calculates the sensitivity of interface flows to real power injections from a PTDF matrix
-    Parameters
-    ----------
-    interfaces: dict{}
-        The dictionary of interfaces for the test case
-    index_set_interface : tuple
-        The tuple of keys for interfaces for the test case
-    PTDFM : numpy.array
-        The PTDF matrix
-    phase_shift_array : numpy.array
-        The array of phase shifts per branch
-    phi_adjust_array : numpy.array
-        The array of phi adjusts per bus
-    mapping_branch_to_idx: dict
-        A map from branch names to indices for the PTDF matrix. If None,
-        will be inferred from index_set_branch.
-    """
-
-    ## pre-allocate a matrix for the interface sensitivities
-    ## size is number of interfaces (rows) by number of buses (cols)
-    PTDF_I = np.zeros((len(index_set_interface),PTDFM.shape[1]))
-    PTDF_I_const = np.zeros(len(index_set_interface))
-
-    for idx, i_n in enumerate(index_set_interface):
-        interface = interfaces[i_n]
-        PTDF_I_row = PTDF_I[idx]
-        const = 0
-        for l, val in zip(interface['lines'], interface['line_orientation']):
-            if val == 0:
-                continue
-            else:
-                branch_idx = mapping_branch_to_idx[l]
-                PTDF_row = PTDFM[branch_idx]
-                PTDF_row_const = phase_shift_array[branch_idx]
-                if val == 1:
-                    PTDF_I_row += PTDF_row
-                    const += PTDF_row_const
-                elif val == -1:
-                    PTDF_I_row -= PTDF_row
-                    const -= PTDF_row_const
-                else:
-                    raise Exception("Interface {} has line {} with line_orientation {} "
-                            "not in [-1,0,1].".format(i_n, l, val))
-        PTDF_I_const[idx] = const
-
-    return PTDF_I, PTDF_I_phase_shift
-
 
 def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):
     """

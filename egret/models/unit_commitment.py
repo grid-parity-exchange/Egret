@@ -1234,7 +1234,6 @@ def _save_uc_results(m, relaxed):
                     voltage_angle_dict[mt][bn] = VA[i]
             else:
                 assert voltage_angle_dict is None
-                voltage_angle_dict[mt] = None
 
             if relaxed:
                 ## NOTE: unmonitored lines can't contribute to LMPC

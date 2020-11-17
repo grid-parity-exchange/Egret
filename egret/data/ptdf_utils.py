@@ -54,7 +54,7 @@ def get_ptdf_potentially_from_file(ptdf_options, branches_keys,
         ## interfaces from scratch each time
         if interfaces is None:
             interfaces = dict()
-        PTDF._calculate_ptdf_interface(interfaces)
+        PTDF._calculate_interface_limits(interfaces)
         PTDF._set_lazy_limits(ptdf_options)
 
     return PTDF
@@ -110,8 +110,17 @@ class PTDFMatrix(object):
             self.buses_keys = tuple(buses.keys())
         else:
             self.buses_keys = tuple(buses_keys)
+
+        if interfaces is None:
+            interfaces = dict()
+        self.interfaces = interfaces
+        self.interface_keys = tuple(interfaces.keys())
+
         self._branchname_to_index_map = {branch_n : i for i, branch_n in enumerate(self.branches_keys)}
         self._busname_to_index_map = {bus_n : j for j, bus_n in enumerate(self.buses_keys)}
+
+        self.interfacename_to_index_map = \
+                { i_n: idx for idx, i_n in enumerate(self.interface_keys) }
 
         self.branch_limits_array = np.fromiter((branches[branch]['rating_long_term'] for branch in self.branches_keys), float, count=len(self.branches_keys))
         self.branch_limits_array.flags.writeable = False
@@ -123,9 +132,7 @@ class PTDFMatrix(object):
         self._base_point = base_point
         self._calculate()
 
-        if interfaces is None:
-            interfaces = dict()
-        self._calculate_ptdf_interface(interfaces)
+        self._calculate_interface_limits(interfaces)
 
         self._set_lazy_limits(ptdf_options)
 
@@ -142,14 +149,18 @@ class PTDFMatrix(object):
         else:
             branch_mask = None
         ## calculate and store the sensitivites
-        PTDFM_masked, PTDF_I, J0LU, B_dA = tx_calc.calculate_ptdf(self._branches,
-                                                                self._buses,
-                                                                self.branches_keys,
-                                                                self.buses_keys,
-                                                                self._reference_bus,
-                                                                self._base_point,
-                                                                mapping_bus_to_idx=self._busname_to_index_map,
-                                                                branch_mask = branch_mask)
+        PTDFM_masked, J0LU, B_dA, PTDF_I, I = tx_calc.calculate_ptdf(self._branches,
+                                                                     self._buses,
+                                                                     self.branches_keys,
+                                                                     self.buses_keys,
+                                                                     self._reference_bus,
+                                                                     self._base_point,
+                                                                     mapping_bus_to_idx=self._busname_to_index_map,
+                                                                     mapping_branch_to_idx=self._branchname_to_index_map,
+                                                                     branch_mask = branch_mask,
+                                                                     interfaces = self.interfaces,
+                                                                     index_set_interface = self.interface_keys,
+                                                                     )
 
         ## there could be numerical issues
         ## with the solve, in which case
@@ -161,32 +172,25 @@ class PTDFMatrix(object):
         else:
             assert self.masked is True
 
-        self.PTDFM_masked = PTDFM_masked
+        ## calculate PTDFM_I_phase_shift from phase_shift_array
+        self.PTDFM_I_phase_shift = I@self.phase_shift_array
+        self.PTDFM_I_phase_shift.flags.writeable = False
 
-        ## protect the array using numpy
+        self.PTDFM_masked = PTDFM_masked
+        self.PTDFM_I = PTDF_I
+
+        ## protect the arrays using numpy
         self.PTDFM_masked.flags.writeable = False
+        self.PTDFM_I.flags.writeable = False
 
         if self.masked:
             self.J0LU = J0LU
             self.B_dA = B_dA
 
-    def _calculate_ptdf_interface(self, interfaces):
-        self.interface_keys = tuple(interfaces.keys())
+            self.J0LU[0].flags.writeable = False
+            self.J0LU[1].flags.writeable = False
 
-        self.PTDFM_I, self.PTDFM_I_phase_shift \
-                = tx_calc.calculate_interface_sensitivities(interfaces,
-                                            self.interface_keys,
-                                            self.PTDFM_masked,
-                                            self.phase_shift_array,
-                                            self.phi_adjust_array,
-                                            self._branchname_to_index_map)
-
-        ## protect the array using numpy
-        self.PTDFM_I.flags.writeable = False
-        self.PTDFM_I_phase_shift.flags.writeable = False
-
-        self.interfacename_to_index_map = \
-                { i_n: idx for idx, i_n in enumerate(self.interface_keys) }
+    def _calculate_interface_limits(self, interfaces):
 
         def _interface_limit_iter(limit, inf):
             for i_n in self.interface_keys:
@@ -337,8 +341,8 @@ class PTDFMatrix(object):
 
     def get_interface_const(self, interface_name):
         row_idx = self.interfacename_to_index_map[interface_name]
-        PTDF_I_row = self.PTDF_I[row_idx]
-        return PTDFM_I_row.dot(self.phi_adjust_array) + self.PTDFM_I_phase_shift[row_idx]
+        PTDF_I_row = self.PTDFM_I[row_idx]
+        return PTDF_I_row.dot(self.phi_adjust_array) + self.PTDFM_I_phase_shift[row_idx]
 
     def get_interface_ptdf_abs_max(self, interface_name):
         row_idx = self.interfacename_to_index_map[interface_name]
@@ -378,6 +382,8 @@ class PTDFMatrix(object):
 
             PFV = self.B_dA@VA
 
+            ## put reference bus angle in
+            VA = np.insert(VA, _ref_bus_idx, 0.)
         else:
             PFV  = self.PTDFM_masked@NWV
             VA = None
