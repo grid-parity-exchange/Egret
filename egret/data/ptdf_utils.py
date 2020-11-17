@@ -356,6 +356,10 @@ class PTDFLossesMatrix(PTDFMatrix):
         self.LDF.flags.writeable = False
         self.LDF_C.flags.writeable = False
 
+        # for the base-class
+        self.masked = False
+        self.PTDFM_masked = self.PTDFM
+
     def _calculate_phi_from_phi_to(self):
         return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=self._busname_to_index_map)
 
