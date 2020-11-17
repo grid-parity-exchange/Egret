@@ -254,14 +254,10 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
 
-    PTDF = ptdf_utils.get_ptdf_potentially_from_file(ptdf_options, branches_idx, buses_idx)
-    if PTDF is None:
-        PTDF = ptdf_utils.PTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
+    PTDF = ptdf_utils.PTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
 
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
-
-    ptdf_utils.write_ptdf_potentially_to_file(ptdf_options, PTDF)
 
     if ptdf_options['lazy']:
 

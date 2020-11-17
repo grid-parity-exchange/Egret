@@ -22,68 +22,6 @@ from pyomo.environ import value
 from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
 
-def get_ptdf_potentially_from_file(ptdf_options, branches_keys,
-                                   buses_keys, interfaces=None):
-    '''
-    small loop to get a PTDF matrix previously pickled, 
-    returns None if not found
-    '''
-
-    PTDF = None
-    PTDF_pickle = None
-    if ptdf_options['load_from'] is not None:
-        try:
-            PTDF_pickle = pickle.load(open(ptdf_options['load_from'], 'rb'))
-        except:
-            print("Error loading PTDF matrix from pickle file, calculating from start")
-
-    if PTDF_pickle is not None:
-        ## This may be a dict of ptdf_utils.PTDFMatrix objects or just an object
-        if isinstance(PTDF_pickle, dict):
-            for key, PTDFo in PTDF_pickle.items():
-                if _is_consistent_ptdfm(PTDFo, branches_keys, buses_keys):
-                    PTDF = PTDFo
-                    break
-        ## could be a single ptdf dict
-        else:
-            if _is_consistent_ptdfm(PTDF_pickle, branches_keys, buses_keys):
-                PTDF = PTDF_pickle
-
-    if PTDF is not None:
-        ## since it's simple, recalculate the
-        ## interfaces from scratch each time
-        if interfaces is None:
-            interfaces = dict()
-        PTDF._calculate_interface_limits(interfaces)
-        PTDF._set_lazy_limits(ptdf_options)
-
-    return PTDF
-
-def write_ptdf_potentially_to_file(ptdf_options, PTDF):
-    if ptdf_options['save_to'] is not None:
-        pickle.dump(PTDF, open(ptdf_options['save_to'], 'wb'), protocol=4)
-
-def _is_consistent_ptdfm(ptdf_mat, branches_keys, buses_keys):
-    '''
-    Checks the branches and buses keys for agreement when loading
-    PTDF matrix from disk.
-
-    Parameters
-    ----------
-    ptdf_mat : PTDFMatrix or PTDFLossesMatrix
-    branches_keys : iterable of branches
-    buses_keys : iterable of buses
-
-
-    Returns
-    ------
-    bool : True if the branches_keys and buses_keys are consistent
-           with those in the object ptdf_mat
-
-    '''
-    return ( set(branches_keys) == set(ptdf_mat.branches_keys) and \
-             set(buses_keys) == set(ptdf_mat.buses_keys) )
-
 class PTDFMatrix(object):
     '''
     This is a helper 

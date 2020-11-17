@@ -48,10 +48,6 @@ def populate_default_ptdf_options(ptdf_options):
         ptdf_options['max_violations_per_iteration'] = 5
     if 'lazy' not in ptdf_options:
         ptdf_options['lazy'] = True
-    if 'load_from' not in ptdf_options:
-        ptdf_options['load_from'] = None
-    if 'save_to' not in ptdf_options:
-        ptdf_options['save_to'] = None
     if 'branch_kv_threshold' not in ptdf_options:
         ptdf_options['branch_kv_threshold'] = None
     if 'kv_threshold_type' not in ptdf_options:

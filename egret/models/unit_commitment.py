@@ -843,9 +843,6 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     from egret.common.solver_interface import _solve_model
     import time
 
-    ## write the PTDF matrix, if told to
-    ptdf_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
-
     egret_metasolver_status = dict()
 
     start_time = time.time()
