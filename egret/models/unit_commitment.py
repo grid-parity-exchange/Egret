@@ -1242,15 +1242,15 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 ## NOTE: unmonitored lines can't contribute to LMPC
                 branches_idx_masked = PTDF.branches_keys_masked
-                PFD = np.zeros(len(branches_idx_masked))
-                for i,bn in enumerate(branches_idx_masked):
-                    if bn in b.ineq_pf_branch_thermal_bounds:
-                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_bounds[bn]])
-                ## interface constributions to LMP
-                PFID = np.zeros(len(interface_idx))
-                for i,i_n in enumerate(interface_idx):
-                    for i_n in b.ineq_pf_interface_bounds:
-                        PFID[i] += value(m.dual[b.ineq_pf_interface_bounds[i_n]])
+                PFD = np.fromiter( ( value(m.dual[b.ineq_pf_branch_thermal_bounds[bn]])
+                                      if bn in b.ineq_pf_branch_thermal_bounds else
+                                      0. for i,bn in enumerate(branches_idx_masked) ),
+                                      float, count=len(branches_idx_masked))
+                ## interface contributions to LMP
+                PFID = np.fromiter( ( value(m.dual[b.ineq_pf_interface_bounds[i_n]])
+                                      if i_n in b.ineq_pf_interface_bounds else
+                                      0. for i,i_n in enumerate(interface_idx) ),
+                                      float, count=len(interface_idx))
 
                 ## TODO: PFD is likely to be sparse, implying we just need a few
                 ##       rows of the PTDF matrix (or columns in its transpose).
