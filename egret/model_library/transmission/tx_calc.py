@@ -556,7 +556,15 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
 def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,reference_bus,
                                  base_point=BasePointType.FLATSTART,
-                                 mapping_bus_to_idx=None):
+                                 mapping_bus_to_idx=None,
+                                 mapping_branch_to_idx=None,
+                                 interfaces=None,
+                                 index_set_interface=None):
+
+    if interfaces is None:
+        assert index_set_interface is None
+    if index_set_interface is None:
+        assert interfaces is None
 
     _len_bus = len(index_set_bus)
 
@@ -587,13 +595,47 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
     M = (At@J)[ref_bus_mask,:][:,ref_bus_mask]
 
     # (B_d A) with reference bus column removed
-    B_dA = J[:,ref_bus_mask] 
+    B_dA = J[:,ref_bus_mask]
 
     ## LU factorization
-    MLU = M.A
-    MLU_MP = la.lu_factor(MLU, overwrite_a=True, check_finite=False)
+    MLU_MP = scipy.sparse.linalg.splu(M)
 
-    return MLU_MP, B_dA, ref_bus_mask
+    if interfaces is not None:
+        if mapping_bus_to_idx is None:
+            mapping_branch_to_idx = {branch_n: i for i, branch_n in enumerate(index_set_branch)}
+        I = _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx)
+        B_dA_I = I@B_dA
+
+    return MLU_MP, B_dA, ref_bus_mask, B_dA_I, I
+
+def _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx):
+    """
+    calculate an interface matrix, where a the rows correspond to each interface, and
+    the columns correspond to each branch
+    """
+    _len_interface = len(index_set_interface)
+    _len_branch = len(mapping_branch_to_idx)
+
+    row = []
+    col = []
+    data = []
+
+    for idx, i_n in enumerate(index_set_interface):
+        interface = interfaces[i_n]
+        for l, val in zip(interface['lines'], interface['line_orientation']):
+            if val == 0:
+                continue
+            elif val == -1 or val == 1:
+                branch_idx = mapping_branch_to_idx[l]
+                row.append(idx)
+                col.append(branch_idx)
+                data.append(val)
+            else:
+                ## TODO: do we need enforce this requirement?
+                raise Exception("Interface {} has line {} with line_orientation {} "
+                        "not in [-1,0,1].".format(i_n, l, val))
+    I = sp.coo_matrix((data,(row,col)),shape=(_len_interface,_len_branch))
+    return I.tocsr()
 
 def _calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART):
     _len_bus = len(index_set_bus)
@@ -967,7 +1009,7 @@ def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus
         data.append(1)
 
     adjacency_matrix = sp.coo_matrix((data,(row,col)), shape=(_len_bus, _len_branch))
-    return adjacency_matrix.tocsr()
+    return adjacency_matrix.tocsc()
 
 
 def calculate_absolute_adjacency_matrix(adjacency_matrix):

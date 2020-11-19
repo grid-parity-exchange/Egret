@@ -14,7 +14,7 @@ modifying the data dictionary
 import abc
 import pickle
 import numpy as np
-import scipy.linalg as la
+import scipy.sparse as sp
 import egret.model_library.transmission.tx_calc as tx_calc
 
 from egret.model_library.defn import BasePointType, ApproximationType
@@ -94,12 +94,14 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self.branch_limits_array = np.fromiter((branches[branch]['rating_long_term'] for branch in self.branches_keys), float, count=len(self.branches_keys))
         self.branch_limits_array.flags.writeable = False
 
-        self._base_point = base_point
-        self._calculate()
-
         if interfaces is None:
             interfaces = dict()
-        self._calculate_ptdf_interface(interfaces)
+        self.interfaces = interfaces
+        self._calculate_interface_limits()
+
+        self._base_point = base_point
+        self._calculate_ptdf_factorization()
+
 
         self._set_lazy_limits(ptdf_options)
 
@@ -108,51 +110,32 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         # to prevent doing extra work
         # (esp. important for UC)
         self._ptdf_rows = dict()
-
-    def _calculate(self):
-        logger.info("Calculating PTDF Matrix Factorization")
-        self._calculate_ptdf_factorization()
-        self._calculate_phi_adjust()
-        self._calculate_phase_shift_flow_adjuster()
-        #self._calculate_phase_shift_vector()
+        self._interface_rows = dict()
 
     def _calculate_ptdf_factorization(self):
-        ## calculate and store the PTDF matrix
-        MLU, B_dA, ref_bus_mask = tx_calc.calculate_ptdf_factorization(self._branches,
+        logger.info("Calculating PTDF Matrix Factorization")
+        MLU, B_dA, ref_bus_mask, B_dA_I, I = tx_calc.calculate_ptdf_factorization(self._branches,
                                                                        self._buses,self.branches_keys,
                                                                        self.buses_keys_full,
                                                                        self._reference_bus,
                                                                        self._base_point,
-                                                                       self._busname_to_index_map_full)
+                                                                       mapping_bus_to_idx=self._busname_to_index_map_full,
+                                                                       mapping_branch_to_idx=self._branchname_to_index_map,
+                                                                       interfaces = self.interfaces,
+                                                                       index_set_interface = self.interface_keys,)
 
         self.MLU = MLU
         self.B_dA = B_dA
-        self.ref_bus_mask = ref_bus_mask
+        self.B_dA_I = B_dA_I
+        self.I = I
 
-        ## protect the arrays using numpy
-        self.MLU[0].flags.writeable = False
-        self.MLU[1].flags.writeable = False
-        ## TODO write-protect this, or maybe
-        # self.B_dA.flags.writeable = False
-        self.ref_bus_mask.flags.writeable = False
+        self._calculate_phase_shift_flow_adjuster()
+        self._calculate_phi_adjust(ref_bus_mask)
 
-    def _calculate_ptdf_interface(self, interfaces):
-        self.interface_keys = tuple(interfaces.keys())
+        self.phase_shift_flow_adjuster_array_interface = I@self.phase_shift_flow_adjuster_array
 
-        ## TODO: figure this out
-        '''
-        self.PTDFM_I, self.PTDFM_I_const \
-                = tx_calc.calculate_interface_sensitivities(interfaces,
-                                            self.interface_keys,
-                                            self.PTDFM,
-                                            self.phase_shift_array,
-                                            self.phi_adjust_array,
-                                            self._branchname_to_index_map)
-
-        ## protect the array using numpy
-        self.PTDFM_I.flags.writeable = False
-        self.PTDFM_I_const.flags.writeable = False
-        '''
+    def _calculate_interface_limits(self):
+        self.interface_keys = tuple(self.interfaces.keys())
 
         self.interfacename_to_index_map = \
                 { i_n: idx for idx, i_n in enumerate(self.interface_keys) }
@@ -167,7 +150,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self.interface_max_limits = np.fromiter(_interface_limit_iter('maximum_limit', np.inf), float, count=len(self.interface_keys))
         self.interface_min_limits = np.fromiter(_interface_limit_iter('minimum_limit', -np.inf), float, count=len(self.interface_keys))
 
-    def _calculate_phi_adjust(self):
+    def _calculate_phi_adjust(self, ref_bus_mask):
         phi_from, phi_to = tx_calc.calculate_phi_constant(self._branches,
                                                           self.branches_keys,
                                                           self.buses_keys_full,ApproximationType.PTDF,
@@ -179,16 +162,15 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self._phi_to = phi_to
 
         phi_adjust_array = phi_from-phi_to
+        phi_adjust_array = phi_adjust_array[ref_bus_mask]
 
         ## sum across the rows to get the total impact, and convert
         ## to dense for fast operations later
-        self.phi_adjust_array = phi_adjust_array.sum(axis=1).T.A[0][self.ref_bus_mask]
-
-        ## protect the array using numpy
-        self.phi_adjust_array.flags.writeable = False
+        self.phi_adjust_array = sp.csc_matrix(phi_adjust_array.sum(axis=1))
 
     def _calculate_phase_shift_flow_adjuster(self):
         
+        ## MAKE THIS SPARSE
         phase_shift_array = np.fromiter((
             -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) 
             if (branch['branch_type'] == 'transformer') else 
@@ -196,9 +178,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
             for branch in (self._branches[bn] for bn in self.branches_keys)
                                         ), float, count=len(self.branches_keys))
 
-        self.phase_shift_flow_adjuster_array = phase_shift_array
-        ## protect the array using numpy
-        self.phase_shift_flow_adjuster_array.flags.writeable = False
+        self.phase_shift_flow_adjuster_array = sp.csr_matrix(phase_shift_array).T
 
     def _calculate_phase_shift_vector(self):
         self.phase_shift_vector = tx_calc.calculate_phase_shift_vector(self._branches, self.branches_keys)
@@ -294,9 +274,18 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         else:
             # calculate row
             branch_idx = self._branchname_to_index_map[branch_name]
-            PTDF_row = la.lu_solve(self.MLU, self.B_dA[branch_idx].A[0], trans=1, overwrite_b=True, check_finite=False).T
+            PTDF_row = self.MLU.solve(self.B_dA[branch_idx].A[0], trans='T')
             self._ptdf_rows[branch_name] = PTDF_row
         return PTDF_row
+
+    def _get_interface_row(self, interface_name):
+        if interface_name in self._interface_rows:
+            I_row = self._interface_rows[interface_name]
+        else:
+            interface_idx = self.interfacename_to_index_map[interface_name]
+            I_row = self.MLU.solve(self.B_dA_I[interface_idx].A[0], trans='T')
+            self._interface_rows[interface_name]
+        return I_row
 
     def get_branch_ptdf_iterator(self, branch_name):
         yield from zip(self.buses_keys, self._get_ptdf_row(branch_name))
@@ -308,37 +297,50 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
     def get_branch_const(self, branch_name):
         PTDF_row = self._get_ptdf_row(branch_name)
         branch_idx = self._branchname_to_index_map[branch_name]
-                ## phi adj                        +     phase shift
-        return PTDF_row.dot(self.phi_adjust_array)+self.phase_shift_flow_adjuster_array[branch_idx]
+        phi_adj = PTDF_row@self.phi_adjust_array
+            ## phi adj   +     phase shift
+        return phi_adj[0]+self.phase_shift_flow_adjuster_array[branch_idx,0]
 
     def get_interface_const(self, interface_name):
-        ## TODO: implement ME!
-        pass
+        I_row = self._get_interface_row(interface_name)
+        i_idx = self.interfacename_to_index_map[interface_name]
+        phi_adj = I_row@self.phi_adjust_array
+            ## phi adj   +     phase shift
+        return phi_adj[0]+self.phase_shift_flow_adjuster_array_interface[i_idx,0]
 
     def get_interface_ptdf_abs_max(self, interface_name):
-        ## TODO: implement ME!
-        pass
+        I_row = self._get_interface_row(interface_name)
+        return np.abs(I_row).max()
 
     def get_interface_ptdf_iterator(self, interface_name):
-        ## TODO: implement ME!
-        pass
+        yield from zip(self.buses_keys, self._get_interface_row(interface_name))
+
+    def _calculate_PFV(self, mb, B_dA):
+        NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys), float, count=len(self.buses_keys))
+        NWV += self.phi_adjust_array.T
+
+        VA = self.MLU.solve(NWV.A[0])
+
+        # shape VA explicitly as a column vector
+        # (needed for some 0-dim arrays)
+        VA.shape = (VA.shape[0],1)
+
+        PFV  = B_dA@VA
+        PFV += self.phase_shift_flow_adjuster_array
+
+        PFV_I = self.B_dA_I@VA
+        PFV_I += self.phase_shift_flow_adjuster_array_interface
+
+        ## make back to row-looking vectors
+        PFV = PFV.T
+        PFV_I = PFV_I.T
+        return PFV.A[0], PFV_I.A[0]
+
+    def calculate_masked_PFV(self, mb):
+        return self._calculate_PFV(mb, self.B_dA_masked)
 
     def calculate_PFV(self, mb):
-        NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys), float, count=len(self.buses_keys))
-        NWV += self.phi_adjust_array
-
-        deltas = la.lu_solve(self.MLU, NWV, overwrite_b=True, check_finite=False)
-        del NWV
-
-        PFV  = self.B_dA.dot(deltas)
-        PFV += self.phase_shift_flow_adjuster_array_masked
-
-        #PFV_I = self.PTDFM_I.dot(NWV)
-        #PFV_I += self.PTDFM_I_const
-        PFV_I = None
-    
-        return PFV, PFV_I
-
+        return self._calculate_PFV(mb, self.B_dA)
 
 class PTDFMatrix(_PTDFManagerBase):
     '''
