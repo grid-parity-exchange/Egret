@@ -174,6 +174,38 @@ def gens_by_bus(buses, gens):
 
     return gens_by_bus
 
+def over_gen_limit(load, gens, gen_maxs):
+    '''
+    Calculates the maximum amount of over-generation
+    given a load and set of generators with
+    associated maximum outputs
+    '''
+    max_over_gen = 0.
+    if load < 0.:
+        max_over_gen += -load
+    for g in gens:
+        g_max = gen_maxs[g]
+        if g_max > 0:
+            max_over_gen += g_max
+
+    return max_over_gen
+
+def load_shed_limit(load, gens, gen_mins):
+    '''
+    Calculates the maximum amount of load shedding
+    given a load and set of generators with
+    associated minimum outputs
+    '''
+    max_load_shed = 0.
+    if load > 0.:
+        max_load_shed += load
+    for g in gens:
+        g_min = gen_mins[g]
+        if g_min < 0:
+            max_load_shed += -g_min
+
+    return max_load_shed
+
 ## attributes which are scaled for power flow models
 ancillary_service_stack = [
                             'reserve_requirement',
