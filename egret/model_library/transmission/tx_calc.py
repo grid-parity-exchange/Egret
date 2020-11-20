@@ -14,6 +14,8 @@ different computations for transmission models
 import math
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg
+import scipy.linalg as la
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
@@ -300,17 +302,15 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             b = calculate_susceptance(branch)/tau
 
         if base_point == BasePointType.FLATSTART:
-            vn = 1.
-            vm = 1.
-            tn = 0.
-            tm = 0.
+            val = -b
+
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
-        val = -b * vn * vm * cos(tn - tm)
+            val = -b * vn * vm * cos(tn - tm)
 
         idx_col = mapping_bus_to_idx[from_bus]
         row.append(idx_row)
@@ -323,7 +323,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         data.append(-val)
 
     J11 = sp.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
-    return J11.tocsr()
+    return J11.tocsc()
 
 
 def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
@@ -373,6 +373,25 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     L11 = sp.coo_matrix((data,(row,col)),shape=(_len_branch,_len_bus))
     return L11.tocsr()
 
+def calculate_phase_shift_flow_adjuster(branches, index_set_branch):
+    _len_branch = len(index_set_branch)
+    row = []
+    col = []
+    data = []
+
+    idx_col = 0
+
+    for idx_row, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        if branch['branch_type'] == 'transformer' and branch['transformer_phase_shift'] != 0.:
+            val = -(1./branch['reactance']) * (math.radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio'])
+
+            row.append(idx_row)
+            col.append(idx_col)
+            data.append(val)
+
+    phase_shift_flow_adjuster = sp.coo_matrix((data, (row,col)), shape=(_len_branch,1))
+    return phase_shift_flow_adjuster.tocsc()
 
 def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
     """
@@ -463,7 +482,6 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
 
     return phi_loss_from.tocsr(), phi_loss_to.tocsr()
 
-
 def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
     """
     Compute the power flow constant for the taylor series expansion of real power flow as
@@ -547,6 +565,89 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
     return pfl_constant
 
+def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,reference_bus,
+                                 base_point=BasePointType.FLATSTART,
+                                 mapping_bus_to_idx=None,
+                                 mapping_branch_to_idx=None,
+                                 interfaces=None,
+                                 index_set_interface=None):
+
+    if interfaces is None:
+        assert index_set_interface is None
+    if index_set_interface is None:
+        assert interfaces is None
+
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
+
+    ## check if the network is connected
+    connected = check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx)
+
+    if not connected:
+        raise RuntimeError("Network is not connected, cannot use PTDF formulation")
+
+    #(B_d A)
+    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
+    #(A^T)
+    At = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
+
+    ref_bus_mask = np.ones(_len_bus, dtype=bool)
+    ref_bus_mask[_ref_bus_idx] = False
+
+    # M is now (A^T B_d A) with
+    # row and column of reference
+    # bus removed
+    M = (At@J)[ref_bus_mask,:][:,ref_bus_mask]
+
+    # (B_d A) with reference bus column removed
+    B_dA = J[:,ref_bus_mask]
+
+    ## LU factorization
+    MLU_MP = scipy.sparse.linalg.splu(M)
+
+    if interfaces is not None:
+        if mapping_bus_to_idx is None:
+            mapping_branch_to_idx = {branch_n: i for i, branch_n in enumerate(index_set_branch)}
+        I = _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx)
+        B_dA_I = I@B_dA
+
+    return MLU_MP, B_dA, ref_bus_mask, B_dA_I, I
+
+def _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx):
+    """
+    calculate an interface matrix, where a the rows correspond to each interface, and
+    the columns correspond to each branch
+    """
+    _len_interface = len(index_set_interface)
+    _len_branch = len(mapping_branch_to_idx)
+
+    row = []
+    col = []
+    data = []
+
+    for idx, i_n in enumerate(index_set_interface):
+        interface = interfaces[i_n]
+        for l, val in zip(interface['lines'], interface['line_orientation']):
+            if val == 0:
+                continue
+            elif val == -1 or val == 1:
+                branch_idx = mapping_branch_to_idx[l]
+                row.append(idx)
+                col.append(branch_idx)
+                data.append(val)
+            else:
+                ## TODO: do we need enforce this requirement?
+                raise Exception("Interface {} has line {} with line_orientation {} "
+                        "not in [-1,0,1].".format(i_n, l, val))
+    I = sp.coo_matrix((data,(row,col)),shape=(_len_interface,_len_branch))
+    return I
+
 
 def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """
@@ -588,27 +689,43 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
     M = A@J
 
-    ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
-    ref_bus_col = sp.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
- 
-    J0 = sp.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
-
     if sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch:
         ## the resulting matrix after inversion will be fairly dense,
         ## the scipy documenation recommends using dense for the inversion
         ## as well
+
+        ref_bus_mask = np.ones(_len_bus, dtype=bool)
+        ref_bus_mask[_ref_bus_idx] = False
+
+        # M is now (A^T B_d A) with
+        # row and column of reference
+        # bus removed
+        J0 = M[ref_bus_mask,:][:,ref_bus_mask]
+
+        # (B_d A) with reference bus column removed
+        B_dA = J[:,ref_bus_mask].A
+
         if connected:
             try:
-                SENSI = np.linalg.inv(J0.A)
+                PTDF = np.linalg.solve(J0.T.A, B_dA.T).T
             except np.linalg.LinAlgError:
                 logger.warning("Matrix not invertible. Calculating pseudo-inverse instead.")
                 SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
+                PTDF = np.matmul(B_dA,SENSI)
         else:
             logger.warning("Using pseudo-inverse method as network is disconnected")
             SENSI = np.linalg.pinv(J0.A,rcond=1e-7)
-        SENSI = SENSI[:-1,:-1]
-        PTDF = np.matmul(J.A,SENSI)
+            PTDF = np.matmul(B_dA,SENSI)
+
+        # insert 0 column for reference bus
+        PTDF = np.insert(PTDF, _ref_bus_idx, np.zeros(_len_branch), axis=1)
+
     elif len(sparse_index_set_branch) < _len_branch:
+        ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
+        ref_bus_col = sp.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
+ 
+        J0 = sp.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
+
         B = np.array([], dtype=np.int64).reshape(_len_bus + 1,0)
         _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
 
@@ -618,7 +735,7 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         for idx, branch_name in _sparse_mapping_branch.items():
             b = np.zeros((_len_branch,1))
             b[idx] = 1
-            _tmp = np.matmul(J.transpose(),b)
+            _tmp = J.transpose()@b
             _tmp = np.vstack([_tmp,0])
             B = np.concatenate((B,_tmp), axis=1)
         row_idx = list(_sparse_mapping_branch.keys())
@@ -812,7 +929,7 @@ def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus
         data.append(1)
 
     adjacency_matrix = sp.coo_matrix((data,(row,col)), shape=(_len_bus, _len_branch))
-    return adjacency_matrix.tocsr()
+    return adjacency_matrix.tocsc()
 
 
 def calculate_absolute_adjacency_matrix(adjacency_matrix):

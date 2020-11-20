@@ -569,7 +569,7 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     if abs_ptdf_tol is None:
         abs_ptdf_tol = 0.
 
-    const = PTDF.get_branch_phase_shift(branch_name) + PTDF.get_branch_phi_adj(branch_name)
+    const = PTDF.get_branch_const(branch_name)
 
     max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
 

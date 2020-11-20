@@ -843,9 +843,6 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     from egret.common.solver_interface import _solve_model
     import time
 
-    ## write the PTDF matrix, if told to
-    ptdf_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
-
     egret_metasolver_status = dict()
 
     start_time = time.time()
@@ -1212,6 +1209,7 @@ def _save_uc_results(m, relaxed):
     elif m.power_balance == 'ptdf_power_flow':
         flows_dict = dict()
         interface_flows_dict = dict()
+        voltage_angle_dict = dict()
         if relaxed:
             lmps_dict = dict()
         for mt in m.TimePeriods:
@@ -1219,47 +1217,27 @@ def _save_uc_results(m, relaxed):
             PTDF = b._PTDF
 
             branches_idx = PTDF.branches_keys
-            PTDFM = PTDF.PTDFM
-
-            NWV = np.array([value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
-            NWV += PTDF.phi_adjust_array
-
-            PFV = np.dot(PTDFM, NWV)
-            PFV += PTDF.phase_shift_array
+            PFV, PFV_I, VA = PTDF.calculate_PFV(b)
 
             flows_dict[mt] = dict()
             for i,bn in enumerate(branches_idx):
                 flows_dict[mt][bn] = PFV[i]
 
             interface_idx = PTDF.interface_keys
-            PTDFM_I = PTDF.PTDFM_I
-            PFIV = np.dot(PTDFM_I, NWV)
-            PFIV += PTDF.PTDFM_I_const
-
             interface_flows_dict[mt] = dict()
             for i, i_n in enumerate(interface_idx):
-                interface_flows_dict[mt][i_n] = PFIV[i]
+                interface_flows_dict[mt][i_n] = PFV_I[i]
+
+            buses_idx = PTDF.buses_keys
+            voltage_angle_dict[mt] = dict()
+            for i,bn in enumerate(buses_idx):
+                voltage_angle_dict[mt][bn] = VA[i]
 
             if relaxed:
-                PFD = np.zeros(len(branches_idx))
-                for i,bn in enumerate(branches_idx):
-                    if bn in b.ineq_pf_branch_thermal_bounds:
-                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_bounds[bn]])
-                ## interface constributions to LMP
-                PFID = np.zeros(len(interface_idx))
-                for i,i_n in enumerate(interface_idx):
-                    for i_n in b.ineq_pf_interface_bounds:
-                        PFID[i] += value(m.dual[b.ineq_pf_interface_bounds[i_n]])
-
-                ## TODO: PFD is likely to be sparse, implying we just need a few
-                ##       rows of the PTDF matrix (or columns in its transpose).
-                LMPC = np.dot(-PTDFM.T, PFD)
-                LMPI = np.dot(-PTDFM_I.T, PFID)
-                LMPE = value(m.dual[b.eq_p_balance])
-                buses_idx = PTDF.buses_keys
+                LMP = PTDF.calculate_LMP(b, m.dual, b.eq_p_balance)
                 lmps_dict[mt] = dict()
                 for i,bn in enumerate(buses_idx):
-                    lmps_dict[mt][bn] = LMPE + LMPC[i] + LMPI[i]
+                    lmps_dict[mt][bn] = LMP[i]
 
         for i,i_dict in interfaces.items():
             pf_dict = _preallocated_list(data_time_periods)
@@ -1291,8 +1269,10 @@ def _save_uc_results(m, relaxed):
             for dt, mt in enumerate(m.TimePeriods):
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
                 pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
+                va_dict[dt] = voltage_angle_dict[mt][b]
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             b_dict['pl'] = _time_series_dict(pl_dict)
+            b_dict['va'] = _time_series_dict(va_dict)
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
