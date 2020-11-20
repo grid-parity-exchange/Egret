@@ -71,7 +71,7 @@ if use_factorization:
     tt_timer.toc(f'GOT PTDF row!')
 
     tt_timer.tic(f'calculating system flows')
-    PFV, _ = PTDF.calculate_PFV(mb)
+    PFV, _, _ = PTDF.calculate_PFV(mb)
     tt_timer.toc(f'calculated system flows')
 
     #tt_timer.tic(f'calculating whole PTDF matrix using back solve')
@@ -86,7 +86,7 @@ if use_factorization:
     tt_timer.toc(f'GOT PTDF row!')
 
     tt_timer.tic(f'calculating system flows')
-    PFV, _ = self.calculate_PFV(mb)
+    PFV, _, VA = self.calculate_PFV(mb)
     tt_timer.toc(f'calculated system flows')
 
     self.get_branch_const(index_set_branch[0])

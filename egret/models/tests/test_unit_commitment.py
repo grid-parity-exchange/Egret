@@ -245,23 +245,3 @@ def test_uc_ptdf_termination():
     md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, return_results=True, **kwargs)
 
     assert results.egret_metasolver['iterations'] == 1
-
-def test_uc_ptdf_serialization_deserialization():
-
-    test_name = 'tiny_uc_tc_2' ## based on tiny_uc_1
-    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
-
-    md_in = ModelData(json.load(open(input_json_file_name, 'r')))
-
-    ptdf_file_name = test_name+'.pickle'
-
-    kwargs = {'ptdf_options' : {'save_to': ptdf_file_name}}
-    md_serialization = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
-
-    ## ensure the file is present
-    assert os.path.isfile(ptdf_file_name)
-
-    kwargs = {'ptdf_options' : {'load_from': ptdf_file_name}}
-    md_deserialization = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model('ptdf_power_flow'), **kwargs)
-
-    assert math.isclose(md_serialization.data['system']['total_cost'], md_deserialization.data['system']['total_cost'], rel_tol=rel_tol)

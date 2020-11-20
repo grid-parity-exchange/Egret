@@ -140,7 +140,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
     ## PFV -- power flow vector
     ## PFV_I -- interface power flow vector
-    PFV, PFV_I = PTDF.calculate_PFV(mb)
+    PFV, PFV_I, _ = PTDF.calculate_masked_PFV(mb)
 
     ## get the lines we're monitoring
     idx_monitored = mb._idx_monitored
@@ -206,89 +206,28 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
         lazy_keys = {'gt_viol', 'lt_viol'}
         int_lazy_keys = {'max_viol_int', 'min_viol_int'}
 
-        ## gather the candidate max violations
-        ## max_viol - holds the maximum violation amount
-        ## sel_viol_type - key into tracking_lazy of the max violation
-        ## sel_viol_idx - line index (into PTDF.PTDFM) or interface index
-        ##                (into PTDF.PTDFM_I) of the max violation
-        ## sel_viol_idx_idx - index of the line sel_viol_idx in the list tracking_lazy[sel_viol_type]
-        max_viol, sel_viol_type, sel_viol_idx, sel_viol_idx_idx = None, None, None, None
-        for viol_type, viol_slicer in tracking_lazy.items():
-            if len(viol_slicer) > 0:
-                lazy_array = lazy_arrays[viol_type]
-                ## get the worst violations, only checking
-                ## amoung those we found to be violated
-                idx = np.argmax(lazy_array[viol_slicer])
-                val = lazy_array[viol_slicer[idx]]
-                if max_viol is None or val > max_viol:
-                    max_viol = val
-                    sel_viol_type = viol_type
-                    sel_viol_idx = viol_slicer[idx]
-                    sel_viol_idx_idx = idx
-
-        ## once we add the violation to either
-        ## viol_lazy or viol_int_lazy, delete
-        ## it from our list of candidates
-        if sel_viol_type in lazy_keys:
-            viol_lazy.add(sel_viol_idx)
-            del tracking_lazy[sel_viol_type][sel_viol_idx_idx]
-        elif sel_viol_type in int_lazy_keys:
-            viol_int_lazy.add(sel_viol_idx)
-            del tracking_lazy[sel_viol_type][sel_viol_idx_idx]
-        else:
-            raise Exception("Unexpected sel_viol_type {}".format(sel_viol_type))
-
-        if max_viol_add > 1:
-            ## this will be the sum of the current PTDF
-            ## "rows" we're adding at this pass
-            ptdf_lin = np.zeros(len(PTDF.buses_keys))
-
-            ## the matrix associated with each violation type,
-            ## for ease
-            tracking_lazy_matrix = { 'max_viol_int' : PTDF.PTDFM_I,
-                                     'min_viol_int' : PTDF.PTDFM_I,
-                                     'gt_viol' : PTDF.PTDFM_masked,
-                                     'lt_viol' : PTDF.PTDFM_masked,
-                                    }
 
         ## gather other violations upto the max_viol_add limit
-        for _ in range(max_viol_add-1):
+        for _ in range(max_viol_add):
 
-            ## first add the violation selected at the last
-            ## interation to the ptdf_lin, which helps track
-            ## the current linear subspace the violations added
-            ## thus far live in
-            if sel_viol_type in lazy_keys:
-                ptdf_lin += PTDF.PTDFM_masked[sel_viol_idx]
-            elif sel_viol_type in int_lazy_keys:
-                ptdf_lin += PTDF.PTDFM_I[sel_viol_idx]
-            else:
-                raise Exception("Unexpected sel_viol_type {}".format(sel_viol_type))
-
-            ## gather a candidate violation
-            ## min_viol_orth - holds the combinarion of orthogonality and violation
-            ##                 that is minimum (we take the inverse of the violation
-            ##                 amount for calculating this quantity)
-            ## sel_viol_type - key into tracking_lazy of the min violation orth
+            ## gather the candidate max violations
+            ## max_viol - holds the maximum violation amount
+            ## sel_viol_type - key into tracking_lazy of the max violation
             ## sel_viol_idx - line index (into PTDF.PTDFM) or interface index
-            ##                (into PTDF.PTDFM_I) of the min violation orth
+            ##                (into PTDF.PTDFM_I) of the max violation
             ## sel_viol_idx_idx - index of the line sel_viol_idx in the list tracking_lazy[sel_viol_type]
-            min_viol_orth, sel_viol_type, sel_viol_idx, sel_viol_idx_idx = None, None, None, None
+
+            max_viol, sel_viol_type, sel_viol_idx, sel_viol_idx_idx = None, None, None, None
             ## do the interfaces first for tie breakers
             for viol_type, viol_slicer in tracking_lazy.items():
                 if len(viol_slicer) > 0:
-                    ## get all the rows for this violation type
-                    viol_rows = tracking_lazy_matrix[viol_type][viol_slicer]
-                    ## get the vector of orthogonality
-                    orthogonality = np.absolute(np.dot(viol_rows, ptdf_lin))
-                    ## divide in place by the violation amount, so
-                    ## what we select is slaced by both the orthogonality
-                    ## and the violation amount
-                    orthogonality /= lazy_arrays[viol_type][viol_slicer]
-                    idx = np.argmin(orthogonality)
-                    val = orthogonality[idx]
-                    if min_viol_orth is None or val < min_viol_orth:
-                        min_viol_orth = val
+                    lazy_array = lazy_arrays[viol_type]
+                    ## get the worst violations, only checking
+                    ## amoung those we found to be violated
+                    idx = np.argmax(lazy_array[viol_slicer])
+                    val = lazy_array[viol_slicer[idx]]
+                    if max_viol is None or val > max_viol:
+                        max_viol = val
                         sel_viol_type = viol_type
                         sel_viol_idx = viol_slicer[idx]
                         sel_viol_idx_idx = idx

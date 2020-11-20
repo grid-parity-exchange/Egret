@@ -127,7 +127,6 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self.MLU = MLU
         self.B_dA = B_dA
         self.B_dA_I = B_dA_I
-        self.I = I
 
         self._calculate_phase_shift_flow_adjuster()
         self._calculate_phi_adjust(ref_bus_mask)
@@ -142,7 +141,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
 
         def _interface_limit_iter(limit, inf):
             for i_n in self.interface_keys:
-                interface = interfaces[i_n]
+                interface = self.interfaces[i_n]
                 if limit in interface and interface[limit] is not None:
                     yield interface[limit]
                 else:
@@ -284,7 +283,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         else:
             interface_idx = self.interfacename_to_index_map[interface_name]
             I_row = self.MLU.solve(self.B_dA_I[interface_idx].A[0], trans='T')
-            self._interface_rows[interface_name]
+            self._interface_rows[interface_name] = I_row
         return I_row
 
     def get_branch_ptdf_iterator(self, branch_name):
@@ -315,7 +314,10 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
     def get_interface_ptdf_iterator(self, interface_name):
         yield from zip(self.buses_keys, self._get_interface_row(interface_name))
 
-    def _calculate_PFV(self, mb, B_dA):
+    def _insert_reference_bus(self, bus_array, val):
+        return np.insert(bus_array, self._busname_to_index_map_full[self._reference_bus], val)
+
+    def _calculate_PFV(self, mb, masked):
         NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys), float, count=len(self.buses_keys))
         NWV += self.phi_adjust_array.T
 
@@ -325,8 +327,12 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         # (needed for some 0-dim arrays)
         VA.shape = (VA.shape[0],1)
 
-        PFV  = B_dA@VA
-        PFV += self.phase_shift_flow_adjuster_array
+        if masked:
+            PFV  = self.B_dA_masked@VA
+            PFV += self.phase_shift_flow_adjuster_array_masked
+        else:
+            PFV  = self.B_dA@VA
+            PFV += self.phase_shift_flow_adjuster_array
 
         PFV_I = self.B_dA_I@VA
         PFV_I += self.phase_shift_flow_adjuster_array_interface
@@ -334,13 +340,42 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         ## make back to row-looking vectors
         PFV = PFV.T
         PFV_I = PFV_I.T
-        return PFV.A[0], PFV_I.A[0]
+
+        ## VA is reversed in sign
+        VA = -VA.T
+
+        return PFV.A[0], PFV_I.A[0], self._insert_reference_bus(VA[0], 0.)
 
     def calculate_masked_PFV(self, mb):
-        return self._calculate_PFV(mb, self.B_dA_masked)
+        return self._calculate_PFV(mb, masked=True)
 
     def calculate_PFV(self, mb):
-        return self._calculate_PFV(mb, self.B_dA)
+        return self._calculate_PFV(mb, masked=False)
+
+    def calculate_LMP(self, mb, dual, bus_balance_constr):
+        ## NOTE: unmonitored lines cannot contribute to LMPC
+        PFD = np.fromiter( ( value(dual[mb.ineq_pf_branch_thermal_bounds[bn]])
+                              if bn in mb.ineq_pf_branch_thermal_bounds else
+                              0. for i,bn in enumerate(self.branches_keys_masked) ),
+                              float, count=len(self.branches_keys_masked))
+
+        ## interface constributes to LMP
+        PFID = np.fromiter( ( value(dual[mb.ineq_pf_interface_bounds[i_n]])
+                               if i_n in mb.ineq_pf_interface_bounds else
+                               0. for i,i_n in enumerate(self.interface_keys) ),
+                               float, count=len(self.interface_keys))
+
+        B_PFD = -self.B_dA_masked.T@PFD
+        I_PFD = -self.B_dA_I.T@PFID
+
+        LMPC = self.MLU.solve(B_PFD, trans='T')
+        LMPI = self.MLU.solve(I_PFD, trans='T')
+
+        LMPE = value(dual[bus_balance_constr])
+
+        LMP = LMPE + LMPC + LMPI
+
+        return self._insert_reference_bus(LMP, LMPE)
 
 class PTDFMatrix(_PTDFManagerBase):
     '''

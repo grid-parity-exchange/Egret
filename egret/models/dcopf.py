@@ -302,14 +302,10 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
 
-    PTDF = ptdf_utils.get_ptdf_potentially_from_file(ptdf_options, branches_idx, buses_idx)
-    if PTDF is None:
-        PTDF = ptdf_utils.PTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
+    PTDF = ptdf_utils.VirtualPTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
 
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
-
-    ptdf_utils.write_ptdf_potentially_to_file(ptdf_options, PTDF)
 
     if ptdf_options['lazy']:
 
@@ -512,23 +508,12 @@ def solve_dcopf(model_data,
     ## calculate the LMPC (LMP congestion) using numpy
     if dcopf_model_generator == create_ptdf_dcopf_model:
         PTDF = m._PTDF
-        PTDFM = PTDF.PTDFM
+
+        PFV, _, VA = PTDF.calculate_PFV(m)
+
         branches_idx = PTDF.branches_keys
-
-        NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
-        NWV += PTDF.phi_adjust_array
-
-        PFV  = PTDFM.dot(NWV)
-        PFV += PTDF.phase_shift_array
-
-        PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
             branches[bn]['pf'] = PFV[i]
-            if bn in m.ineq_pf_branch_thermal_bounds:
-                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_bounds[bn]])
-        ## TODO: PFD is likely to be sparse, implying we just need a few
-        ##       rows of the PTDF matrix (or columns in its transpose).
-        LMPC = -PTDFM.T.dot(PFD)
     else:
         for k, k_dict in branches.items():
             k_dict['pf'] = value(m.pf[k])
@@ -536,12 +521,13 @@ def solve_dcopf(model_data,
     if dcopf_model_generator == create_ptdf_dcopf_model:
         if hasattr(m, 'p_load_shed'):
             md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
-        buses_idx = PTDF.buses_keys
-        LMPE = value(m.dual[m.eq_p_balance])
+        buses_idx = PTDF.buses_keys_full
+        LMP = PTDF.calculate_LMP(m, m.dual, m.eq_p_balance)
         for i,b in enumerate(buses_idx):
             b_dict = buses[b]
-            b_dict['lmp'] = LMPE + LMPC[i]
+            b_dict['lmp'] = LMP[i]
             b_dict['pl'] = value(m.pl[b])
+            b_dict['va'] = VA[i]
     else:
         for b,b_dict in buses.items():
             if hasattr(m, 'p_load_shed'):
@@ -551,7 +537,7 @@ def solve_dcopf(model_data,
                 b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
                 b_dict['va'] = value(m.va[b])
             else:
-                raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
+                raise Exception("Unrecognized dcopf_model_generator {}".format(dcopf_model_generator))
 
     for k, k_dict in dc_branches.items():
         k_dict['pf'] = value(m.dcpf[k])
