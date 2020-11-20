@@ -646,7 +646,7 @@ def _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_
                 raise Exception("Interface {} has line {} with line_orientation {} "
                         "not in [-1,0,1].".format(i_n, l, val))
     I = sp.coo_matrix((data,(row,col)),shape=(_len_interface,_len_branch))
-    return I.tocsr()
+    return I
 
 
 def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None):

@@ -1228,7 +1228,7 @@ def _save_uc_results(m, relaxed):
             for i, i_n in enumerate(interface_idx):
                 interface_flows_dict[mt][i_n] = PFV_I[i]
 
-            buses_idx = PTDF.buses_keys_full
+            buses_idx = PTDF.buses_keys
             voltage_angle_dict[mt] = dict()
             for i,bn in enumerate(buses_idx):
                 voltage_angle_dict[mt][bn] = VA[i]

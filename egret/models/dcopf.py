@@ -520,7 +520,7 @@ def solve_dcopf(model_data,
     if dcopf_model_generator == create_ptdf_dcopf_model:
         if hasattr(m, 'p_load_shed'):
             md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
-        buses_idx = PTDF.buses_keys_full
+        buses_idx = PTDF.buses_keys
         LMP = PTDF.calculate_LMP(m, m.dual, m.eq_p_balance)
         for i,b in enumerate(buses_idx):
             b_dict = buses[b]

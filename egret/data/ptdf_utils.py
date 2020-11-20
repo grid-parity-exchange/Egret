@@ -70,6 +70,26 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
 
         Parameters
         ----------
+        branches (dict) : 
+            dictionary of branches and their attributes
+        buses (dict) : 
+            dictionary of buses and their attributes
+        reference_bus (str) : 
+            name of reference bus
+        base_point (egret.model_library.defn.BasePointType) :
+            whether or not to linearize around a given AC solution
+        ptdf_options (dict) :
+            dictionary of ptdf_options (see 
+            egret.common.lazy_ptdf_utils.populate_default_ptdf_options)
+        branches_keys (list, tuple, etc) (optional) :
+            When indexing into numpy/scipy arrays, the branches will be
+            indexed by this list. E.g., the name at position i will be
+            the i th entry in branch matrices/arrays
+        buses_keys (list, tuple, etc) (optional) :
+            Similar to branches_keys, though the reference bus will be
+            eliminated. (Uses buses_keys_no_ref for direct indexing)
+        interfaces (dict) (optional) :
+            dictionary of interfaces and their attributes
         '''
         self._branches = branches
         self._buses = buses
@@ -80,16 +100,15 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         else:
             self.branches_keys = tuple(branches_keys)
         if buses_keys is None:
-            self.buses_keys_full = tuple(buses.keys())
+            self.buses_keys = tuple(buses.keys())
         else:
-            self.buses_keys_full = tuple(buses_keys)
+            self.buses_keys = tuple(buses_keys)
         self._branchname_to_index_map = {branch_n : i for i, branch_n in enumerate(self.branches_keys)}
-        self._busname_to_index_map_full = {bus_n : j for j, bus_n in enumerate(self.buses_keys_full)}
+        self._busname_to_index_map = {bus_n : j for j, bus_n in enumerate(self.buses_keys)}
 
         # the PTDF factorization code eliminates the reference bus from the associated
         # matrices, so we need to handle that fact smoothly
-        self.buses_keys = tuple( bus for bus in self.buses_keys_full if bus != reference_bus )
-        self._busname_to_index_map = {bus_n : j for j, bus_n in enumerate(self.buses_keys)}
+        self.buses_keys_no_ref = tuple( bus for bus in self.buses_keys if bus != reference_bus )
 
         self.branch_limits_array = np.fromiter((branches[branch]['rating_long_term'] for branch in self.branches_keys), float, count=len(self.branches_keys))
         self.branch_limits_array.flags.writeable = False
@@ -116,10 +135,10 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         logger.info("Calculating PTDF Matrix Factorization")
         MLU, B_dA, ref_bus_mask, B_dA_I, I = tx_calc.calculate_ptdf_factorization(self._branches,
                                                                        self._buses,self.branches_keys,
-                                                                       self.buses_keys_full,
+                                                                       self.buses_keys,
                                                                        self._reference_bus,
                                                                        self._base_point,
-                                                                       mapping_bus_to_idx=self._busname_to_index_map_full,
+                                                                       mapping_bus_to_idx=self._busname_to_index_map,
                                                                        mapping_branch_to_idx=self._branchname_to_index_map,
                                                                        interfaces = self.interfaces,
                                                                        index_set_interface = self.interface_keys,)
@@ -152,8 +171,8 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
     def _calculate_phi_adjust(self, ref_bus_mask):
         phi_from, phi_to = tx_calc.calculate_phi_constant(self._branches,
                                                           self.branches_keys,
-                                                          self.buses_keys_full,ApproximationType.PTDF,
-                                                          mapping_bus_to_idx=self._busname_to_index_map_full)
+                                                          self.buses_keys,ApproximationType.PTDF,
+                                                          mapping_bus_to_idx=self._busname_to_index_map)
 
 
         ## hold onto these for line outages
@@ -168,12 +187,8 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self.phi_adjust_array = sp.csc_matrix(phi_adjust_array.sum(axis=1))
 
     def _calculate_phase_shift_flow_adjuster(self):
-        self.phase_shift_flow_adjuster_array = tx_calc.calculate_phase_shift_flow_adjuster(self._branches, self.branches_keys)
-
-    def _calculate_phase_shift_vector(self):
-        self.phase_shift_vector = tx_calc.calculate_phase_shift_vector(self._branches, self.branches_keys)
-        ## protect the array using numpy
-        self.phase_shift_vector.flags.writeable = False
+        self.phase_shift_flow_adjuster_array = \
+                tx_calc.calculate_phase_shift_flow_adjuster(self._branches, self.branches_keys)
 
     def _get_filtered_lines(self, ptdf_options):
         if ptdf_options['branch_kv_threshold'] is None:
@@ -278,13 +293,24 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         return I_row
 
     def get_branch_ptdf_iterator(self, branch_name):
-        yield from zip(self.buses_keys, self._get_ptdf_row(branch_name))
+        '''
+        Returns a (bus_name, coefficient) iterator for a given branch_name
+        '''
+        yield from zip(self.buses_keys_no_ref, self._get_ptdf_row(branch_name))
 
     def get_branch_ptdf_abs_max(self, branch_name):
+        '''
+        Returns the maximum of the absolute value for any coefficent
+        in branch_name's PTDF row
+        '''
         PTDF_row = self._get_ptdf_row(branch_name)
         return np.abs(PTDF_row).max()
 
     def get_branch_const(self, branch_name):
+        '''
+        Returns the constant coefficient for branch_name 's 
+        power flow equation (given bus net withdrawls)
+        '''
         PTDF_row = self._get_ptdf_row(branch_name)
         branch_idx = self._branchname_to_index_map[branch_name]
         phi_adj = PTDF_row@self.phi_adjust_array
@@ -292,6 +318,10 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         return phi_adj[0]+self.phase_shift_flow_adjuster_array[branch_idx,0]
 
     def get_interface_const(self, interface_name):
+        '''
+        Returns the constant coefficient for interface_names 's 
+        power flow equation (given bus net withdrawls)
+        '''
         I_row = self._get_interface_row(interface_name)
         i_idx = self.interfacename_to_index_map[interface_name]
         phi_adj = I_row@self.phi_adjust_array
@@ -299,17 +329,24 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         return phi_adj[0]+self.phase_shift_flow_adjuster_array_interface[i_idx,0]
 
     def get_interface_ptdf_abs_max(self, interface_name):
+        '''
+        Returns the maximum of the absolute value for any coefficent
+        in branch_name's PTDF row
+        '''
         I_row = self._get_interface_row(interface_name)
         return np.abs(I_row).max()
 
     def get_interface_ptdf_iterator(self, interface_name):
-        yield from zip(self.buses_keys, self._get_interface_row(interface_name))
+        '''
+        Returns a (bus_name, coefficient) iterator for a given interface_name 
+        '''
+        yield from zip(self.buses_keys_no_ref, self._get_interface_row(interface_name))
 
     def _insert_reference_bus(self, bus_array, val):
-        return np.insert(bus_array, self._busname_to_index_map_full[self._reference_bus], val)
+        return np.insert(bus_array, self._busname_to_index_map[self._reference_bus], val)
 
     def _calculate_PFV(self, mb, masked):
-        NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys), float, count=len(self.buses_keys))
+        NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys_no_ref), float, count=len(self.buses_keys_no_ref))
         NWV += self.phi_adjust_array.T
 
         VA = self.MLU.solve(NWV.A[0])
@@ -338,12 +375,69 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         return PFV.A[0], PFV_I.A[0], self._insert_reference_bus(VA[0], 0.)
 
     def calculate_masked_PFV(self, mb):
+        '''
+        Calculate a vector of partial real power 
+        flows indexed by branches_masked_keys, a vector
+        of interface flows indexed by interface_keys,
+        and a vector of bus voltage angles indexed
+        by buses_keys, for given ConcreteModel or
+        Block with populated p_nw variable.
+
+        Parameters
+        ----------
+        mb : Pyomo ConcreteModel or Block with p_nw attribute
+             indexed by buses
+
+        Returns
+        -------
+        tuple: PFV, PFV_I, VA. np.arrays for partial
+               real power flow, interface flow, voltage
+               angles.
+        '''
         return self._calculate_PFV(mb, masked=True)
 
     def calculate_PFV(self, mb):
+        '''
+        Calculate a vector of real power branch
+        flows indexed by branches_keys, a vector
+        of interface flows indexed by interface_keys,
+        and a vector of bus voltage angles indexed
+        by buses_keys, for given ConcreteModel or
+        Block with populated p_nw variable.
+
+        Parameters
+        ----------
+        mb : Pyomo ConcreteModel or Block with p_nw attribute
+             indexed by buses
+
+        Returns
+        -------
+        tuple: (PFV, PFV_I, VA). np.arrays for 
+               real power flow, interface flow, voltage
+               angles.
+        '''
         return self._calculate_PFV(mb, masked=False)
 
     def calculate_LMP(self, mb, dual, bus_balance_constr):
+        '''
+        Calculate a vector of locational marginal prices
+        indexed by buses_keys. 
+
+        Parameters
+        ----------
+        mb : Pyomo ConcreteModel or Block with 
+             ineq_pf_branch_thermal_bounds constraint and
+             ineq_pf_interface_bounds constraint (if there are
+             interfaces).
+        dual : Dual mapping return by a pyomo solver (usually
+               ConcreteModel.dual
+        bus_balance_constr : the bus-balance constraint for reading
+                             the energy component of LMP
+
+        Returns
+        -------
+        LMP : np.array of LMPs indexed by buses_keys
+        '''
         ## NOTE: unmonitored lines cannot contribute to LMPC
         PFD = np.fromiter( ( value(dual[mb.ineq_pf_branch_thermal_bounds[bn]])
                               if bn in mb.ineq_pf_branch_thermal_bounds else
