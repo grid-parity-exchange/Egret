@@ -373,6 +373,25 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     L11 = sp.coo_matrix((data,(row,col)),shape=(_len_branch,_len_bus))
     return L11.tocsr()
 
+def calculate_phase_shift_flow_adjuster(branches, index_set_branch):
+    _len_branch = len(index_set_branch)
+    row = []
+    col = []
+    data = []
+
+    idx_col = 0
+
+    for idx_row, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        if branch['branch_type'] == 'transformer' and branch['transformer_phase_shift'] != 0.:
+            val = -(1./branch['reactance']) * (math.radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio'])
+
+            row.append(idx_row)
+            col.append(idx_col)
+            data.append(val)
+
+    phase_shift_flow_adjuster = sp.coo_matrix((data, (row,col)), shape=(_len_branch,1))
+    return phase_shift_flow_adjuster.tocsc()
 
 def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
     """

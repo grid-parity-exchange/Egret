@@ -168,16 +168,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self.phi_adjust_array = sp.csc_matrix(phi_adjust_array.sum(axis=1))
 
     def _calculate_phase_shift_flow_adjuster(self):
-        
-        ## MAKE THIS SPARSE
-        phase_shift_array = np.fromiter((
-            -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) 
-            if (branch['branch_type'] == 'transformer') else 
-            0. 
-            for branch in (self._branches[bn] for bn in self.branches_keys)
-                                        ), float, count=len(self.branches_keys))
-
-        self.phase_shift_flow_adjuster_array = sp.csr_matrix(phase_shift_array).T
+        self.phase_shift_flow_adjuster_array = tx_calc.calculate_phase_shift_flow_adjuster(self._branches, self.branches_keys)
 
     def _calculate_phase_shift_vector(self):
         self.phase_shift_vector = tx_calc.calculate_phase_shift_vector(self._branches, self.branches_keys)
