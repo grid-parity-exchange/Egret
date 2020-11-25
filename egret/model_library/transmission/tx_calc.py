@@ -15,7 +15,6 @@ import math
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg
-import scipy.linalg as la
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
@@ -641,19 +640,18 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
     #(A^T)
     At = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
 
-    Bd = _calculate_Bd(branches, index_set_branch)
-    J = Bd@(At.T)
-
     ref_bus_mask = np.ones(_len_bus, dtype=bool)
     ref_bus_mask[_ref_bus_idx] = False
+
+    At_masked = At[ref_bus_mask]
+
+    Bd = _calculate_Bd(branches, index_set_branch)
+    B_dA = Bd@(At_masked.T)
 
     # M is now (A^T B_d A) with
     # row and column of reference
     # bus removed
-    M = (At@J)[ref_bus_mask,:][:,ref_bus_mask]
-
-    # (B_d A) with reference bus column removed
-    B_dA = J[:,ref_bus_mask]
+    M = At_masked@B_dA
 
     ## LU factorization
     MLU_MP = scipy.sparse.linalg.splu(M)
