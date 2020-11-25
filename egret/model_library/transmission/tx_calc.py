@@ -325,6 +325,49 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     J11 = sp.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
     return J11.tocsc()
 
+def _calculate_Bd(branches,index_set_branch,base_point=BasePointType.FLATSTART,approximation_type=ApproximationType.PTDF):
+    """
+    Compute the power flow Jacobian for partial derivative of real power flow to voltage angle
+    """
+    _len_branch = len(index_set_branch)
+
+    data = []
+    row = []
+    col = []
+
+    for idx_row, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+
+        if approximation_type == ApproximationType.PTDF:
+            x = branch['reactance']
+            b = -1/(tau*x)
+        elif approximation_type == ApproximationType.PTDF_LOSSES:
+            b = calculate_susceptance(branch)/tau
+
+        if base_point == BasePointType.FLATSTART:
+            val = b
+
+        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+            tn = buses[from_bus]['va']
+            tm = buses[to_bus]['va']
+
+            val = b * vn * vm * cos(tn - tm)
+
+        data.append(val)
+        row.append(idx_row)
+        col.append(idx_row)
+
+    Bd = sp.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_branch))
+    return Bd.tocsc()
+
 
 def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
     """
@@ -593,9 +636,13 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
         raise RuntimeError("Network is not connected, cannot use PTDF formulation")
 
     #(B_d A)
-    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
+    #J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
+
     #(A^T)
     At = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
+
+    Bd = _calculate_Bd(branches, index_set_branch)
+    J = Bd@(At.T)
 
     ref_bus_mask = np.ones(_len_bus, dtype=bool)
     ref_bus_mask[_ref_bus_idx] = False
@@ -611,13 +658,15 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
     ## LU factorization
     MLU_MP = scipy.sparse.linalg.splu(M)
 
-    if interfaces is not None:
+    if interfaces is None:
+        return MLU_MP, B_dA, ref_bus_mask
+    else:
         if mapping_bus_to_idx is None:
             mapping_branch_to_idx = {branch_n: i for i, branch_n in enumerate(index_set_branch)}
         I = _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx)
         B_dA_I = I@B_dA
 
-    return MLU_MP, B_dA, ref_bus_mask, B_dA_I, I
+        return MLU_MP, B_dA, ref_bus_mask, B_dA_I, I
 
 def _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx):
     """
