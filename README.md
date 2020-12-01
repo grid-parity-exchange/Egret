@@ -24,7 +24,7 @@ EGRET is available under the BSD License (see LICENSE.txt)
 
 ### Requirements
 
-* Pyomo version 5.7 or later
+* Pyomo version 5.7.1 or later
 * pytest
 * Optimization solvers for Pyomo - specific requirements depends on the models being solved. EGRET is tested with Gurobi or CPLEX for MIP-based problems (e.g., unit commitment) and Ipopt (with HSL linear solvers) for NLP problems.
 

@@ -81,42 +81,19 @@ def _setup_egret_network_topology(m,tm):
 
     return buses, branches, branches_in_service, branches_out_service, interfaces
 
-
 def _setup_branch_slacks(m,block,tm):
-    ### declare the interface slack variables
-    libbranch.declare_var_pf_slack_pos(model=block,
-                                        index_set=m.BranchesWithSlack,
-                                        bounds=(0, None),
-                                        )
-    libbranch.declare_var_pf_slack_neg(model=block,
-                                        index_set=m.BranchesWithSlack,
-                                        bounds=(0, None),
-                                        )
+    ### declare the branch slack variables
+    block.pf_slack_pos = VarList(domain=NonNegativeReals)
+    block.pf_slack_neg = VarList(domain=NonNegativeReals)
 
-    ### add the interface slack cost to the main model
-    m.BranchViolationCost[tm] = \
-            sum(m.TimePeriodLengthHours*m.BranchLimitPenalty[i]*( \
-                 block.pf_slack_pos[i] + block.pf_slack_neg[i] )
-                for i in m.BranchesWithSlack)
-
+    block.pf_slack_branchname_to_index = dict()
 
 def _setup_interface_slacks(m,block,tm):
     ### declare the interface slack variables
-    libbranch.declare_var_pfi_slack_pos(model=block,
-                                        index_set=m.InterfacesWithSlack,
-                                        bounds=(0, None),
-                                        )
-    libbranch.declare_var_pfi_slack_neg(model=block,
-                                        index_set=m.InterfacesWithSlack,
-                                        bounds=(0, None),
-                                        )
+    block.pfi_slack_pos = VarList(domain=NonNegativeReals)
+    block.pfi_slack_neg = VarList(domain=NonNegativeReals)
 
-    ### add the interface slack cost to the main model
-    m.InterfaceViolationCost[tm] = \
-            sum(m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i]*( \
-                 block.pfi_slack_pos[i] + block.pfi_slack_neg[i] )
-                for i in m.InterfacesWithSlack)
-
+    block.pfi_slack_interfacename_to_index = dict()
 
 def _ptdf_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
@@ -187,6 +164,7 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      p_thermal_limits=None,
                                                      approximation_type=None,
                                                      slacks=True,
+                                                     slack_cost_expr=m.BranchViolationCost[tm]
                                                      )
         ### declare the "blank" interface flow limits
         libbranch.declare_ineq_p_interface_bounds(model=block,
@@ -194,6 +172,7 @@ def _ptdf_dcopf_network_model(block,tm):
                                                 interfaces=interfaces,
                                                 approximation_type=None,
                                                 slacks=True,
+                                                slack_cost_expr=m.InterfaceViolationCost[tm]
                                                 )
 
         ### add helpers for tracking monitored branches
@@ -221,7 +200,8 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      branches=branches,
                                                      p_thermal_limits=p_max,
                                                      approximation_type=ApproximationType.PTDF,
-                                                     slacks=True
+                                                     slacks=True,
+                                                     slack_cost_expr=m.BranchViolationCost[tm]
                                                      )
 
         ### declare the branch power flow approximation constraints
@@ -237,7 +217,8 @@ def _ptdf_dcopf_network_model(block,tm):
                                                 index_set=interfaces.keys(),
                                                 interfaces=interfaces,
                                                 approximation_type=ApproximationType.PTDF,
-                                                slacks=True
+                                                slacks=True,
+                                                slack_cost_expr=m.InterfaceViolationCost[tm]
                                                 )
 
 def _btheta_dcopf_network_model(block,tm):
@@ -303,7 +284,8 @@ def _btheta_dcopf_network_model(block,tm):
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
                                                  approximation_type=ApproximationType.BTHETA,
-                                                 slacks=True
+                                                 slacks=True,
+                                                 slack_cost_expr=m.BranchViolationCost[tm]
                                                  )
 
     ### declare angle difference limits on interconnected buses
@@ -331,7 +313,8 @@ def _btheta_dcopf_network_model(block,tm):
     libbranch.declare_ineq_p_interface_bounds(model=block,
                                             index_set=interfaces.keys(),
                                             interfaces=interfaces,
-                                            slacks=True
+                                            slacks=True,
+                                            slack_cost_expr=m.InterfaceViolationCost[tm]
                                             )
 
     return block
