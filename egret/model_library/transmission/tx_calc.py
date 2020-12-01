@@ -634,9 +634,6 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
     if not connected:
         raise RuntimeError("Network is not connected, cannot use PTDF formulation")
 
-    #(B_d A)
-    #J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
-
     #(A^T)
     At = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
 
