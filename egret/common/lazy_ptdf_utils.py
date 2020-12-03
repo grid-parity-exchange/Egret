@@ -659,4 +659,7 @@ def _load_pf_slacks(solver, m, t_subset):
         vars_to_load.extend(b.pf_slack_neg.values())
         vars_to_load.extend(b.pfi_slack_pos.values())
         vars_to_load.extend(b.pfi_slack_neg.values())
-    solver.load_vars(vars_to_load)
+    # XpressPersistent raises an exception if
+    # this list is empty
+    if vars_to_load:
+        solver.load_vars(vars_to_load)
