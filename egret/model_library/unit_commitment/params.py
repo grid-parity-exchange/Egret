@@ -301,7 +301,7 @@ def load_params(model, model_data):
     
     model.VerifyThermalGeneratorBuses = BuildAction(model.ThermalGenerators, rule=verify_thermal_generator_buses_rule)
     
-    model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('quickstart_capable', dict()))
+    model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('fast_start', dict()))
     
     def init_quick_start_generators(m):
         return [g for g in m.ThermalGenerators if value(m.QuickStart[g]) == 1]

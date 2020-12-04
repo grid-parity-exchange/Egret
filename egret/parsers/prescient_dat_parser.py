@@ -126,7 +126,7 @@ def create_model_data_dict_params(params, keep_names=False):
         g_d = { 'generator_type':'thermal', }
         g_d['bus'] = gen_bus_dict[g]
         g_d['fuel'] = params.ThermalGeneratorType[g]
-        g_d['fast_start'] = params.QuickStart[g]
+        g_d['fast_start'] = (g in params.QuickStartGenerators)
         g_d['fixed_commitment'] = (1 if params.MustRun[g] else None)
         g_d['in_service'] = True
         g_d['zone'] = params.ReserveZoneLocation[g]
@@ -383,6 +383,10 @@ def setup_abstract_model(model):
     model.VerifyThermalGeneratorBuses = BuildAction(model.ThermalGenerators, rule=verify_thermal_generator_buses_rule)
     
     model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False)
+
+    def init_quick_start_generators(m):
+        return [g for g in m.ThermalGenerators if value(m.QuickStart[g]) == 1]
+    model.QuickStartGenerators = Set(within=model.ThermalGenerators, initialize=init_quick_start_generators)
     
     # optionally force a unit to be on.
     model.MustRun = Param(model.ThermalGenerators, within=Boolean, default=False)
