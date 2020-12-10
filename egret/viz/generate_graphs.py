@@ -181,7 +181,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 if not sum(pg_array) > 0.0:
                     continue
 
-                is_quickstart = generator_data.get('quickstart_capable', False)
+                is_quickstart = generator_data.get('fast_start', False)
 
                 if is_quickstart:
                     quickstart_label = 'quickstart'
