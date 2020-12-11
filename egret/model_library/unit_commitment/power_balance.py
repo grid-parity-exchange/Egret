@@ -31,7 +31,7 @@ from math import pi
 component_name = 'power_balance'
 
 def _setup_egret_network_model(block, tm):
-    m = block.model()
+    m = block.parent_block()
 
     ## this is not the "real" gens by bus, but the
     ## index of net injections from the UC model
@@ -542,7 +542,7 @@ def _add_hvdc(model):
 ## helper defining real power injection at a bus
 def _get_pg_expr_rule(t):
     def pg_expr_rule(block,b):
-        m = block.model()
+        m = block.parent_block()
         # bus b, time t (S)
         return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
                 + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
@@ -556,7 +556,7 @@ def _get_pg_expr_rule(t):
 ## helper defining reacative power injection at a bus
 def _get_qg_expr_rule(t):
     def qg_expr_rule(block,b):
-        m = block.model()
+        m = block.parent_block()
         # bus b, time t (S)
         return sum(m.ReactivePowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
             + m.LoadGenerateMismatchReactive[b,t]
