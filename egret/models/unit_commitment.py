@@ -978,6 +978,15 @@ def _save_uc_results(m, relaxed):
     fs = bool(m.fuel_supply)
     fc = bool(m.fuel_consumption)
 
+    ## All prices are in $/(MW*time_period) by construction
+    ## time_period_length_hours == hours/time_period, so
+    ##    $/(MW*time_period)/time_period_length_hours
+    ## == $/(MW*time_period) * (time_period/hours)
+    ## == $/(MW*hours) == $/MWh.
+    ## All dual values are divided by this quantity
+    ## so as to report out $/MWh.
+    time_period_length_hours = value(m.TimePeriodLengthHours)
+
     ## all of the potential constraints that could limit maximum output
     ## Not all unit commitment models have these constraints, so first
     ## we need check if they're on the model object
@@ -1186,7 +1195,7 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
-                    lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
+                    lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
         for i,i_dict in interfaces.items():
@@ -1288,7 +1297,7 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
-                    lmp_dict[dt] = lmps_dict[mt][b]
+                    lmp_dict[dt] = lmps_dict[mt][b]/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
         for k,k_dict in dc_branches.items():
@@ -1320,7 +1329,7 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
-                    lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
+                    lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
         for i,i_dict in interfaces.items():
@@ -1349,7 +1358,7 @@ def _save_uc_results(m, relaxed):
         if relaxed:
             p_price_dict = _preallocated_list(data_time_periods)
             for dt, mt in enumerate(m.TimePeriods):
-                p_price_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance])
+                p_price_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance])/time_period_length_hours
             sys_dict['p_price'] = _time_series_dict(p_price_dict)
     else:
         raise Exception("Unrecongized network type "+m.power_balance)
@@ -1367,7 +1376,7 @@ def _save_uc_results(m, relaxed):
             for dt, mt in enumerate(m.TimePeriods):
                 ## TODO: if the 'relaxed' flag is set, we should automatically
                 ##       pick a formulation which uses the MLR reserve constraints
-                sr_p_dict[dt] = value(m.dual[m.EnforceReserveRequirements[mt]])
+                sr_p_dict[dt] = value(m.dual[m.EnforceReserveRequirements[mt]])/time_period_length_hours
             sys_dict['reserve_price'] = _time_series_dict(sr_p_dict)
 
 
@@ -1464,7 +1473,7 @@ def _save_uc_results(m, relaxed):
                     if relaxed:
                         req_price_dict = _preallocated_list(data_time_periods)
                         for dt, mt in enumerate(m.TimePeriods):
-                            req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])
+                            req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])/time_period_length_hours
                         e_dict[req_dict['price']] = _time_series_dict(req_price_dict)
 
     def _populate_system_reserves(sys_dict):
@@ -1477,7 +1486,7 @@ def _save_uc_results(m, relaxed):
                 if relaxed:
                     req_price_dict = _preallocated_list(data_time_periods)
                     for dt, mt in enumerate(m.TimePeriods):
-                        req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])
+                        req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])/time_period_length_hours
                     sys_dict[req_dict['price']] = _time_series_dict(req_price_dict)
     
     _populate_zonal_reserves(areas, 'area_')
