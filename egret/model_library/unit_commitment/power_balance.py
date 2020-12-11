@@ -82,18 +82,28 @@ def _setup_egret_network_topology(m,tm):
     return buses, branches, branches_in_service, branches_out_service, interfaces
 
 def _setup_branch_slacks(m,block,tm):
-    ### declare the branch slack variables
-    block.pf_slack_pos = VarList(domain=NonNegativeReals)
-    block.pf_slack_neg = VarList(domain=NonNegativeReals)
-
-    block.pf_slack_branchname_to_index = dict()
+    # declare the branch slack variables
+    # they have a sparse index set
+    libbranch.declare_var_pf_slack_pos(model=block,
+                                       index_set=m.BranchesWithSlack,
+                                       domain=NonNegativeReals,
+                                       dense=False)
+    libbranch.declare_var_pf_slack_neg(model=block,
+                                       index_set=m.BranchesWithSlack,
+                                       domain=NonNegativeReals,
+                                       dense=False)
 
 def _setup_interface_slacks(m,block,tm):
-    ### declare the interface slack variables
-    block.pfi_slack_pos = VarList(domain=NonNegativeReals)
-    block.pfi_slack_neg = VarList(domain=NonNegativeReals)
-
-    block.pfi_slack_interfacename_to_index = dict()
+    # declare the interface slack variables
+    # they have a sparse index set
+    libbranch.declare_var_pfi_slack_pos(model=block,
+                                        index_set=m.InterfacesWithSlack,
+                                        domain=NonNegativeReals,
+                                        dense=False)
+    libbranch.declare_var_pfi_slack_neg(model=block,
+                                        index_set=m.InterfacesWithSlack,
+                                        domain=NonNegativeReals,
+                                        dense=False)
 
 def _ptdf_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \

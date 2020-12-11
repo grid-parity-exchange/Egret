@@ -1174,9 +1174,8 @@ def _save_uc_results(m, relaxed):
             if l in m.BranchesWithSlack:
                 pf_violation_dict = _preallocated_list(data_time_periods)
                 for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
-                    if l in b.pf_slack_branchname_to_index:
-                        var_idx = b.pf_slack_branchname_to_index[l]
-                        pf_violation_dict[dt] = value(b.pf_slack_pos[var_idx] - b.pf_slack_neg[var_idx])
+                    if l in b.pf_slack_pos:
+                        pf_violation_dict[dt] = value(b.pf_slack_pos[l] - b.pf_slack_neg[l])
                     else:
                         pf_violation_dict[dt] = 0.
                 l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
@@ -1206,9 +1205,8 @@ def _save_uc_results(m, relaxed):
             if i in m.InterfacesWithSlack:
                 pf_violation_dict = _preallocated_list(data_time_periods)
                 for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
-                    if i in b.pfi_slack_interfacename_to_index:
-                        var_idx = b.pfi_slack_interfacename_to_index[i]
-                        pf_violation_dict[dt] = value(b.pfi_slack_pos[var_idx] - b.pfi_slack_neg[var_idx])
+                    if i in b.pfi_slack_pos:
+                        pf_violation_dict[dt] = value(b.pfi_slack_pos[i] - b.pfi_slack_neg[i])
                     else:
                         pf_violation_dict[dt] = 0.
                 i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
@@ -1260,9 +1258,8 @@ def _save_uc_results(m, relaxed):
             if i in m.InterfacesWithSlack:
                 pf_violation_dict = _preallocated_list(data_time_periods)
                 for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
-                    if i in b.pfi_slack_interfacename_to_index:
-                        var_idx = b.pfi_slack_interfacename_to_index[i]
-                        pf_violation_dict[dt] = value(b.pfi_slack_pos[var_idx] - b.pfi_slack_neg[var_idx])
+                    if i in b.pfi_slack_pos:
+                        pf_violation_dict[dt] = value(b.pfi_slack_pos[i] - b.pfi_slack_neg[i])
                     else:
                         pf_violation_dict[dt] = 0.
                 i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
@@ -1276,9 +1273,8 @@ def _save_uc_results(m, relaxed):
             if l in m.BranchesWithSlack:
                 pf_violation_dict = _preallocated_list(data_time_periods)
                 for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
-                    if l in b.pf_slack_branchname_to_index:
-                        var_idx = b.pf_slack_branchname_to_index[l]
-                        pf_violation_dict[dt] = value(b.pf_slack_pos[var_idx] - b.pf_slack_neg[var_idx])
+                    if l in b.pf_slack_pos:
+                        pf_violation_dict[dt] = value(b.pf_slack_pos[l] - b.pf_slack_neg[l])
                     else:
                         pf_violation_dict[dt] = 0.
                 l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)

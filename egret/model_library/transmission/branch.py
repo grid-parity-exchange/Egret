@@ -816,18 +816,17 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
 
     if approximation_type == ApproximationType.BTHETA or \
             approximation_type == ApproximationType.PTDF:
-        top_model = m.model()
         for branch_name in con_set:
             if p_thermal_limits[branch_name] is None:
                 continue
 
-            if slacks and branch_name in top_model.BranchesWithSlack:
-                neg_slack = m.pf_slack_neg.add()
-                pos_slack = m.pf_slack_pos.add()
-                # VarList is 1-indexed
-                m.pf_slack_branchname_to_index[branch_name] = len(m.pf_slack_neg)
-                slack_cost_expr.expr += (top_model.TimePeriodLengthHours*top_model.BranchLimitPenalty[branch_name] *
-                                    (neg_slack + pos_slack) )
+            if slacks and branch_name in m.pf_slack_neg.index_set():
+                assert branch_name in m.pf_slack_pos.index_set()
+                neg_slack = m.pf_slack_neg[branch_name]
+                pos_slack = m.pf_slack_pos[branch_name]
+                uc_model = slack_cost_expr.parent_block()
+                slack_cost_expr.expr += (uc_model.TimePeriodLengthHours*uc_model.BranchLimitPenalty[branch_name] *
+                                         (neg_slack + pos_slack) )
                 assert len(m.pf_slack_pos) == len(m.pf_slack_neg)
             else:
                 neg_slack = None
@@ -927,18 +926,17 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
 
     if approximation_type == ApproximationType.BTHETA or \
             approximation_type == ApproximationType.PTDF:
-        top_model = m.model()
         for branch_name in con_set:
             limit = p_thermal_limits[branch_name]
             if limit is None:
                 continue
 
-            if slacks and branch_name in top_model.BranchesWithSlack:
-                neg_slack = m.pf_slack_neg.add()
-                pos_slack = m.pf_slack_pos.add()
-                # VarList is 1-indexed
-                m.pf_slack_branchname_to_index[branch_name] = len(m.pf_slack_neg)
-                slack_cost_expr.expr += (top_model.TimePeriodLengthHours*top_model.BranchLimitPenalty[branch_name] *
+            if slacks and branch_name in m.pf_slack_neg.index_set():
+                assert branch_name in m.pf_slack_pos.index_set()
+                neg_slack = m.pf_slack_neg[branch_name]
+                pos_slack = m.pf_slack_pos[branch_name]
+                uc_model = slack_cost_expr.parent_block()
+                slack_cost_expr.expr += (uc_model.TimePeriodLengthHours*uc_model.BranchLimitPenalty[branch_name] *
                                     (neg_slack + pos_slack) )
                 assert len(m.pf_slack_pos) == len(m.pf_slack_neg)
             else:
@@ -1031,19 +1029,18 @@ def declare_ineq_p_interface_bounds(model, index_set, interfaces,
 
     if approximation_type == ApproximationType.BTHETA or \
             approximation_type == ApproximationType.PTDF:
-        top_model = m.model()
         for interface_name in con_set:
             interface = interfaces[interface_name]
             if interface['minimum_limit'] is None and \
                     interface['maximum_limit'] is None:
                 continue
 
-            if slacks and interface_name in top_model.InterfacesWithSlack:
-                neg_slack = m.pfi_slack_neg.add()
-                pos_slack = m.pfi_slack_pos.add()
-                # VarList is 1-indexed
-                m.pfi_slack_interfacename_to_index[interface_name] = len(m.pfi_slack_neg)
-                slack_cost_expr.expr += (top_model.TimePeriodLengthHours*top_model.InterfaceLimitPenalty[interface_name] *
+            if slacks and interface_name in m.pfi_slack_neg.index_set():
+                assert interface_name in m.pfi_slack_pos.index_set()
+                neg_slack = m.pfi_slack_neg[interface_name]
+                pos_slack = m.pfi_slack_pos[interface_name]
+                uc_model = slack_cost_expr.parent_block()
+                slack_cost_expr.expr += (uc_model.TimePeriodLengthHours*uc_model.InterfaceLimitPenalty[interface_name] *
                                     (neg_slack + pos_slack) )
                 assert len(m.pfi_slack_pos) == len(m.pfi_slack_neg)
             else:
