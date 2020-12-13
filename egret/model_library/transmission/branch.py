@@ -21,11 +21,16 @@ from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
 from collections import OrderedDict
 from pyomo.contrib.fbbt.fbbt import fbbt
+import warnings
+import logging
 try:
     import coramin
     coramin_available = True
 except ImportError:
     coramin_available = False
+
+
+logger = logging.getLogger(__name__)
 
 
 def declare_var_dva(model, index_set, **kwargs):
@@ -944,11 +949,21 @@ def declare_ineq_angle_diff_branch_lbub_c_s(model, index_set, branches):
         from_bus = branches[branch_name]['from_bus']
         to_bus = branches[branch_name]['to_bus']
 
-        m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
-                                                    m.c[(from_bus, to_bus)] <= m.s[(from_bus, to_bus)])
-        m.ineq_angle_diff_branch_ub[branch_name] = (m.s[(from_bus, to_bus)] <=
-                                                    math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
-                                                    m.c[(from_bus, to_bus)])
+        if branches[branch_name]['angle_diff_min'] > -90:
+            if branches[branch_name]['angle_diff_min'] < -89:
+                msg = 'angle difference limits larger than 89 will introduce large coefficients'
+                logger.warning(msg)
+                warnings.warn(msg)
+            m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
+                                                        m.c[(from_bus, to_bus)] <= m.s[(from_bus, to_bus)])
+        if branches[branch_name]['angle_diff_max'] < 90:
+            if branches[branch_name]['angle_diff_min'] > 89:
+                msg = 'angle difference limits larger than 89 will introduce large coefficients'
+                logger.warning(msg)
+                warnings.warn(msg)
+            m.ineq_angle_diff_branch_ub[branch_name] = (m.s[(from_bus, to_bus)] <=
+                                                        math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
+                                                        m.c[(from_bus, to_bus)])
 
 
 def declare_ineq_angle_diff_branch_lbub(model, index_set, branches, coordinate_type=CoordinateType.POLAR):
@@ -977,12 +992,22 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set, branches, coordinate_t
             from_bus = branches[branch_name]['from_bus']
             to_bus = branches[branch_name]['to_bus']
 
-            m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
-                                                        (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]) <=
-                                                        m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
-            m.ineq_angle_diff_branch_ub[branch_name] = (m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus] <=
-                                                        math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
-                                                        (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]))
+            if branches[branch_name]['angle_diff_min'] > -90:
+                if branches[branch_name]['angle_diff_min'] < -89:
+                    msg = 'angle difference limits larger than 89 will introduce large coefficients'
+                    logger.warning(msg)
+                    warnings.warn(msg)
+                m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
+                                                            (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]) <=
+                                                            m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
+            if branches[branch_name]['angle_diff_max'] < 90:
+                if branches[branch_name]['angle_diff_min'] > 89:
+                    msg = 'angle difference limits larger than 89 will introduce large coefficients'
+                    logger.warning(msg)
+                    warnings.warn(msg)
+                m.ineq_angle_diff_branch_ub[branch_name] = (m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus] <=
+                                                            math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
+                                                            (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]))
 
 
 def declare_ineq_p_interface_bounds(model, index_set, interfaces,
