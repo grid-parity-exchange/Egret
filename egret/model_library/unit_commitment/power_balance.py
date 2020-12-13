@@ -31,7 +31,7 @@ from math import pi
 component_name = 'power_balance'
 
 def _setup_egret_network_model(block, tm):
-    m = block.model()
+    m = block.parent_block()
 
     ## this is not the "real" gens by bus, but the
     ## index of net injections from the UC model
@@ -81,42 +81,29 @@ def _setup_egret_network_topology(m,tm):
 
     return buses, branches, branches_in_service, branches_out_service, interfaces
 
-
 def _setup_branch_slacks(m,block,tm):
-    ### declare the interface slack variables
+    # declare the branch slack variables
+    # they have a sparse index set
     libbranch.declare_var_pf_slack_pos(model=block,
-                                        index_set=m.BranchesWithSlack,
-                                        bounds=(0, None),
-                                        )
+                                       index_set=m.BranchesWithSlack,
+                                       domain=NonNegativeReals,
+                                       dense=False)
     libbranch.declare_var_pf_slack_neg(model=block,
-                                        index_set=m.BranchesWithSlack,
-                                        bounds=(0, None),
-                                        )
-
-    ### add the interface slack cost to the main model
-    m.BranchViolationCost[tm] = \
-            sum(m.TimePeriodLengthHours*m.BranchLimitPenalty[i]*( \
-                 block.pf_slack_pos[i] + block.pf_slack_neg[i] )
-                for i in m.BranchesWithSlack)
-
+                                       index_set=m.BranchesWithSlack,
+                                       domain=NonNegativeReals,
+                                       dense=False)
 
 def _setup_interface_slacks(m,block,tm):
-    ### declare the interface slack variables
+    # declare the interface slack variables
+    # they have a sparse index set
     libbranch.declare_var_pfi_slack_pos(model=block,
                                         index_set=m.InterfacesWithSlack,
-                                        bounds=(0, None),
-                                        )
+                                        domain=NonNegativeReals,
+                                        dense=False)
     libbranch.declare_var_pfi_slack_neg(model=block,
                                         index_set=m.InterfacesWithSlack,
-                                        bounds=(0, None),
-                                        )
-
-    ### add the interface slack cost to the main model
-    m.InterfaceViolationCost[tm] = \
-            sum(m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i]*( \
-                 block.pfi_slack_pos[i] + block.pfi_slack_neg[i] )
-                for i in m.InterfacesWithSlack)
-
+                                        domain=NonNegativeReals,
+                                        dense=False)
 
 def _ptdf_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
@@ -187,6 +174,7 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      p_thermal_limits=None,
                                                      approximation_type=None,
                                                      slacks=True,
+                                                     slack_cost_expr=m.BranchViolationCost[tm]
                                                      )
         ### declare the "blank" interface flow limits
         libbranch.declare_ineq_p_interface_bounds(model=block,
@@ -194,6 +182,7 @@ def _ptdf_dcopf_network_model(block,tm):
                                                 interfaces=interfaces,
                                                 approximation_type=None,
                                                 slacks=True,
+                                                slack_cost_expr=m.InterfaceViolationCost[tm]
                                                 )
 
         ### add helpers for tracking monitored branches
@@ -221,7 +210,8 @@ def _ptdf_dcopf_network_model(block,tm):
                                                      branches=branches,
                                                      p_thermal_limits=p_max,
                                                      approximation_type=ApproximationType.PTDF,
-                                                     slacks=True
+                                                     slacks=True,
+                                                     slack_cost_expr=m.BranchViolationCost[tm]
                                                      )
 
         ### declare the branch power flow approximation constraints
@@ -237,7 +227,8 @@ def _ptdf_dcopf_network_model(block,tm):
                                                 index_set=interfaces.keys(),
                                                 interfaces=interfaces,
                                                 approximation_type=ApproximationType.PTDF,
-                                                slacks=True
+                                                slacks=True,
+                                                slack_cost_expr=m.InterfaceViolationCost[tm]
                                                 )
 
 def _btheta_dcopf_network_model(block,tm):
@@ -303,7 +294,8 @@ def _btheta_dcopf_network_model(block,tm):
                                                  branches=branches,
                                                  p_thermal_limits=p_max,
                                                  approximation_type=ApproximationType.BTHETA,
-                                                 slacks=True
+                                                 slacks=True,
+                                                 slack_cost_expr=m.BranchViolationCost[tm]
                                                  )
 
     ### declare angle difference limits on interconnected buses
@@ -331,7 +323,8 @@ def _btheta_dcopf_network_model(block,tm):
     libbranch.declare_ineq_p_interface_bounds(model=block,
                                             index_set=interfaces.keys(),
                                             interfaces=interfaces,
-                                            slacks=True
+                                            slacks=True,
+                                            slack_cost_expr=m.InterfaceViolationCost[tm]
                                             )
 
     return block
@@ -549,7 +542,7 @@ def _add_hvdc(model):
 ## helper defining real power injection at a bus
 def _get_pg_expr_rule(t):
     def pg_expr_rule(block,b):
-        m = block.model()
+        m = block.parent_block()
         # bus b, time t (S)
         return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
                 + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
@@ -563,7 +556,7 @@ def _get_pg_expr_rule(t):
 ## helper defining reacative power injection at a bus
 def _get_qg_expr_rule(t):
     def qg_expr_rule(block,b):
-        m = block.model()
+        m = block.parent_block()
         # bus b, time t (S)
         return sum(m.ReactivePowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
             + m.LoadGenerateMismatchReactive[b,t]

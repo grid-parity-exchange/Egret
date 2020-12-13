@@ -98,8 +98,8 @@ def ramping_polytope_block_rule(rp, g):
     '''
 
     ## assume the generator parameters
-    ## live on the main model
-    model = rp.model() 
+    ## live on the parent block
+    model = rp.parent_block()
     value = pe.value
     quicksum = pe.quicksum
 
