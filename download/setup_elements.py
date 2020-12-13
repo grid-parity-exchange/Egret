@@ -25,7 +25,7 @@ Y = At@Bd@A
 
 mdn2 = md.clone()
 
-branch_name = '2'
+branch_name = sys.argv[2]
 del mdn2.data['elements']['branch'][branch_name]
 
 branchesn2 = mdn2.data['elements']['branch']; busesn2 = mdn2.data['elements']['bus']
@@ -107,10 +107,24 @@ splu_options = {
 L_factor = sp.linalg.splu(MLU_MP.L,options=splu_options)
 U_factor = sp.linalg.splu(MLU_MP.U,options=splu_options)
 tt.toc('computed silly L/U factors')
+print(f'MLU_MP.L.nnz: {MLU_MP.L.nnz}')
+print(f'L_factor.L.nnz: {L_factor.L.nnz}')
+print(f'L_factor.U.nnz: {L_factor.U.nnz}')
+
+print(f'MLU_MP.U.nnz: {MLU_MP.U.nnz}')
+print(f'U_factor.L.nnz: {U_factor.L.nnz}')
+print(f'U_factor.U.nnz: {U_factor.U.nnz}')
 #W = sp.linalg.spsolve(MLU_MP.L,Pr@M1_masked,permc_spec="NATURAL")
 buff = np.zeros((len(index_set_bus)-1,1))
+tt.toc('allocated array')
 print(f'buff.shape: {buff.shape}')
-W = sp.csc_matrix( L_factor.solve((Pr@M1_masked).toarray(out=buff)) )
+in_ = (Pr@M1_masked).toarray(out=buff)
+tt.toc('computed in_ for L')
+
+in_csc = L_factor.solve(in_)
+tt.toc('computed in_csc for csc')
+W = sp.csc_matrix( in_csc )
+tt.toc('computed sparse W')
 print(f'   W.nnz: {W.nnz}')
 #W = L_factor.solve((Pr@M1_masked).A)
 ## NOTE: In principle, the triangular solve should be more efficient, but
