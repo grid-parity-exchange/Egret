@@ -1,0 +1,88 @@
+name: GitHub CI
+
+on:
+    # Trigger the workflow on push or pull request,
+    # but only for the master branch
+    push:
+        branches:
+            - master
+    pull_request:
+        branches:
+            - master
+    # nightly tests at 8:00 UTC
+    schedule:
+        - cron:  '0 8 * * *'
+    workflow_dispatch:
+         types: run-test
+
+defaults:
+    run:
+        shell: bash -l {0}
+
+jobs:
+    build:
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                os: [ubuntu-latest]
+                python-version: [3.6, 3.7, 3.8, 3.9]
+                pyomo-version: [5.7.1]
+                pyutilib-version: [6.0.0]
+                include:
+                    - os: macos-latest
+                      python-version: 3.6
+                      pyomo-version: 5.7.1
+                      pyutilib-version: 6.0.0
+                    - os: windows-latest
+                      python-version: 3.6
+                      pyomo-version: 5.7.1
+                      pyutilib-version: 6.0.0
+                    - os: ubuntu-latest
+                      python-version: 3.6
+                      pyomo-version: master
+                      pyutilib-version: master
+        steps:
+          - uses: actions/checkout@v2
+          - uses: conda-incubator/setup-miniconda@v2
+            with:
+              activate-environment: test_env
+              python-version:  ${{ matrix.python-version }}
+              auto-activate-base: false
+          - name: Conda Env
+            run: |
+              conda info
+              conda list
+          - name: Install CBC
+            run: |
+              if [ ${{ matrix.os }} = windows-latest ]
+              then
+                # download CBC binary, copy to place already in PATH
+                curl -O https://ampl.com/dl/open/cbc/cbc-win64.zip
+                unzip cbc-win64.zip
+                cp cbc.exe $CONDA_PREFIX
+              else
+                conda install -c conda-forge coincbc
+              fi
+          - name: Install IPOPT
+            run: |
+              conda install -c conda-forge ipopt
+
+          - name: Instal Pyutilib
+            run: |
+              pip install git+https://github.com/PyUtilib/pyutilib.git@{{ matrix.pyutilib-version }}
+
+          - name: Install Pyomo
+            run: |
+              pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
+
+          - name: Install CORAMIN
+            run: |
+              pip install git+https://github.com/coramin/coramin.git
+
+          - name: Install EGRET
+            run: |
+              python setup.py develop
+
+          - name: Run EGRET Tests
+            run: |
+              nosetests -v --nologcapture --with-coverage --cover-package=egret egret 
