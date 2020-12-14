@@ -1,0 +1,126 @@
+name: EGRET GitHub CI
+
+on:
+    # Trigger the workflow on push or pull request,
+    # but only for the master branch
+    push:
+        branches:
+            - master
+    pull_request:
+        branches:
+            - master
+    # nightly tests at 8:00 UTC
+    schedule:
+        - cron:  '0 8 * * *'
+    workflow_dispatch:
+         types: run-test
+
+defaults:
+    run:
+        shell: bash -l {0}
+
+jobs:
+    build:
+        name: ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                os: [ubuntu-latest]
+                python-version: [3.6, 3.7, 3.8, 3.9]
+                pyomo-version: [5.7.1]
+                pyutilib-version: [6.0.0]
+                include:
+                    - os: macos-latest
+                      python-version: 3.7
+                      pyomo-version: 5.7.1
+                      pyutilib-version: 6.0.0
+                    - os: windows-latest
+                      python-version: 3.7
+                      pyomo-version: 5.7.1
+                      pyutilib-version: 6.0.0
+                    - os: ubuntu-latest
+                      python-version: 3.7
+                      pyomo-version: master
+                      pyutilib-version: master
+        steps:
+          - uses: actions/checkout@v2
+          - uses: conda-incubator/setup-miniconda@v2
+            with:
+              activate-environment: test_env
+              python-version:  ${{ matrix.python-version }}
+              auto-activate-base: false
+          - name: Conda Env
+            run: |
+              conda info
+              conda list
+          - name: Install CBC
+            run: |
+              if [ ${{ matrix.os }} = windows-latest ]
+              then
+                # download CBC binary, copy to place already in PATH
+                curl -O https://ampl.com/dl/open/cbc/cbc-win64.zip
+                unzip cbc-win64.zip
+                cp cbc.exe $CONDA_PREFIX
+              else
+                conda install -c conda-forge coincbc
+              fi
+          - name: Install IPOPT
+            run: |
+              if [ ${{ matrix.os }} = macos-latest ]
+              then
+                # download IPOPT from conda-forge
+                conda install -c conda-forge ipopt
+              else
+                IPOPT_DIR="${GITHUB_WORKSPACE}/cache/ipopt"
+                mkdir -p "$IPOPT_DIR"
+                echo "$IPOPT_DIR" >> $GITHUB_PATH
+                DOWNLOAD_DIR="${GITHUB_WORKSPACE}/cache/download"
+                mkdir -p "$DOWNLOAD_DIR"
+                IPOPT_TAR=${DOWNLOAD_DIR}/ipopt.tar.gz
+
+                URL=https://github.com/IDAES/idaes-ext
+                RELEASE=$(curl --max-time 150 --retry 8 \
+                    -L -s -H 'Accept: application/json' ${URL}/releases/latest)
+                VER=$(echo $RELEASE | sed -e 's/.*"tag_name":"\([^"]*\)".*/\1/')
+                URL=${URL}/releases/download/$VER
+
+                if [ ${{ matrix.os }} = ubuntu-latest ]
+                then
+                  #  - ipopt needs: libopenblas-dev gfortran liblapack-dev
+                  sudo apt-get install libopenblas-dev gfortran liblapack-dev
+                  curl --max-time 150 --retry 8 \
+                    -L $URL/idaes-solvers-ubuntu1804-64.tar.gz \
+                    > $IPOPT_TAR
+                else
+                  # windows
+                   curl --max-time 150 --retry 8 \
+                    -L $URL/idaes-solvers-windows-64.tar.gz \
+                    $URL/idaes-lib-windows-64.tar.gz > $IPOPT_TAR
+                fi
+                cd $IPOPT_DIR
+                tar -xzi < $IPOPT_TAR
+                echo ""
+                echo "$IPOPT_DIR"
+                ls -l $IPOPT_DIR
+              fi
+          - name: Install Nose/Parameterized/Pytest
+            run: |
+              pip install nose parameterized pytest coveralls
+          - name: Install Cython/Numpy/Pandas
+            run: |
+              pip install cython numpy pandas
+          - name: Instal Pyutilib
+            run: |
+              pip install git+https://github.com/PyUtilib/pyutilib.git@${{ matrix.pyutilib-version }}
+          - name: Install Pyomo
+            run: |
+              pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
+          - name: Install Coramin
+            run: |
+              pip install git+https://github.com/coramin/coramin.git
+          - name: Install EGRET
+            run: |
+              python setup.py develop
+          - name: Run EGRET Tests
+            run: |
+              nosetests -v --nologcapture --with-coverage --cover-package=egret egret 

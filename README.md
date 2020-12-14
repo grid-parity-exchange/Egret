@@ -1,5 +1,3 @@
-[![TravisCI](https://travis-ci.com/grid-parity-exchange/Egret.svg?branch=master)](https://travis-ci.com/grid-parity-exchange/Egret)
-
 ## EGRET Overview
 
 EGRET is a Python-based package for electrical grid optimization based on the Pyomo optimization modeling language. EGRET is designed to be friendly for performing high-level analysis (e.g., as an engine for solving different optimization formulations), while also providing flexibility for researchers to rapidly explore new optimization formulations.
