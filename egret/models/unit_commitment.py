@@ -651,10 +651,8 @@ def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, 
     if len(t_subset) > 1:
         raise Exception("_lazy_ptdf_warmstart_copy_violations only handles t_subset with one element -- somebody should fix that!")
     slacks = None
-    PFV = dict()
-    PFV_I = dict()
+    flows = dict()
     viol_lazy = dict()
-    int_viol_lazy = dict()
     total_flow_constr_added = 0
     for t_o in m.TimePeriods:
         if t_o in t_subset:
@@ -677,11 +675,11 @@ def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, 
         b_other = m.TransmissionBlock[t_o]
         PTDF_other = b_other._PTDF
 
-        PFV[t_o], PFV_I[t_o], viol_lazy[t_o], int_viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks, slacks_I)
+        flows[t_o], viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks, slacks_I)
 
-        logger.debug(prepend_str+"adding {0} flow constraints at time {1}".format(len(viol_lazy[t_o])+len(int_viol_lazy[t_o]),t_o))
-        lpu.add_violations(viol_lazy[t_o], int_viol_lazy[t_o],  PFV[t_o], PFV_I[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str)
-        total_flow_constr_added += len(viol_lazy[t_o]) + len(int_viol_lazy[t_o])
+        logger.debug(prepend_str+"adding {0} flow constraints at time {1}".format(len(viol_lazy[t_o]),t_o))
+        lpu.add_violations(viol_lazy[t_o], flows[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str)
+        total_flow_constr_added += len(viol_lazy[t_o])
     logger.info(prepend_str+"added {0} flow constraint(s)".format(total_flow_constr_added))
 
 def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options=None):
@@ -756,12 +754,10 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
     ptdf_options = m._ptdf_options
 
-    PFV = dict()
-    PFV_I = dict()
+    flows = dict()
     viol_num = dict()
     mon_viol_num = dict()
     viol_lazy = dict()
-    int_viol_lazy = dict()
 
     if warmstart_loop:
         if t_subset is None:
@@ -783,7 +779,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
             PTDF = b._PTDF
 
-            PFV[t], PFV_I[t], viol_num[t], mon_viol_num[t], viol_lazy[t], int_viol_lazy[t] = \
+            flows[t], viol_num[t], mon_viol_num[t], viol_lazy[t] = \
                     lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t, prepend_str=prepend_str)
 
         total_viol_num = sum(viol_num.values())
@@ -819,8 +815,8 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
             PTDF = b._PTDF
 
-            lpu.add_violations(viol_lazy[t], int_viol_lazy[t], PFV[t], PFV_I[t], b, md, solver, ptdf_options, PTDF, time=t, prepend_str=prepend_str)
-            total_flow_constr_added += len(viol_lazy[t]) + len(int_viol_lazy[t])
+            lpu.add_violations(viol_lazy[t], flows[t], b, md, solver, ptdf_options, PTDF, time=t, prepend_str=prepend_str)
+            total_flow_constr_added += len(viol_lazy[t])
 
         logger.info(prepend_str+"iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 

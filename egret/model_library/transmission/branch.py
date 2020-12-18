@@ -80,6 +80,38 @@ def declare_var_pf_slack_neg(model, index_set, **kwargs):
     decl.declare_var('pf_slack_neg', model=model, index_set=index_set, **kwargs)
 
 
+def declare_var_pfc(model, index_set, **kwargs):
+    """
+    Create variable for the real part of the power flow in the "from"
+    end of the transmission line
+    """
+    decl.declare_var('pfc', model=model, index_set=index_set, **kwargs)
+
+
+def declare_expr_pfc(model, index_set, **kwargs):
+    """
+    Create expression for the real part of the power flow in the "from"
+    end of the transmission line
+    """
+    decl.declare_expr('pfc', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_pfc_slack_pos(model, index_set, **kwargs):
+    """
+    Create the positive slack variable for the real part of power flow
+    in the "from" end of the transmission line
+    """
+    decl.declare_var('pfc_slack_pos', model=model, index_set=index_set, **kwargs)
+
+
+def declare_var_pfc_slack_neg(model, index_set, **kwargs):
+    """
+    Create the negative slack variable for the real part of power flow
+    in the "from" end of the transmission line
+    """
+    decl.declare_var('pfc_slack_neg', model=model, index_set=index_set, **kwargs)
+
+
 def declare_var_pfi(model, index_set, **kwargs):
     """
     Create variable for the real part of the power flow through an interface
@@ -645,8 +677,6 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
     max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
 
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
     m_p_nw = model.p_nw
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
@@ -690,6 +720,72 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None
                 m.pfl[branch_name] == expr
         else:
             m.pfl[branch_name] = expr
+
+
+def get_contingency_power_flow_expr_ptdf_approx(model, contingency_name, branch_name, PTDF,
+                                                rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create a pyomo power flow expression from PTDF matrix for a contingency
+    """
+
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
+    const = PTDF.get_contingency_branch_const(contingency_name, branch_name)
+
+    max_coef = PTDF.get_contingency_branch_ptdf_abs_max(contingency_name, branch_name)
+
+    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
+    m_p_nw = model.p_nw
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_p_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in PTDF.get_contingency_branch_ptdf_iterator(contingency_name, branch_name):
+            if abs(coef) >= ptdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_p_nw[bus_name])
+
+        lin_expr_list = [const] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_p_nw[bus_name]
+            for bus_name, coef in PTDF.get_contingency_branch_ptdf_iterator(contingency_name, branch_name)
+            if abs(coef) >= ptdf_tol), start=const, linear=True)
+
+    return expr
+
+
+def declare_eq_contingency_branch_power_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create the equality constraints or expressions for power (from PTDF
+    approximation) in the branch under contingency
+    """
+
+    m = model
+
+    con_set = decl.declare_set("_con_eq_contingency_branch_power_ptdf_approx_set", model, index_set)
+
+    pfc_is_var = isinstance(m.pfc, pe.Var)
+
+    if pfc_is_var:
+        m.eq_pfc_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.pf, pe.Expression):
+            raise Exception("Unrecognized type for m.pf", m.pf.pprint())
+
+    for contingency_name, branch_name in con_set:
+        expr = \
+            get_contingency_power_flow_expr_ptdf_approx(m, contingency_name, branch_name, PTDF, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
+
+        if pfc_is_var:
+            m.eq_pfc_branch[branch_name] = \
+                m.pfc[branch_name] == expr
+        else:
+            m.pfc[branch_name] = expr
 
 
 def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
@@ -916,7 +1012,7 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
     based on the power variables or expressions.
     """
     m = model
-    con_set = decl.declare_set('_con_ineq_p_branch_thermal_lbub',
+    con_set = decl.declare_set('_con_ineq_p_branch_thermal_bounds',
                                model=model, index_set=index_set)
     # flag for if slacks are on the model
     if slacks:
@@ -950,6 +1046,51 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
 
             m.ineq_pf_branch_thermal_bounds[branch_name] = \
                     generate_thermal_bounds(m.pf[branch_name], -limit, limit, neg_slack, pos_slack)
+
+def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
+                                                     pc_thermal_limits,
+                                                     approximation_type=ApproximationType.PTDF,
+                                                     slacks=False, slack_cost_expr=None):
+    """
+    Create an inequality constraint for the branch thermal limits
+    based on the power variables or expressions.
+    """
+    m = model
+    con_set = decl.declare_set('_con_ineq_p_branch_thermal_bounds',
+                               model=model, index_set=index_set)
+    # flag for if slacks are on the model
+    if slacks:
+        if not hasattr(model, 'pfc_slack_pos'):
+            raise Exception('No positive slack branch variables on model, but slacks=True')
+        if not hasattr(model, 'pfc_slack_neg'):
+            raise Exception('No negative slack branch variables on model, but slacks=True')
+        if slack_cost_expr is None:
+            raise Exception('No cost expression for slacks, but slacks=True')
+
+    m.ineq_pf_branch_thermal_bounds = pe.Constraint(con_set)
+
+    if approximation_type == ApproximationType.BTHETA or \
+            approximation_type == ApproximationType.PTDF:
+        for (contingency_name, branch_name) in con_set:
+            limit = pc_thermal_limits[branch_name]
+            if limit is None:
+                continue
+
+            if slacks and (contingency_name, branch_name) in m.pfc_slack_neg.index_set():
+                assert branch_name in m.pfc_slack_pos.index_set()
+                neg_slack = m.pfc_slack_neg[contingency_name, branch_name]
+                pos_slack = m.pfc_slack_pos[contingency_name, branch_name]
+                uc_model = slack_cost_expr.parent_block()
+                slack_cost_expr.expr += (uc_model.TimePeriodLengthHours
+                                         * uc_model.ContingencyLimitPenalty[contingency_name, branch_name]
+                                         * (neg_slack + pos_slack) )
+                assert len(m.pf_slack_pos) == len(m.pf_slack_neg)
+            else:
+                neg_slack = None
+                pos_slack = None
+
+            m.ineq_pf_branch_thermal_bounds[contingency_name, branch_name] = \
+                    generate_thermal_bounds(m.pfc[contingency_name, branch_name], -limit, limit, neg_slack, pos_slack)
 
 def declare_ineq_angle_diff_branch_lbub_c_s(model, index_set, branches):
     """

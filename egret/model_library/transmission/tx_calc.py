@@ -696,7 +696,7 @@ class _ContingencyCompensator:
     def Wbar(self): 
         return self._Wbar
 
-class _ContingencyComponsators(abc.Mapping):
+class _ContingencyCompensators(abc.Mapping):
     def __init__(self, compensators, L, U, Pr, Pc):
         self._compensators = compensators
         self._L = L
@@ -796,7 +796,7 @@ def precompute_contingency_matricies( graph, MLU_MP, A, Bd,\
 
         compensators[cn] = comp
 
-    contingency_compensators = _ContingencyComponsators(compensators=compensators, L=L_factor, U=U_factor, Pr=Pr, Pc=Pc)
+    contingency_compensators = _ContingencyCompensators(compensators=compensators, L=L_factor, U=U_factor, Pr=Pr, Pc=Pc)
 
     return contingency_compensators
 

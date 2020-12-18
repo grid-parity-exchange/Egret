@@ -11,6 +11,7 @@
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 from egret.model_library.defn import ApproximationType
 from egret.common.log import logger
+import collections.abc as abc
 import egret.model_library.transmission.branch as libbranch
 import pyomo.environ as pyo
 import numpy as np
@@ -18,11 +19,51 @@ import copy as cp
 
 from enum import Enum
 
-
 class LazyPTDFTerminationCondition(Enum):
     NORMAL = 1
     ITERATION_LIMIT = 2
     FLOW_VIOLATION = 3
+
+class _LazyViolations(abc.Sized):
+    def __init__(self, branch_lazy_violations,
+                       interface_lazy_violations=None,
+                       contingency_lazy_violations=None):
+        self._branch_lazy_violations = branch_lazy_violations
+        if interface_lazy_violations is None:
+            self._interface_lazy_violations = set()
+        else:
+            self._interface_lazy_violations = interface_lazy_violations
+        if contingency_lazy_violations is None:
+            self._contingency_lazy_violations = set()
+        else:
+            self._contingency_lazy_violations = contingency_lazy_violations
+
+    def __len__(self):
+        return len(self._branch_lazy_violations) \
+                + len(self._interface_lazy_violations) \
+                + len(self._contingency_lazy_violations)
+
+    @property
+    def branch_lazy_violations(self):
+        return self._branch_lazy_violations
+    @property
+    def interface_lazy_violations(self):
+        return self._interface_lazy_violations
+    @property
+    def contingency_lazy_violations(self):
+        return self._contingency_lazy_violations
+
+class _CalculatedFlows:
+    def __init__(self, PFV=None, PFV_I=None):
+        self._PFV = PFV
+        self._PFV_I = PFV_I
+
+    @property
+    def PFV(self):
+        return self._PFV
+    @property
+    def PFV_I(self):
+        return self._PFV_I
 
 def populate_default_ptdf_options(ptdf_options):
     if ptdf_options is None:
@@ -111,8 +152,10 @@ def add_monitored_flow_tracker(mb):
     # for these attributes
     if not hasattr(mb, 'pf_slack_pos'):
         mb.pf_slack_pos = pyo.Var([], dense=False)
-    if not hasattr(mb, 'pfi_slack_neg'):
+    if not hasattr(mb, 'pfi_slack_pos'):
         mb.pfi_slack_pos = pyo.Var([], dense=False)
+    if not hasattr(mb, 'pfc_slack_pos'):
+        mb.pfc_slack_pos = pyo.Var([], dense=False)
 
 def _get_viol_viol_lazy(limit_type, flow, lazy_limits, enforced_limits, mon_idx):
     assert limit_type in ['ub', 'lb']
@@ -251,8 +294,11 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
             else:
                 raise Exception("Unexpected sel_viol_type {}".format(sel_viol_type))
 
-    return PFV, PFV_I, viol_num, monitored_viol_num, viol_lazy, viol_int_lazy
+    viol_lazy = _LazyViolations(branch_lazy_violations=viol_lazy,
+                                interface_lazy_violations=viol_int_lazy)
+    flows = _CalculatedFlows(PFV=PFV, PFV_I=PFV_I)
 
+    return flows, viol_num, monitored_viol_num, viol_lazy
 
 def _generate_flow_monitor_remove_message(flow_type, bn, slack, baseMVA, time):
     ret_str = "removing {0} {1} from monitored set".format(flow_type, bn)
@@ -474,7 +520,7 @@ def _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit):
     return libbranch.generate_thermal_bounds(mb.pfi[i_n], minimum_limit, maximum_limit, neg_slack, pos_slack), new_var
 
 ## violation adder
-def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_options,
+def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                     PTDF, time=None, prepend_str=""):
 
     if time is None:
@@ -492,12 +538,12 @@ def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_op
 
     constr = mb.ineq_pf_branch_thermal_bounds
     viol_in_mb = mb._idx_monitored
-    for i, bn in _iter_over_viol_set(viol_lazy, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
+    for i, bn in _iter_over_viol_set(lazy_violations.branch_lazy_violations, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
         thermal_limit = PTDF.branch_limits_array_masked[i]
-        if PFV is None:
+        if flows.PFV is None:
             logger.debug(prepend_str+_generate_flow_monitor_message('branch', bn, time=time))
         else:
-            logger.debug(prepend_str+_generate_flow_monitor_message('branch', bn, PFV[i], -thermal_limit, thermal_limit, baseMVA, time))
+            logger.debug(prepend_str+_generate_flow_monitor_message('branch', bn, flows.PFV[i], -thermal_limit, thermal_limit, baseMVA, time))
 
         constr[bn], new_slacks = _generate_branch_thermal_bounds(mb, bn, thermal_limit)
         viol_in_mb.append(i)
@@ -522,13 +568,13 @@ def add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, mb, md, solver, ptdf_op
         return
     constr = mb.ineq_pf_interface_bounds
     int_viol_in_mb = mb._interfaces_monitored
-    for i, i_n in _iter_over_int_viol_set(int_viol_lazy, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
+    for i, i_n in _iter_over_int_viol_set(lazy_violations.interface_lazy_violations, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
         minimum_limit = PTDF.interface_min_limits[i]
         maximum_limit = PTDF.interface_max_limits[i]
-        if PFV_I is None:
+        if flows.PFV_I is None:
             logger.debug(prepend_str+_generate_flow_monitor_message('interface', i_n, time=time))
         else:
-            logger.debug(prepend_str+_generate_flow_monitor_message('interface', i_n, PFV_I[i], minimum_limit, maximum_limit, baseMVA, time))
+            logger.debug(prepend_str+_generate_flow_monitor_message('interface', i_n, flows.PFV_I[i], minimum_limit, maximum_limit, baseMVA, time))
         constr[i_n], new_slacks = _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit)
         int_viol_in_mb.append(i)
         if new_slacks:
@@ -622,7 +668,11 @@ def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I):
                 if idx not in interfaces_monitored:
                     int_viol_lazy.add(idx)
 
-    return None, None, viol_lazy, int_viol_lazy
+    flows = _CalculatedFlows()
+    viol_lazy = _LazyViolations(branch_lazy_violations=viol_lazy,
+                                interface_lazy_violations=int_viol_lazy)
+
+    return flows, viol_lazy
 
 def _binary_var_generator(instance):
     regulation =  bool(instance.regulation_service)

@@ -133,7 +133,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
 
     def _calculate_ptdf_factorization(self):
         logger.info("Calculating PTDF Matrix Factorization")
-        MLU, B_dA, ref_bus_mask, B_dA_I, I = tx_calc.calculate_ptdf_factorization(self._branches,
+        MLU, B_dA, ref_bus_mask, _, B_dA_I, I = tx_calc.calculate_ptdf_factorization(self._branches,
                                                                        self._buses,self.branches_keys,
                                                                        self.buses_keys,
                                                                        self._reference_bus,
