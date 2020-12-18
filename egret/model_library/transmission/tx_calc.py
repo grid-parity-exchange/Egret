@@ -276,6 +276,20 @@ def calculate_va_from_vj_vr(vj, vr):
         return va
     return None
 
+def _get_susceptance(branch, approximation_type):
+    if branch['branch_type'] == 'transformer':
+        tau = branch['transformer_tap_ratio']
+    else:
+        tau = 1.
+
+    if approximation_type == ApproximationType.PTDF:
+        x = branch['reactance']
+        b = -1./(tau*x)
+    elif approximation_type == ApproximationType.PTDF_LOSSES:
+        b = calculate_susceptance(branch)/tau
+    else:
+        raise RuntimeError("Could not find appropriate susceptance value")
+    return b
 
 def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART,approximation_type=ApproximationType.PTDF):
     """
@@ -293,15 +307,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        tau = 1.0
-        if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
-
-        if approximation_type == ApproximationType.PTDF:
-            x = branch['reactance']
-            b = -1/(tau*x)
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            b = calculate_susceptance(branch)/tau
+        b = _get_susceptance(branch, approximation_type)
 
         if base_point == BasePointType.FLATSTART:
             val = -b
@@ -342,15 +348,7 @@ def _calculate_Bd(branches,index_set_branch,base_point=BasePointType.FLATSTART,a
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        tau = 1.0
-        if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
-
-        if approximation_type == ApproximationType.PTDF:
-            x = branch['reactance']
-            b = -1/(tau*x)
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            b = calculate_susceptance(branch)/tau
+        b = _get_susceptance(branch, approximation_type)
 
         if base_point == BasePointType.FLATSTART:
             val = b
@@ -459,18 +457,13 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        tau = 1.0
-        shift = 0.0
         if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
+        else: # shift == 0
+            continue
 
-        b = 0.
-        if approximation_type == ApproximationType.PTDF:
-            x = branch['reactance']
-            b = -(1/x)*(shift/tau)
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            b = calculate_susceptance(branch)*(shift/tau)
+        b = _get_susceptance(branch, approximation_type)
+        b *= shift
 
         row_from.append(mapping_bus_to_idx[from_bus])
         row_to.append(mapping_bus_to_idx[to_bus])
