@@ -495,7 +495,7 @@ def calculate_phi_adjust(branches,index_set_branch,index_set_bus,approximation_t
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        if branch['branch_type'] == 'transformer':
+        if branch['branch_type'] == 'transformer' and branch['transformer_phase_shift'] != 0.:
             shift = math.radians(branch['transformer_phase_shift'])
         else: # shift == 0
             continue
@@ -695,6 +695,7 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
         contingency_compensators = \
             precompute_contingency_matricies( graph, MLU_MP, At_masked.T, Bd,
                                               mapping_bus_to_idx, mapping_branch_to_idx, 
+                                              ref_bus_mask,
                                               branches, contingencies )
     else:
         contingency_compensators = {}
@@ -710,11 +711,12 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
         return MLU_MP, B_dA, ref_bus_mask, contingency_compensators, B_dA_I, I
 
 class _ContingencyCompensator:
-    def __init__(self, M, c, W, Wbar):
+    def __init__(self, M, c, W, Wbar, phi_compensator):
         self._M = M
         self._c = c
         self._W = W
         self._Wbar = Wbar
+        self._phi_compensator = phi_compensator
 
     @property
     def M(self):
@@ -728,6 +730,9 @@ class _ContingencyCompensator:
     @property
     def Wbar(self): 
         return self._Wbar
+    @property
+    def phi_compensator(self):
+        return self._phi_compensator
 
 class _ContingencyCompensators(abc.Mapping):
     def __init__(self, compensators, L, U, Pr, Pc):
@@ -762,6 +767,7 @@ class _ContingencyCompensators(abc.Mapping):
 
 def precompute_contingency_matricies( graph, MLU_MP, A, Bd,\
                                       mapping_bus_to_idx,  mapping_branch_to_idx, 
+                                      ref_bus_mask,
                                       branches, contingencies):
 
     contingencies_monitored = {}
@@ -825,7 +831,24 @@ def precompute_contingency_matricies( graph, MLU_MP, A, Bd,\
         z = (Wbar.T@W)[0,0]
         c = 1./((1./dely) + z)
 
-        comp = _ContingencyCompensator(M=M, c=c, W=W, Wbar=Wbar)
+        # Compute phi_compensator
+        branch = branches[branch_out]
+
+        if branch['branch_type'] == 'transformer' and branch['transformer_phase_shift'] != 0.:
+            shift = math.radians(branch['transformer_phase_shift'])
+
+            neg_b = shift*dely
+
+            row = [mapping_bus_to_idx[branch['from_bus']], mapping_bus_to_idx[branch['to_bus']]]
+            col = [0, 0]
+            data = [neg_b, -neg_b]
+
+            phi_comp = sp.coo_matrix((data,(row,col)), shape=(_bus_len+1,1)).tocsc()[ref_bus_mask]
+
+        else:
+            phi_comp = sp.coo_matrix(([],([],[])), shape=(_bus_len,1)).tocsc()
+
+        comp = _ContingencyCompensator(M=M, c=c, W=W, Wbar=Wbar, phi_compensator=phi_comp)
 
         compensators[cn] = comp
 

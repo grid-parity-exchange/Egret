@@ -356,8 +356,9 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         ptdf_row = self._get_contingency_row(contingency_name, branch_name)
         branch_idx = self._branchname_to_index_map[branch_name]
 
-        ## TODO : we need to adjust the adjusters
-        phi_adj = ptdf_row@self.phi_adjust_array
+        phi_compensator = self._contingency_compenators[contingency_name].phi_compensator
+
+        phi_adj = ptdf_row@(self.phi_adjust_array+phi_compensator)
             ## phi adj   +     phase shift
         return phi_adj[0]+self.phase_shift_flow_adjuster_array[branch_idx,0]
 

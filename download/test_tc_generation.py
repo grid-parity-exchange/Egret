@@ -76,6 +76,9 @@ contingencies = { 'c0' : {'branch_contingency': branch_name} }
 
 MLU_MP, B_dA, ref_bus_mask, contingency_compensators = tx_calc.calculate_ptdf_factorization(branches, buses, index_set_branch, index_set_bus, reference_bus, mapping_bus_to_idx=mapping_bus_to_idx, mapping_branch_to_idx=mapping_branch_to_idx, contingencies=contingencies)
 
+phi_adjust = tx_calc.calculate_phi_adjust(branches,index_set_branch,index_set_bus,mapping_bus_to_idx=mapping_bus_to_idx)
+phi_adjust = phi_adjust[ref_bus_mask]
+
 print(contingency_compensators)
 
 Bd = tx_calc._calculate_Bd(branches, index_set_branch)
@@ -117,6 +120,9 @@ if not np.allclose((M+delM).A, Mn2.A):
 
 MLU_MPn2, B_dAn2, ref_bus_maskn2, _ = tx_calc.calculate_ptdf_factorization(branchesn2, busesn2, index_set_branchn2, index_set_busn2, reference_bus, mapping_bus_to_idx=mapping_bus_to_idxn2, mapping_branch_to_idx=mapping_branch_to_idxn2)
 
+phi_adjust_2 = tx_calc.calculate_phi_adjust(branchesn2,index_set_branchn2,index_set_busn2,mapping_bus_to_idx=mapping_bus_to_idxn2)
+
+phi_adjust_2 = phi_adjust_2[ref_bus_maskn2]
 
 tt.tic()
 buff = np.zeros((len(index_set_bus)-1,1))
@@ -216,6 +222,11 @@ Pc = contingency_compensators.Pc
 Pr = contingency_compensators.Pr
 
 #tt.toc('verified compensator')
+
+# NOTE: IEEE 300 branch 390 has a non-trivial compensator
+print(comp.phi_compensator)
+assert all(phi_adjust_2 == (phi_adjust + comp.phi_compensator))
+tt.toc('verified phi compensator')
 
 p_nw = { bus : 0. for bus in index_set_bus }
 for g, g_dict in md.elements(element_type='generator'):
