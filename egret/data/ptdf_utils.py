@@ -63,7 +63,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
     '''
     def __init__(self, branches, buses, reference_bus, base_point,
                         ptdf_options, branches_keys = None, buses_keys = None,
-                        interfaces = None):
+                        interfaces = None, contingencies = None):
         '''
         Creates a new VirtualPTDFMatrix object to provide
         some useful methods for interfacing with Egret pyomo models
@@ -90,6 +90,8 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
             eliminated. (Uses buses_keys_no_ref for direct indexing)
         interfaces (dict) (optional) :
             dictionary of interfaces and their attributes
+        contingencies (dict) (optional) :
+            dictionary of contingencies and their attributes
         '''
         self._branches = branches
         self._buses = buses
@@ -118,6 +120,11 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self.interfaces = interfaces
         self._calculate_interface_limits()
 
+        if contingencies is None:
+            contingencies = dict()
+        self.contingencies = contingencies
+        self._calculate_contingency_limits()
+
         self._base_point = base_point
         self._calculate_ptdf_factorization()
 
@@ -130,6 +137,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         # (esp. important for UC)
         self._ptdf_rows = dict()
         self._interface_rows = dict()
+        self._contingency_rows = dict()
 
     def _calculate_ptdf_factorization(self):
         logger.info("Calculating PTDF Matrix Factorization")
@@ -168,23 +176,27 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self.interface_max_limits = np.fromiter(_interface_limit_iter('maximum_limit', np.inf), float, count=len(self.interface_keys))
         self.interface_min_limits = np.fromiter(_interface_limit_iter('minimum_limit', -np.inf), float, count=len(self.interface_keys))
 
+    def _calculate_contingency_limits(self):
+        if self.contingencies:
+            def _contingency_limit_iter():
+                for bn in self.branches_keys:
+                    branch = self._branches[bn]
+                    if 'rating_emergency' in branch:
+                        yield branch['rating_emergency']
+                    else:
+                        yield np.inf
+            self.contingency_limits_array = np.fromiter(_contingency_limit_iter(), float, count=len(self.branches_keys))
+        else:
+            self.contingency_limits_array = np.empty(shape=(len(self.branches_keys),0)) # create an empty array for slicing on
+        self.branch_limits_array.flags.writeable = False
+
     def _calculate_phi_adjust(self, ref_bus_mask):
-        phi_from, phi_to = tx_calc.calculate_phi_constant(self._branches,
-                                                          self.branches_keys,
-                                                          self.buses_keys,ApproximationType.PTDF,
-                                                          mapping_bus_to_idx=self._busname_to_index_map)
+        phi_adjust_array = tx_calc.calculate_phi_adjust(self._branches,
+                                                        self.branches_keys,
+                                                        self.buses_keys,ApproximationType.PTDF,
+                                                        mapping_bus_to_idx=self._busname_to_index_map)
 
-
-        ## hold onto these for line outages
-        self._phi_from = phi_from
-        self._phi_to = phi_to
-
-        phi_adjust_array = phi_from-phi_to
-        phi_adjust_array = phi_adjust_array[ref_bus_mask]
-
-        ## sum across the rows to get the total impact, and convert
-        ## to dense for fast operations later
-        self.phi_adjust_array = sp.csc_matrix(phi_adjust_array.sum(axis=1))
+        self.phi_adjust_array = phi_adjust_array[ref_bus_mask]
 
     def _calculate_phase_shift_flow_adjuster(self):
         self.phase_shift_flow_adjuster_array = \
@@ -199,6 +211,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
             self.B_dA_masked = self.B_dA
             self.phase_shift_flow_adjuster_array_masked = self.phase_shift_flow_adjuster_array
             self.branch_limits_array_masked = self.branch_limits_array
+            self.contingency_limits_array_masked = self.contingency_limits_array
             return
 
         branches = self._branches
@@ -238,6 +251,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self.B_dA_masked = self.B_dA[branch_mask]
         self.phase_shift_flow_adjuster_array_masked = self.phase_shift_flow_adjuster_array[branch_mask]
         self.branch_limits_array_masked = self.branch_limits_array[branch_mask]
+        self.contingency_limits_array_masked = self.contingency_limits_array[branch_mask]
 
     def _set_lazy_limits(self, ptdf_options):
         if ptdf_options['lazy']:
@@ -246,14 +260,17 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
             branch_limits = self.branch_limits_array_masked
             interface_max_limits = self.interface_max_limits
             interface_min_limits = self.interface_min_limits
+            contingency_limits = self.contingency_limits_array_masked
             rel_flow_tol = ptdf_options['rel_flow_tol']
             abs_flow_tol = ptdf_options['abs_flow_tol']
             lazy_flow_tol = ptdf_options['lazy_rel_flow_tol']
 
             ## only enforce the relative and absolute, within tollerance
             self.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+            self.enforced_contingency_limits = np.maximum(contingency_limits*(1+rel_flow_tol), contingency_limits+abs_flow_tol)
             ## make sure the lazy limits are a superset of the enforce limits
             self.lazy_branch_limits = np.minimum(branch_limits*(1+lazy_flow_tol), self.enforced_branch_limits)
+            self.lazy_contingency_limits = np.minimum(contingency_limits*(1+lazy_flow_tol), self.enforced_contingency_limits)
             abs_max_limits_i = np.abs(interface_max_limits)
             abs_min_limits_i = np.abs(interface_min_limits)
 
@@ -294,26 +311,53 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
 
     def get_branch_ptdf_iterator(self, branch_name):
         '''
-        Returns a (bus_name, coefficient) iterator for a given branch_name
+        returns a (bus_name, coefficient) iterator for a given branch_name
         '''
         yield from zip(self.buses_keys_no_ref, self._get_ptdf_row(branch_name))
 
     def get_branch_ptdf_abs_max(self, branch_name):
         '''
-        Returns the maximum of the absolute value for any coefficent
-        in branch_name's PTDF row
+        returns the maximum of the absolute value for any coefficent
+        in branch_name's ptdf row
         '''
-        PTDF_row = self._get_ptdf_row(branch_name)
-        return np.abs(PTDF_row).max()
+        ptdf_row = self._get_ptdf_row(branch_name)
+        return np.abs(ptdf_row).max()
 
     def get_branch_const(self, branch_name):
         '''
-        Returns the constant coefficient for branch_name 's 
+        returns the constant coefficient for branch_name 's 
         power flow equation (given bus net withdrawls)
         '''
-        PTDF_row = self._get_ptdf_row(branch_name)
+        ptdf_row = self._get_ptdf_row(branch_name)
         branch_idx = self._branchname_to_index_map[branch_name]
-        phi_adj = PTDF_row@self.phi_adjust_array
+        phi_adj = ptdf_row@self.phi_adjust_array
+            ## phi adj   +     phase shift
+        return phi_adj[0]+self.phase_shift_flow_adjuster_array[branch_idx,0]
+
+    def get_contingency_branch_ptdf_iterator(self, contingency_name, branch_name):
+        '''
+        returns a (bus_name, coefficient) iterator for a given branch_name
+        '''
+        yield from zip(self.buses_keys_no_ref, self._get_contingency_row(contingency_name, branch_name))
+
+    def get_contingency_branch_ptdf_abs_max(self, contingency_name, branch_name):
+        '''
+        returns the maximum of the absolute value for any coefficent
+        in branch_name's ptdf row
+        '''
+        ptdf_row = self._get_contingency_row(contingency_name, branch_name)
+        return np.abs(ptdf_row).max()
+
+    def get_contingency_branch_const(self, contingency_name, branch_name):
+        '''
+        returns the constant coefficient for branch_name 's 
+        power flow equation (given bus net withdrawls)
+        '''
+        ptdf_row = self._get_contingency_row(contingency_name, branch_name)
+        branch_idx = self._branchname_to_index_map[branch_name]
+
+        ## TODO : we need to adjust the adjusters
+        phi_adj = ptdf_row@self.phi_adjust_array
             ## phi adj   +     phase shift
         return phi_adj[0]+self.phase_shift_flow_adjuster_array[branch_idx,0]
 

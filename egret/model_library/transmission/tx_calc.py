@@ -475,6 +475,46 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
 
     return phi_from.tocsr(), phi_to.tocsr()
 
+def calculate_phi_adjust(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
+    """
+    Compute the phase shifter constant for fixed phase shift transformers
+    """
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    row = []
+    col = []
+    data = []
+
+    for idx_col, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        if branch['branch_type'] == 'transformer':
+            shift = math.radians(branch['transformer_phase_shift'])
+        else: # shift == 0
+            continue
+
+        b = _get_susceptance(branch, approximation_type)
+        b *= shift
+
+        row.append(mapping_bus_to_idx[from_bus])
+        col.append(0)
+        data.append(b)
+
+        row.append(mapping_bus_to_idx[to_bus])
+        col.append(0)
+        data.append(-b)
+
+    phi_adjust = sp.coo_matrix((data,(row,col)), shape=(_len_bus,1))
+
+    return phi_adjust.tocsc()
+
 
 def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=None):
     """
