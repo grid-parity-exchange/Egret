@@ -12,6 +12,7 @@ This module collects some helper functions useful for performing
 different computations for transmission models
 """
 import math
+import weakref
 import collections.abc as abc
 import numpy as np
 import scipy.sparse as sp
@@ -717,6 +718,7 @@ class _ContingencyCompensator:
         self._W = W
         self._Wbar = Wbar
         self._phi_compensator = phi_compensator
+        self._global = None
 
     @property
     def M(self):
@@ -734,9 +736,24 @@ class _ContingencyCompensator:
     def phi_compensator(self):
         return self._phi_compensator
 
+    @property
+    def L(self):
+        return self._global()._L
+    @property
+    def U(self):
+        return self._global()._U
+    @property
+    def Pr(self):
+        return self._global()._Pr
+    @property
+    def Pc(self):
+        return self._global()._Pc
+
 class _ContingencyCompensators(abc.Mapping):
     def __init__(self, compensators, L, U, Pr, Pc):
         self._compensators = compensators
+        for c in compensators:
+            c._global = weakref.ref(self)
         self._L = L
         self._U = U
         self._Pr = Pr
