@@ -139,6 +139,9 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         self._interface_rows = dict()
         self._contingency_rows = dict()
 
+        # dense array write buffer
+        self._bus_sensi_buffer = np.empty((1,len(self.buses_keys_no_ref)), dtype=np.float64)
+
     def _calculate_ptdf_factorization(self):
         logger.info("Calculating PTDF Matrix Factorization")
         MLU, B_dA, ref_bus_mask, _, B_dA_I, I = tx_calc.calculate_ptdf_factorization(self._branches,
@@ -296,16 +299,29 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         else:
             # calculate row
             branch_idx = self._branchname_to_index_map[branch_name]
-            PTDF_row = self.MLU.solve(self.B_dA[branch_idx].A[0], trans='T')
+            PTDF_row = self.MLU.solve(self.B_dA[branch_idx].toarray(out=self._bus_sensi_buffer)[0], trans='T')
             self._ptdf_rows[branch_name] = PTDF_row
         return PTDF_row
+
+    def _get_contingency_row(contingency_name, branch_name):
+        if (contingency_name, branch_name) in self._contingency_rows:
+            cont_PTDF_row = self._contingency_rows[contingency_name,branch_name]
+        else:
+            ## TODO: should we be using post-compensation if the PTDF row is already calculated?
+            branch_idx = self._branchname_to_index_map[branch_name]
+            cc = self._contingency_compenators[contingency_name]
+            hatF = cc.U.solve((B_dA[branch_idx]@cc.Pc).toarray(out=self._bus_sensi_buffer)[0], 'T')
+            delF = cc.Wbar*((-cc.c)*(cc.W.T@hatF))
+            cont_PTDF_row = cc.Pr.T@cc.L.solve(hatF+delF, 'T')
+            self._contingency_rows[contingency_name, branch_name] = cont_PTDF_row
+        return cont_PTDF_row
 
     def _get_interface_row(self, interface_name):
         if interface_name in self._interface_rows:
             I_row = self._interface_rows[interface_name]
         else:
             interface_idx = self.interfacename_to_index_map[interface_name]
-            I_row = self.MLU.solve(self.B_dA_I[interface_idx].A[0], trans='T')
+            I_row = self.MLU.solve(self.B_dA_I[interface_idx].toarray(out=self._bus_sensi_buffer)[0], trans='T')
             self._interface_rows[interface_name] = I_row
         return I_row
 
