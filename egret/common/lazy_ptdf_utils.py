@@ -66,11 +66,11 @@ class _CalculatedFlows:
         return self._PFV_I
 
 class _MaximalViolationsStore:
-    def __init__(self, max_viol_add, mb, md, time=None):
+    def __init__(self, max_viol_add, md, prepend_str, time=None):
         self.max_viol_add = max_viol_add
-        self.mb = mb
-        self.md = md
+        self.baseMVA = md.data['system']['baseMVA']
         self.time = time
+        self.prepend_str = prepend_str
         self.violations_store = {}
         self.total_violations = 0
         self.monitored_violations = 0
@@ -80,7 +80,7 @@ class _MaximalViolationsStore:
             if key[0] == name:
                 yield key[1]
 
-    def _min_flow_violation(self):
+    def min_flow_violation(self):
         if self.violations_store:
             return min(self.violations_store.values())
         else:
@@ -112,15 +112,15 @@ class _MaximalViolationsStore:
         while viol_indices:
             idx = np.argmax(viol_array[viol_indices])
             val = viol_array[viol_indices[idx]]
-            if val < self._min_flow_violation() and len(self.violations_store) >= self.max_viol_add:
+            if val < self.min_flow_violation() and len(self.violations_store) >= self.max_viol_add:
                 break
             self._add_violation( name, other_name, viol_indices[idx], val )
             viol_indices.pop(idx)
 
-    def check_and_add_violations(self, name, flow_array,
+    def check_and_add_violations(self, name, flow_array, flow_variable,
                 upper_lazy_limits, upper_enforced_limits,
                 lower_lazy_limits, lower_enforced_limits,
-                monitored_indices, outer_name=None):
+                monitored_indices, index_names, outer_name=None):
 
         ## check upper bound
         upper_viol_lazy_array = flow_array - upper_lazy_limits
@@ -128,10 +128,12 @@ class _MaximalViolationsStore:
         ## get the indices of the violation
         ## here filter by least violation in violations_store
         ## in the limit, this will become 0 eventually --
-        upper_viol_lazy_idx = np.nonzero(upper_viol_lazy_array > self._min_flow_violation())[0]
+        upper_viol_lazy_idx = np.nonzero(upper_viol_lazy_array > self.min_flow_violation())[0]
 
         upper_viol_array = flow_array[upper_viol_lazy_idx] - upper_enforced_limits[upper_viol_lazy_idx]
-        self._calculate_total_and_monitored_violations(upper_viol_array, upper_viol_lazy_idx, monitored_indices)
+        self._calculate_total_and_monitored_violations(upper_viol_array, upper_viol_lazy_idx, monitored_indices,
+                                                        flow_variable, flow_array, index_names, upper_enforced_limits,
+                                                        name )
 
         ## viol_lazy_idx will hold the lines we're adding
         ## this iteration -- don't want to add lines
@@ -148,10 +150,12 @@ class _MaximalViolationsStore:
         ## get the indices of the violation
         ## here filter by least violation in violations_store
         ## in the limit, this will become 0 eventually --
-        lower_viol_lazy_idx = np.nonzero(lower_viol_lazy_array > self._min_flow_violation())[0]
+        lower_viol_lazy_idx = np.nonzero(lower_viol_lazy_array > self.min_flow_violation())[0]
 
         lower_viol_array =  lower_enforced_limits[lower_viol_lazy_idx] - flow_array[lower_viol_lazy_idx]
-        self._calculate_total_and_monitored_violations(lower_viol_array, lower_viol_lazy_idx, monitored_indices) 
+        self._calculate_total_and_monitored_violations(lower_viol_array, lower_viol_lazy_idx, monitored_indices,
+                                                        flow_variable, flow_array, index_names, lower_enforced_limits,
+                                                        name )
 
         ## viol_lazy_idx will hold the lines we're adding
         ## this iteration -- don't want to add lines
@@ -163,7 +167,9 @@ class _MaximalViolationsStore:
         self._add_violations( name, outer_name, lower_viol_lazy_array, lower_viol_lazy_idx )
 
 
-    def _calculate_total_and_monitored_violations(self, viol_array, viol_lazy_idx, monitored_indices): 
+    def _calculate_total_and_monitored_violations(self, viol_array, viol_lazy_idx, monitored_indices,
+                                                        flow_variable, flow_array, index_names, limits,
+                                                        name ):
         ## viol_idx_idx will be indexed by viol_lazy_idx
         viol_idx_idx = np.nonzero(viol_array > 0)[0]
         viol_idx = frozenset(viol_lazy_idx[viol_idx_idx])
@@ -173,18 +179,10 @@ class _MaximalViolationsStore:
         viol_in_mb = viol_idx.intersection(monitored_indices)
         self.monitored_violations += len(viol_in_mb)
 
-        '''
-        ## TODO: GENERALIZE CODE BELOW
         for i in viol_in_mb:
-            bn = PTDF.branches_keys_masked[i]
-            thermal_limit = PTDF.branch_limits_array_masked[i]
-            if 'violation_penalty' in branches[bn] \
-                    and branches[bn]['violation_penalty'] is not None:
-                log_func = logger.info
-            else:
-                log_func = logger.warning
-            log_func(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], -thermal_limit, baseMVA, time))
-        '''
+            element_name = index_names[i]
+            thermal_limit = limits[i]
+            logger.info(self.prepend_str+_generate_flow_viol_warning(flow_variable, name, element_name, flow_array[i], thermal_limit, self.baseMVA, self.time))
 
 
 def populate_default_ptdf_options(ptdf_options):
@@ -282,6 +280,11 @@ def add_monitored_flow_tracker(mb):
 ## violation checker
 def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
+    if time is None: # DCOPF
+        active_slack_tol = mb._ptdf_options['active_flow_tol']
+    else: # Unit Commitment
+        active_slack_tol = mb.parent_block()._ptdf_options['active_flow_tol']
+
     ## PFV -- power flow vector
     ## PFV_I -- interface power flow vector
     PFV, PFV_I, _ = PTDF.calculate_masked_PFV(mb)
@@ -290,17 +293,26 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
     idx_monitored = mb._idx_monitored
     interfaces_monitored = mb._interfaces_monitored
 
-    violations_store = _MaximalViolationsStore(max_viol_add=max_viol_add, mb=mb, md=md, time=time)
+    violations_store = _MaximalViolationsStore(max_viol_add=max_viol_add, md=md, time=time, prepend_str=prepend_str)
 
-    violations_store.check_and_add_violations('branch', PFV,
-                                        PTDF.lazy_branch_limits, PTDF.enforced_branch_limits,
-                                       -PTDF.lazy_branch_limits, -PTDF.enforced_branch_limits,
-                                        idx_monitored)
+    if len(PTDF.branches_keys_masked) > 0:
+        violations_store.check_and_add_violations('branch', PFV, mb.pf,
+                                            PTDF.lazy_branch_limits, PTDF.enforced_branch_limits,
+                                           -PTDF.lazy_branch_limits, -PTDF.enforced_branch_limits,
+                                            idx_monitored, PTDF.branches_keys_masked)
     
-    violations_store.check_and_add_violations('interface', PFV_I,
-                                        PTDF.lazy_interface_max_limits, PTDF.enforced_interface_max_limits,
-                                        PTDF.lazy_interface_min_limits, PTDF.enforced_interface_min_limits,
-                                        interfaces_monitored)
+    if len(PTDF.interface_keys) > 0:
+        violations_store.check_and_add_violations('interface', PFV_I, mb.pfi,
+                                            PTDF.lazy_interface_max_limits, PTDF.enforced_interface_max_limits,
+                                            PTDF.lazy_interface_min_limits, PTDF.enforced_interface_min_limits,
+                                            interfaces_monitored, PTDF.interface_keys)
+
+    if violations_store.total_violations < max_viol_add or \
+            violations_store.min_flow_violation() < active_slack_tol: 
+        ## NOTE: checking contingency constraints in general could be very expensive
+        ##       we probably want to delay doing so until we have a nearly transmission feasible
+        ##       solution
+        pass
 
     viol_lazy = _LazyViolations(branch_lazy_violations=set(violations_store.get_violations_named('branch')),
                                 interface_lazy_violations=set(violations_store.get_violations_named('interface')))
@@ -379,89 +391,12 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
         del constr
     return len(constr_to_remove)
 
-def _check_and_generate_flow_viol_warnings(mb, md, PTDF, PFV, PFV_I, prepend_str, \
-        lt_viol, gt_viol, min_viol_int, max_viol_int, time):
-
-    ## get the lines we're monitoring
-    idx_monitored = mb._idx_monitored
-    interfaces_monitored = mb._interfaces_monitored
-
-    gt_viol_in_mb = gt_viol.intersection(idx_monitored)
-    lt_viol_in_mb = lt_viol.intersection(idx_monitored)
-
-    max_viol_int_in_mb = max_viol_int.intersection(interfaces_monitored)
-    min_viol_int_in_mb = min_viol_int.intersection(interfaces_monitored)
-
-    baseMVA = md.data['system']['baseMVA']
-    ## print a warning for these lines
-    ## check if the found violations are in the model and print warning
-    branches = md.data['elements']['branch']
-    branch_hard_violations = 0
-    branch_soft_violations = 0
-    for i in lt_viol_in_mb:
-        bn = PTDF.branches_keys_masked[i]
-        thermal_limit = PTDF.branch_limits_array_masked[i]
-        if 'violation_penalty' in branches[bn] \
-                and branches[bn]['violation_penalty'] is not None:
-            branch_soft_violations += 1
-            log_func = logger.info
-        else:
-            branch_hard_violations += 1
-            log_func = logger.warning
-        log_func(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], -thermal_limit, baseMVA, time))
-
-    for i in gt_viol_in_mb:
-        bn = PTDF.branches_keys_masked[i]
-        thermal_limit = PTDF.branch_limits_array_masked[i]
-        if 'violation_penalty' in branches[bn] \
-                and branches[bn]['violation_penalty'] is not None:
-            branch_soft_violations += 1
-            log_func = logger.info
-        else:
-            branch_hard_violations += 1
-            log_func = logger.warning
-        log_func(prepend_str+_generate_flow_viol_warning(mb.pf, 'branch', bn, PFV[i], thermal_limit, baseMVA, time))
-
-    ## break here if no interfaces
-    if 'interface' not in md.data['elements']:
-        return len(gt_viol_in_mb)+len(lt_viol_in_mb), 0
-    ## print a warning for these interfaces if they don't have slack
-    ## check if the found violations are in the model and print warning
-    interfaces = md.data['elements']['interface']
-    interface_hard_violations = 0
-    interface_soft_violations = 0
-    for i in min_viol_int_in_mb:
-        i_n = PTDF.interface_keys[i]
-        limit = PTDF.interface_min_limits[i]
-        if 'violation_penalty' in interfaces[i_n] \
-                and interfaces[i_n]['violation_penalty'] is not None:
-            interface_soft_violations += 1
-            log_func = logger.info
-        else:
-            interface_hard_violations += 1
-            log_func = logger.warning
-        log_func(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time))
-
-    for i in max_viol_int_in_mb:
-        i_n = PTDF.interface_keys[i]
-        limit = PTDF.interface_max_limits[i]
-        if 'violation_penalty' in interfaces[i_n] \
-                and interfaces[i_n]['violation_penalty'] is not None:
-            interface_soft_violations += 1
-            log_func = logger.info
-        else:
-            interface_hard_violations += 1
-            log_func = logger.warning
-        log_func(prepend_str+_generate_flow_viol_warning(mb.pfi, 'interface', i_n, PFV_I[i], limit, baseMVA, time))
-
-    return branch_hard_violations+interface_hard_violations, branch_soft_violations+interface_soft_violations
-
 def _generate_flow_viol_warning(expr, e_type, bn, flow, limit, baseMVA, time):
     ret_str = "WARNING: {0} {1} is in the  monitored set".format(e_type,bn)
     if time is not None:
         ret_str += " at time {}".format(time)
-    ret_str += ", but flow exceeds limit!!\n\t flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA)
-    ret_str += ", model_flow={}".format(pyo.value(expr[bn])*baseMVA)
+    ret_str += ", but flow exceeds limit!!\n\t flow={:.2f}, limit={:.2f}".format(flow*baseMVA, limit*baseMVA)
+    ret_str += ", model_flow={:.2f}".format(pyo.value(expr[bn])*baseMVA)
     return ret_str
 
 def _generate_flow_monitor_message(e_type, bn, flow=None, lower_limit=None, upper_limit=None, baseMVA=None, time=None):
