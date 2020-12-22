@@ -71,6 +71,7 @@ def _setup_egret_network_topology(m,tm):
     buses = m._buses
     branches = m._branches
     interfaces = m._interfaces
+    contingencies = m._contingencies
 
     branches_in_service = tuple(l for l in m.TransmissionLines if not value(m.LineOutOfService[l,tm]))
 
@@ -79,7 +80,7 @@ def _setup_egret_network_topology(m,tm):
     ## with the same network topology
     branches_out_service = tuple(l for l in m.TransmissionLines if value(m.LineOutOfService[l,tm]))
 
-    return buses, branches, branches_in_service, branches_out_service, interfaces
+    return buses, branches, branches_in_service, branches_out_service, interfaces, contingencies
 
 def _setup_branch_slacks(m,block,tm):
     # declare the branch slack variables
@@ -105,12 +106,25 @@ def _setup_interface_slacks(m,block,tm):
                                         domain=NonNegativeReals,
                                         dense=False)
 
+def _setup_contingency_slacks(m,block,tm):
+    # declare the interface slack variables
+    # they have a sparse index set
+    libbranch.declare_var_pfc_slack_pos(model=block,
+                                        index_set=block._contingency_set,
+                                        domain=NonNegativeReals,
+                                        dense=False)
+    libbranch.declare_var_pfc_slack_neg(model=block,
+                                        index_set=block._contingency_set,
+                                        domain=NonNegativeReals,
+                                        dense=False)
+
 def _ptdf_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
             _setup_egret_network_model(block, tm)
 
-    buses, branches, branches_in_service, branches_out_service, interfaces = \
-            _setup_egret_network_topology(m, tm)
+    buses, branches, \
+    branches_in_service, branches_out_service, \
+    interfaces, contingencies = _setup_egret_network_topology(m, tm)
 
     ptdf_options = m._ptdf_options
 
@@ -145,6 +159,14 @@ def _ptdf_dcopf_network_model(block,tm):
                                )
 
     _setup_interface_slacks(m,block,tm)
+
+    ### contingency setup
+    block._contingency_set = Set(initialize=( (cn, bn) for cn in contingencies.keys() for bn in branches_in_service) )
+    libbranch.declare_expr_pfc(model=block,
+                               index_set=block._contingency_set
+                               )
+
+    _setup_contingency_slacks(m,block,tm)
 
     ### Get the PTDF matrix from cache, from file, or create a new one
     ### m._PTDFs set in uc_model_generator
@@ -184,6 +206,14 @@ def _ptdf_dcopf_network_model(block,tm):
                                                 slacks=True,
                                                 slack_cost_expr=m.InterfaceViolationCost[tm]
                                                 )
+        ### declare the "blank" interface flow limits
+        libbranch.declare_ineq_p_contingency_branch_thermal_bounds(model=block,
+                                                                   index_set=block._contingency_set,
+                                                                   pc_thermal_limits=None,
+                                                                   approximation_type=None,
+                                                                   slacks=True,
+                                                                   slack_cost_expr=m.ContingencyViolationCost[tm]
+                                                                  )
 
         ### add helpers for tracking monitored branches
         lpu.add_monitored_flow_tracker(block)
@@ -195,6 +225,8 @@ def _ptdf_dcopf_network_model(block,tm):
         lpu.add_initial_monitored_interfaces(block, interfaces, ptdf_options, PTDF)
         
     else: ### add all the dense constraints
+        if contingencies:
+            raise RuntimeError("Contingency constraints only supported in lazy mode")
         p_max = {k: branches[k]['rating_long_term'] for k in branches_in_service}
 
         ### declare the branch power flow approximation constraints
@@ -235,8 +267,9 @@ def _btheta_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
             _setup_egret_network_model(block, tm)
 
-    buses, branches, branches_in_service, branches_out_service, interfaces = \
-            _setup_egret_network_topology(m, tm)
+    buses, branches, \
+    branches_in_service, branches_out_service, \
+    interfaces, _ = _setup_egret_network_topology(m, tm)
 
     ## need the inlet/outlet relationship given some lines may be out
     inlet_branches_by_bus = dict()
@@ -606,6 +639,9 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
     # for interface violation costs at a time step
     model.InterfaceViolationCost = Expression(model.TimePeriods, rule=lambda m,t:0.)
 
+    # for contingency violation costs at a time step
+    model.ContingencyViolationCost = Expression(model.TimePeriods, rule=lambda m,t:0.)
+
     for tm in model.TimePeriods:
         b = model.TransmissionBlock[tm]
         ## this creates a fake bus generator for all the
@@ -729,6 +765,10 @@ def power_balance_constraints(model, slacks=True):
         return sum(m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i]*(m.InterfaceSlackPos[i,t]+m.InterfaceSlackNeg[i,t]) \
                     for i in m.InterfacesWithSlack)
     model.InterfaceViolationCost = Expression(model.TimePeriods, rule=interface_violation_cost_rule)
+
+    # for contingency violation costs at a time step
+    # This model does not work with contingencies, but we need the Expression for the objective
+    model.ContingencyViolationCost = Expression(model.TimePeriods, rule=lambda m,t:0.)
     
     if slacks:
         _add_load_mismatch(model)

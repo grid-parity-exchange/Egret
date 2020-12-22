@@ -104,6 +104,7 @@ def load_params(model, model_data):
     shunts = dict(md.elements(element_type='shunt'))
     branches = dict(md.elements(element_type='branch'))
     interfaces = dict(md.elements(element_type='interface'))
+    contingencies = dict(md.elements(element_type='contingency'))
     storage = dict(md.elements(element_type='storage'))
     dc_branches = dict(md.elements(element_type='dc_branch'))
 
@@ -135,6 +136,7 @@ def load_params(model, model_data):
     model._shunts = shunts
     model._bus_gs_fixed_shunts = bus_gs_fixed_shunts
     model._interfaces = interfaces
+    model._contingencies = contingencies
     model._dc_branches = dc_branches
     #model._TimeMapper = TimeMapper
 
