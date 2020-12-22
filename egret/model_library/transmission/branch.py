@@ -1056,7 +1056,7 @@ def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
     based on the power variables or expressions.
     """
     m = model
-    con_set = decl.declare_set('_con_ineq_p_branch_thermal_bounds',
+    con_set = decl.declare_set('_con_ineq_p_contingency_branch_thermal_bounds',
                                model=model, index_set=index_set)
     # flag for if slacks are on the model
     if slacks:
@@ -1067,7 +1067,7 @@ def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
         if slack_cost_expr is None:
             raise Exception('No cost expression for slacks, but slacks=True')
 
-    m.ineq_pf_branch_thermal_bounds = pe.Constraint(con_set)
+    m.ineq_pf_contingency_branch_thermal_bounds = pe.Constraint(con_set)
 
     if approximation_type == ApproximationType.BTHETA or \
             approximation_type == ApproximationType.PTDF:
@@ -1077,19 +1077,19 @@ def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
                 continue
 
             if slacks and (contingency_name, branch_name) in m.pfc_slack_neg.index_set():
-                assert branch_name in m.pfc_slack_pos.index_set()
+                assert (contingency_name, branch_name) in m.pfc_slack_pos.index_set()
                 neg_slack = m.pfc_slack_neg[contingency_name, branch_name]
                 pos_slack = m.pfc_slack_pos[contingency_name, branch_name]
                 uc_model = slack_cost_expr.parent_block()
                 slack_cost_expr.expr += (uc_model.TimePeriodLengthHours
                                          * uc_model.ContingencyLimitPenalty[contingency_name, branch_name]
                                          * (neg_slack + pos_slack) )
-                assert len(m.pf_slack_pos) == len(m.pf_slack_neg)
+                assert len(m.pfc_slack_pos) == len(m.pfc_slack_neg)
             else:
                 neg_slack = None
                 pos_slack = None
 
-            m.ineq_pf_branch_thermal_bounds[contingency_name, branch_name] = \
+            m.ineq_pf_contingency_branch_thermal_bounds[contingency_name, branch_name] = \
                     generate_thermal_bounds(m.pfc[contingency_name, branch_name], -limit, limit, neg_slack, pos_slack)
 
 def declare_ineq_angle_diff_branch_lbub_c_s(model, index_set, branches):

@@ -712,12 +712,13 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
         return MLU_MP, B_dA, ref_bus_mask, contingency_compensators, B_dA_I, I
 
 class _ContingencyCompensator:
-    def __init__(self, M, c, W, Wbar, phi_compensator):
+    def __init__(self, M, c, W, Wbar, phi_compensator, branch_out):
         self._M = M
         self._c = c
         self._W = W
         self._Wbar = Wbar
         self._phi_compensator = phi_compensator
+        self._branch_out = branch_out
         self._global = None
 
     @property
@@ -735,6 +736,9 @@ class _ContingencyCompensator:
     @property
     def phi_compensator(self):
         return self._phi_compensator
+    @property
+    def branch_out(self):
+        return self._branch_out
 
     @property
     def L(self):
@@ -865,7 +869,7 @@ def precompute_contingency_matricies( graph, MLU_MP, A, Bd,\
         else:
             phi_comp = sp.coo_matrix(([],([],[])), shape=(_bus_len,1)).tocsc()
 
-        comp = _ContingencyCompensator(M=M, c=c, W=W, Wbar=Wbar, phi_compensator=phi_comp)
+        comp = _ContingencyCompensator(M=M, c=c, W=W, Wbar=Wbar, phi_compensator=phi_comp, branch_out=branch_out)
 
         compensators[cn] = comp
 

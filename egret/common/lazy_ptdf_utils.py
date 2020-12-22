@@ -24,6 +24,82 @@ class LazyPTDFTerminationCondition(Enum):
     ITERATION_LIMIT = 2
     FLOW_VIOLATION = 3
 
+def populate_default_ptdf_options(ptdf_options):
+    if ptdf_options is None:
+        ptdf_options = dict()
+    else:
+        ## get a copy
+        ptdf_options = cp.deepcopy(ptdf_options)
+    if 'rel_ptdf_tol' not in ptdf_options:
+        ptdf_options['rel_ptdf_tol'] = 1.e-6
+    if 'abs_ptdf_tol' not in ptdf_options:
+        ptdf_options['abs_ptdf_tol'] = 1.e-10
+    if 'abs_flow_tol' not in ptdf_options:
+        ptdf_options['abs_flow_tol'] = 1.e-3
+    if 'rel_flow_tol' not in ptdf_options:
+        ptdf_options['rel_flow_tol'] = 1.e-5
+    if 'lazy_rel_flow_tol' not in ptdf_options:
+        ptdf_options['lazy_rel_flow_tol'] = -0.01
+    if 'iteration_limit' not in ptdf_options:
+        ptdf_options['iteration_limit'] = 100000
+    if 'lp_iteration_limit' not in ptdf_options:
+        ptdf_options['lp_iteration_limit'] = 100
+    if 'max_violations_per_iteration' not in ptdf_options:
+        ptdf_options['max_violations_per_iteration'] = 5
+    if 'lazy' not in ptdf_options:
+        ptdf_options['lazy'] = True
+    if 'branch_kv_threshold' not in ptdf_options:
+        ptdf_options['branch_kv_threshold'] = None
+    if 'kv_threshold_type' not in ptdf_options:
+        ptdf_options['kv_threshold_type'] = 'one'
+    if 'pre_lp_iteration_limit' not in ptdf_options:
+        ptdf_options['pre_lp_iteration_limit'] = 100
+    if 'active_flow_tol' not in ptdf_options:
+        ptdf_options['active_flow_tol'] = 50.
+    if 'lp_cleanup_phase' not in ptdf_options:
+        ptdf_options['lp_cleanup_phase'] = True
+    return ptdf_options
+
+def check_and_scale_ptdf_options(ptdf_options, baseMVA):
+    ## scale to base MVA
+    ptdf_options['abs_ptdf_tol'] /= baseMVA
+    ptdf_options['abs_flow_tol'] /= baseMVA
+    ptdf_options['active_flow_tol'] /= baseMVA
+
+    ## lowercase keyword options
+    ptdf_options['kv_threshold_type'] = ptdf_options['kv_threshold_type'].lower()
+
+    rel_flow_tol = ptdf_options['rel_flow_tol']
+    abs_flow_tol = ptdf_options['abs_flow_tol']
+
+    rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
+    abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
+
+    lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
+
+    max_violations_per_iteration = ptdf_options['max_violations_per_iteration']
+
+    if max_violations_per_iteration < 1 or (not isinstance(max_violations_per_iteration, int)):
+        raise Exception("max_violations_per_iteration must be an integer least 1, max_violations_per_iteration={}".format(max_violations_per_iteration))
+
+    if abs_flow_tol < lazy_rel_flow_tol:
+        raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
+                        " abs_flow_tol={0}, lazy_rel_flow_tol={1}, baseMVA={2}".format(abs_flow_tol*baseMVA, lazy_rel_flow_tol, baseMVA))
+
+    if ptdf_options['kv_threshold_type'] not in ['one', 'both']:
+        raise Exception("kv_threshold_type must be either 'one' (for at least one end of the line"
+                        " above branch_kv_threshold) or 'both' (for both end of the line above"
+                        " branch_kv_threshold), kv_threshold_type={}".format(ptdf_options['kv_threshold_type']))
+
+    if abs_flow_tol < 1e-6:
+        logger.warning("WARNING: abs_flow_tol={0}, which is below the numeric threshold of most solvers.".format(abs_flow_tol*baseMVA))
+    if abs_flow_tol < rel_ptdf_tol*10:
+        logger.warning("WARNING: abs_flow_tol={0}, rel_ptdf_tol={1}, which will likely result in violations. Consider raising abs_flow_tol or lowering rel_ptdf_tol.".format(abs_flow_tol*baseMVA, rel_ptdf_tol))
+    if rel_ptdf_tol < 1e-6:
+        logger.warning("WARNING: rel_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing rel_ptdf_tol.".format(rel_ptdf_tol))
+    if abs_ptdf_tol < 1e-12:
+        logger.warning("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol.".format(abs_ptdf_tol*baseMVA))
+
 class _LazyViolations(abc.Sized):
     def __init__(self, branch_lazy_violations,
                        interface_lazy_violations=None,
@@ -185,87 +261,13 @@ class _MaximalViolationsStore:
             logger.info(self.prepend_str+_generate_flow_viol_warning(flow_variable, name, element_name, flow_array[i], thermal_limit, self.baseMVA, self.time))
 
 
-def populate_default_ptdf_options(ptdf_options):
-    if ptdf_options is None:
-        ptdf_options = dict()
-    else:
-        ## get a copy
-        ptdf_options = cp.deepcopy(ptdf_options)
-    if 'rel_ptdf_tol' not in ptdf_options:
-        ptdf_options['rel_ptdf_tol'] = 1.e-6
-    if 'abs_ptdf_tol' not in ptdf_options:
-        ptdf_options['abs_ptdf_tol'] = 1.e-10
-    if 'abs_flow_tol' not in ptdf_options:
-        ptdf_options['abs_flow_tol'] = 1.e-3
-    if 'rel_flow_tol' not in ptdf_options:
-        ptdf_options['rel_flow_tol'] = 1.e-5
-    if 'lazy_rel_flow_tol' not in ptdf_options:
-        ptdf_options['lazy_rel_flow_tol'] = -0.01
-    if 'iteration_limit' not in ptdf_options:
-        ptdf_options['iteration_limit'] = 100000
-    if 'lp_iteration_limit' not in ptdf_options:
-        ptdf_options['lp_iteration_limit'] = 100
-    if 'max_violations_per_iteration' not in ptdf_options:
-        ptdf_options['max_violations_per_iteration'] = 5
-    if 'lazy' not in ptdf_options:
-        ptdf_options['lazy'] = True
-    if 'branch_kv_threshold' not in ptdf_options:
-        ptdf_options['branch_kv_threshold'] = None
-    if 'kv_threshold_type' not in ptdf_options:
-        ptdf_options['kv_threshold_type'] = 'one'
-    if 'pre_lp_iteration_limit' not in ptdf_options:
-        ptdf_options['pre_lp_iteration_limit'] = 100
-    if 'active_flow_tol' not in ptdf_options:
-        ptdf_options['active_flow_tol'] = 50.
-    if 'lp_cleanup_phase' not in ptdf_options:
-        ptdf_options['lp_cleanup_phase'] = True
-    return ptdf_options
-
-def check_and_scale_ptdf_options(ptdf_options, baseMVA):
-    ## scale to base MVA
-    ptdf_options['abs_ptdf_tol'] /= baseMVA
-    ptdf_options['abs_flow_tol'] /= baseMVA
-    ptdf_options['active_flow_tol'] /= baseMVA
-
-    ## lowercase keyword options
-    ptdf_options['kv_threshold_type'] = ptdf_options['kv_threshold_type'].lower()
-
-    rel_flow_tol = ptdf_options['rel_flow_tol']
-    abs_flow_tol = ptdf_options['abs_flow_tol']
-
-    rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
-    abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
-
-    lazy_rel_flow_tol = ptdf_options['lazy_rel_flow_tol']
-
-    max_violations_per_iteration = ptdf_options['max_violations_per_iteration']
-
-    if max_violations_per_iteration < 1 or (not isinstance(max_violations_per_iteration, int)):
-        raise Exception("max_violations_per_iteration must be an integer least 1, max_violations_per_iteration={}".format(max_violations_per_iteration))
-
-    if abs_flow_tol < lazy_rel_flow_tol:
-        raise Exception("abs_flow_tol (when scaled by baseMVA) cannot be less than lazy_flow_tol"
-                        " abs_flow_tol={0}, lazy_rel_flow_tol={1}, baseMVA={2}".format(abs_flow_tol*baseMVA, lazy_rel_flow_tol, baseMVA))
-
-    if ptdf_options['kv_threshold_type'] not in ['one', 'both']:
-        raise Exception("kv_threshold_type must be either 'one' (for at least one end of the line"
-                        " above branch_kv_threshold) or 'both' (for both end of the line above"
-                        " branch_kv_threshold), kv_threshold_type={}".format(ptdf_options['kv_threshold_type']))
-
-    if abs_flow_tol < 1e-6:
-        logger.warning("WARNING: abs_flow_tol={0}, which is below the numeric threshold of most solvers.".format(abs_flow_tol*baseMVA))
-    if abs_flow_tol < rel_ptdf_tol*10:
-        logger.warning("WARNING: abs_flow_tol={0}, rel_ptdf_tol={1}, which will likely result in violations. Consider raising abs_flow_tol or lowering rel_ptdf_tol.".format(abs_flow_tol*baseMVA, rel_ptdf_tol))
-    if rel_ptdf_tol < 1e-6:
-        logger.warning("WARNING: rel_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing rel_ptdf_tol.".format(rel_ptdf_tol))
-    if abs_ptdf_tol < 1e-12:
-        logger.warning("WARNING: abs_ptdf_tol={0}, which is low enough it may cause numerical issues in the solver. Consider rasing abs_ptdf_tol.".format(abs_ptdf_tol*baseMVA))
 
 ## to hold the indicies of the violations
 ## in the model or block
 def add_monitored_flow_tracker(mb):
     mb._idx_monitored = list()
     mb._interfaces_monitored = list()
+    mb._contingencies_monitored = list()
 
     # add these if there are no slacks
     # so we don't have to check later
@@ -287,11 +289,8 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
     ## PFV -- power flow vector
     ## PFV_I -- interface power flow vector
-    PFV, PFV_I, _ = PTDF.calculate_masked_PFV(mb)
-
-    ## get the lines we're monitoring
-    idx_monitored = mb._idx_monitored
-    interfaces_monitored = mb._interfaces_monitored
+    ## VA -- bus voltage angle vector
+    PFV, PFV_I, VA = PTDF.calculate_masked_PFV(mb)
 
     violations_store = _MaximalViolationsStore(max_viol_add=max_viol_add, md=md, time=time, prepend_str=prepend_str)
 
@@ -299,23 +298,57 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
         violations_store.check_and_add_violations('branch', PFV, mb.pf,
                                             PTDF.lazy_branch_limits, PTDF.enforced_branch_limits,
                                            -PTDF.lazy_branch_limits, -PTDF.enforced_branch_limits,
-                                            idx_monitored, PTDF.branches_keys_masked)
+                                            mb._idx_monitored, PTDF.branches_keys_masked)
     
     if len(PTDF.interface_keys) > 0:
         violations_store.check_and_add_violations('interface', PFV_I, mb.pfi,
                                             PTDF.lazy_interface_max_limits, PTDF.enforced_interface_max_limits,
                                             PTDF.lazy_interface_min_limits, PTDF.enforced_interface_min_limits,
-                                            interfaces_monitored, PTDF.interface_keys)
+                                            mb._interfaces_monitored, PTDF.interface_keys)
 
-    if violations_store.total_violations < max_viol_add or \
-            violations_store.min_flow_violation() < active_slack_tol: 
+    if PTDF.contingencies and \
+            (violations_store.total_violations < max_viol_add or \
+              violations_store.min_flow_violation() < active_slack_tol):
         ## NOTE: checking contingency constraints in general could be very expensive
         ##       we probably want to delay doing so until we have a nearly transmission feasible
         ##       solution
-        pass
+
+        ## For each contingency, we'll only calculate the difference in flow,
+        ## and check this against the difference in bounds, i.e.,
+
+        ## power_flow_contingency == PFV + PFV_delta_c
+        ## -rate_c <= power_flow_contingency <= +rate_c
+        ## <===>
+        ## -rate_c - PFV <= PFV_delta_c <= +rate_c - PFV
+        ## <===>
+        ## contingency_limits_lower <= PFV_delta_c <= contingency_limits_upper
+        ## and
+        ## contingency_limits_lower == -rate_c - PFV; contingency_limits_upper == rate_c - PFV
+
+        ## In this way, we avoid (number of contingenies) adds PFV+PFV_delta_c
+
+        lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
+        lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
+        enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
+        enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
+        for cn, comp in PTDF.contingency_compensators.items():
+            VA_delta = PTDF.MLU.solve( comp.M *((-comp.c)*(comp.M.T@VA)) )
+            PF_delta = PTDF.B_dA@VA_delta
+
+            # zero-out the flow on this line, if we're monitoring it
+            if comp.branch_out in PTDF.branchname_to_index_masked_map:
+                branch_out_idx = PTDF.branchname_to_index_masked_map[comp.branch_out]
+                PF_delta[branch_out_idx] = -PFV[branch_out_idx]
+            violations_store.check_and_add_violations('contingency', PF_delta, mb.pfc,
+                                                      lazy_contingency_limits_upper, enforced_contingency_limits_upper,
+                                                      lazy_contingency_limits_lower, enforced_contingency_limits_lower,
+                                                      mb._contingencies_monitored, PTDF.branches_keys_masked,
+                                                      outer_name = cn)
+
 
     viol_lazy = _LazyViolations(branch_lazy_violations=set(violations_store.get_violations_named('branch')),
-                                interface_lazy_violations=set(violations_store.get_violations_named('interface')))
+                                interface_lazy_violations=set(violations_store.get_violations_named('interface')),
+                                contingency_lazy_violations=set(violations_store.get_violations_named('contingency')))
     flows = _CalculatedFlows(PFV=PFV, PFV_I=PFV_I)
 
     return flows, violations_store.total_violations, violations_store.monitored_violations, viol_lazy
@@ -347,6 +380,7 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
     ## get the lines we're monitoring
     idx_monitored = mb._idx_monitored
     interfaces_monitored = mb._interfaces_monitored
+    contingencies_monitored = mb._contingencies_monitored
 
     ## get the branchnname to index map
     branchname_index_map = PTDF.branchname_to_index_masked_map
@@ -379,6 +413,14 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
             constr_to_remove.append(constr)
             ## remove the index from the lines we're monitoring
             interfaces_monitored.remove(interfacename_index_map[i_n])
+
+    for name, constr in mb.ineq_pf_contingency_branch_thermal_bounds.items():
+        slack = constr.slack()
+        if slack_tol <= abs(slack):
+            logger.debug(prepend_str+_generate_flow_monitor_remove_message('contingeny', name, abs(slack), baseMVA, time))
+            constr_to_remove.append(constr)
+            ## remove the index from the lines we're monitoring
+            contingencies_monitored.remove((name[0], branchname_index_map[name[1]])) ## TODO: name?
 
     msg = prepend_str+"removing {} inactive transmission constraint(s)".format(len(constr_to_remove))
     if time is not None:
@@ -425,6 +467,16 @@ def _iter_over_int_viol_set(int_viol_set, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
             mb.pfi[i_n] = expr
         yield i, i_n
 
+## helper for generating pfc
+def _iter_over_cont_viol_set(cont_viol_set, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
+    for (cn, i_b) in cont_viol_set:
+        bn = PTDF.branches_keys_masked[i_b]
+        if mb.pfc[cn, bn].expr is None:
+            expr = libbranch.get_contingency_power_flow_expr_ptdf_approx(mb, cn, bn, PTDF,
+                                                        abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
+            mb.pfc[cn, bn] = expr
+        yield cn, bn, i_b
+
 def _generate_branch_thermal_bounds(mb, bn, thermal_limit):
     if bn in mb.pf_slack_pos.index_set():
         if bn not in mb.pf_slack_pos:
@@ -460,6 +512,24 @@ def _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit):
         new_var = False
 
     return libbranch.generate_thermal_bounds(mb.pfi[i_n], minimum_limit, maximum_limit, neg_slack, pos_slack), new_var
+
+def _generate_contingency_bounds(mb, cn, minimum_limit, maximum_limit):
+    if cn in mb.pfc_slack_pos.index_set():
+        if cn not in mb.pfc_slack_pos:
+            neg_slack = mb.pfc_slack_neg[cn]
+            pos_slack = mb.pfc_slack_pos[cn]
+            assert len(mb.pfc_slack_pos) == len(mb.pfc_slack_neg)
+            new_var = True
+        else: # the constraint could have been added and removed
+            neg_slack = mb.pfc_slack_neg[cn]
+            pos_slack = mb.pfc_slack_pos[cn]
+            new_var = False
+    else:
+        neg_slack = None
+        pos_slack = None
+        new_var = False
+
+    return libbranch.generate_thermal_bounds(mb.pfc[cn], minimum_limit, maximum_limit, neg_slack, pos_slack), new_var
 
 ## violation adder
 def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
@@ -505,6 +575,16 @@ def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
         if persistent_solver:
             solver.add_constraint(constr[bn])
 
+    _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
+                                PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
+                                time, prepend_str)
+    _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
+                                PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
+                                time, prepend_str)
+
+def _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
+                              PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
+                              time, prepend_str):
     ## in case there's no interfaces
     if not hasattr(mb, 'ineq_pf_interface_bounds'):
         return
@@ -535,6 +615,34 @@ def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
         if persistent_solver:
             solver.add_constraint(constr[i_n])
 
+def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
+                                PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
+                                time, prepend_str):
+    ## in case there's no contingencies
+    if not hasattr(mb, 'ineq_pf_contingency_branch_thermal_bounds'):
+        return
+    constr = mb.ineq_pf_contingency_branch_thermal_bounds
+    contingencies_monitored = mb._contingencies_monitored
+    for cn, bn, i_b in _iter_over_cont_viol_set(lazy_violations.contingency_lazy_violations, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
+        emergency_thermal_limit = PTDF.contingency_limits_array_masked[i_b]
+        logger.debug(prepend_str+_generate_flow_monitor_message('contingency', (cn,bn), time=time))
+        constr[cn,bn], new_slacks = _generate_contingency_bounds(mb, (cn,bn), -emergency_thermal_limit, emergency_thermal_limit)
+        contingencies_monitored.append((cn, i_b))
+        if new_slacks:
+            m = model
+            obj_coef = m.TimePeriodLengthHours*m.ContingencyLimitPenalty[cn, bn]
+
+            if persistent_solver:
+                if m is not m.model():
+                    raise RuntimeError("Cannot add lazy var for branch slacks if part of a larger model")
+                ## update the objective through the add_column method
+                solver.add_column(m, mb.pfc_slack_pos[cn,bn], obj_coef, [], [])
+                solver.add_column(m, mb.pfc_slack_neg[cn,bn], obj_coef, [], [])
+            else:
+                m.ContingencyViolationCost[time].expr += (obj_coef*mb.pfc_slack_pos[cn,bn] + \
+                                                          obj_coef*mb.pfc_slack_neg[cn,bn] )
+        if persistent_solver:
+            solver.add_constraint(constr[cn,bn])
 
 ## helper for generating pf
 def _iter_over_initial_set(branches, branches_in_service, PTDF):

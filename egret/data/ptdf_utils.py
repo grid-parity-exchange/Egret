@@ -144,19 +144,22 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
 
     def _calculate_ptdf_factorization(self):
         logger.info("Calculating PTDF Matrix Factorization")
-        MLU, B_dA, ref_bus_mask, _, B_dA_I, I = tx_calc.calculate_ptdf_factorization(self._branches,
-                                                                       self._buses,self.branches_keys,
-                                                                       self.buses_keys,
-                                                                       self._reference_bus,
-                                                                       self._base_point,
-                                                                       mapping_bus_to_idx=self._busname_to_index_map,
-                                                                       mapping_branch_to_idx=self._branchname_to_index_map,
-                                                                       interfaces = self.interfaces,
-                                                                       index_set_interface = self.interface_keys,)
+        MLU, B_dA, ref_bus_mask, contingency_compensators, B_dA_I, I = \
+                tx_calc.calculate_ptdf_factorization(self._branches,
+                                                     self._buses,self.branches_keys,
+                                                     self.buses_keys,
+                                                     self._reference_bus,
+                                                     self._base_point,
+                                                     mapping_bus_to_idx=self._busname_to_index_map,
+                                                     mapping_branch_to_idx=self._branchname_to_index_map,
+                                                     interfaces = self.interfaces,
+                                                     index_set_interface = self.interface_keys,)
 
         self.MLU = MLU
         self.B_dA = B_dA
         self.B_dA_I = B_dA_I
+
+        self.contingency_compensators = contingency_compensators
 
         self._calculate_phase_shift_flow_adjuster()
         self._calculate_phi_adjust(ref_bus_mask)
