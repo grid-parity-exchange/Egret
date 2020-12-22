@@ -109,19 +109,13 @@ class _MaximalViolationsStore:
             del self.violations_store[min_key]
     
     def _add_violations( self, name, other_name, viol_array, viol_indices):
-        if not viol_indices:
-            return
-        idx = np.argmax(viol_array[viol_indices])
-        val = viol_array[viol_indices[idx]]
-        while val > self._min_flow_violation() or len(self.violations_store) < self.max_viol_add:
-            self._add_violation( name, other_name, viol_indices[idx], val )
-            viol_indices.pop(idx)
-
-            if not viol_indices:
-                break
-
+        while viol_indices:
             idx = np.argmax(viol_array[viol_indices])
             val = viol_array[viol_indices[idx]]
+            if val < self._min_flow_violation() and len(self.violations_store) >= self.max_viol_add:
+                break
+            self._add_violation( name, other_name, viol_indices[idx], val )
+            viol_indices.pop(idx)
 
     def check_and_add_violations(self, name, flow_array,
                 upper_lazy_limits, upper_enforced_limits,
