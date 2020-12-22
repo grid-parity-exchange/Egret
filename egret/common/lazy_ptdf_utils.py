@@ -100,21 +100,28 @@ class _MaximalViolationsStore:
         # keep the violations_store <= self.max_viol_add
         if len(self.violations_store) > self.max_viol_add:
             min_key = self._min_violation_key()
-            del self.violations_store[min_key]
 
             if min_key == key:
-                raise RuntimeError(f"Circular condition: added {new_key} to violations_store "
-                        f"only to delete it. violations_store: {violations_store}")
+                raise RuntimeError(f"Circular condition: added {key} to violations_store "
+                        f"with value {self.violations_store[min_key]} only to delete it. "
+                        f"violations_store: {self.violations_store}")
+
+            del self.violations_store[min_key]
     
     def _add_violations( self, name, other_name, viol_array, viol_indices):
-        val = np.inf
-        while viol_indices and val > self._min_flow_violation():
+        if not viol_indices:
+            return
+        idx = np.argmax(viol_array[viol_indices])
+        val = viol_array[viol_indices[idx]]
+        while val > self._min_flow_violation() or len(self.violations_store) < self.max_viol_add:
+            self._add_violation( name, other_name, viol_indices[idx], val )
+            viol_indices.pop(idx)
+
+            if not viol_indices:
+                break
 
             idx = np.argmax(viol_array[viol_indices])
             val = viol_array[viol_indices[idx]]
-
-            self._add_violation( name, other_name, viol_indices[idx], val )
-            del viol_indices[idx]
 
     def check_and_add_violations(self, name, flow_array,
                 upper_lazy_limits, upper_enforced_limits,
