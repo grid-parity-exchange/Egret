@@ -110,11 +110,11 @@ def _setup_contingency_slacks(m,block,tm):
     # declare the interface slack variables
     # they have a sparse index set
     libbranch.declare_var_pfc_slack_pos(model=block,
-                                        index_set=block._contingency_set,
+                                        index_set=m.Contingencies,
                                         domain=NonNegativeReals,
                                         dense=False)
     libbranch.declare_var_pfc_slack_neg(model=block,
-                                        index_set=block._contingency_set,
+                                        index_set=m.Contingencies,
                                         domain=NonNegativeReals,
                                         dense=False)
 
@@ -161,9 +161,8 @@ def _ptdf_dcopf_network_model(block,tm):
     _setup_interface_slacks(m,block,tm)
 
     ### contingency setup
-    block._contingency_set = Set(initialize=( (cn, bn) for cn in contingencies.keys() for bn in branches_in_service) )
     libbranch.declare_expr_pfc(model=block,
-                               index_set=block._contingency_set
+                               index_set=m.Contingencies
                                )
 
     _setup_contingency_slacks(m,block,tm)
@@ -208,7 +207,7 @@ def _ptdf_dcopf_network_model(block,tm):
                                                 )
         ### declare the "blank" interface flow limits
         libbranch.declare_ineq_p_contingency_branch_thermal_bounds(model=block,
-                                                                   index_set=block._contingency_set,
+                                                                   index_set=m.Contingencies,
                                                                    pc_thermal_limits=None,
                                                                    approximation_type=None,
                                                                    slacks=True,
