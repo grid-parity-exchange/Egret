@@ -386,6 +386,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
 
     '''
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+    from egret.common.solver_interface import _solve_model
 
     PTDF = m._PTDF
 
@@ -422,10 +423,10 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
         logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
         if persistent_solver:
-            solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+            m, results, solver = _solve_model(m, solver, solver_tee=solver_tee, return_solver=True, vars_to_load=[], set_instance=False)
             solver.load_vars()
         else:
-            solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
+            m, results, solver = _solve_model(m, solver, solver_tee=solver_tee, return_solver=True)
 
     else: # we hit the iteration limit
         logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')

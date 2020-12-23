@@ -1056,8 +1056,6 @@ def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
     based on the power variables or expressions.
     """
     m = model
-    con_set = decl.declare_set('_con_ineq_p_contingency_branch_thermal_bounds',
-                               model=model, index_set=index_set)
     # flag for if slacks are on the model
     if slacks:
         if not hasattr(model, 'pfc_slack_pos'):
@@ -1067,7 +1065,7 @@ def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
         if slack_cost_expr is None:
             raise Exception('No cost expression for slacks, but slacks=True')
 
-    m.ineq_pf_contingency_branch_thermal_bounds = pe.Constraint(con_set)
+    m.ineq_pf_contingency_branch_thermal_bounds = pe.Constraint(index_set)
 
     if approximation_type == ApproximationType.BTHETA or \
             approximation_type == ApproximationType.PTDF:

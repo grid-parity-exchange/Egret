@@ -661,6 +661,7 @@ def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, 
         if slacks is None:
             slacks = dict()
             slacks_I = dict()
+            slacks_C = dict()
             for t in t_subset:
                 b_ = m.TransmissionBlock[t]
 
@@ -671,11 +672,13 @@ def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, 
                 ## slack in the constraint
                 for i_n, constr in b_.ineq_pf_interface_bounds.items():
                     slacks_I[i_n] = constr.slack()
+                for cn, constr in b_.ineq_pf_contingency_branch_thermal_bounds.items():
+                    slacks_C[cn] = constr.slack()
 
         b_other = m.TransmissionBlock[t_o]
         PTDF_other = b_other._PTDF
 
-        flows[t_o], viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks, slacks_I)
+        flows[t_o], viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks, slacks_I, slacks_C)
 
         logger.debug(prepend_str+"adding {0} flow constraints at time {1}".format(len(viol_lazy[t_o]),t_o))
         lpu.add_violations(viol_lazy[t_o], flows[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str)

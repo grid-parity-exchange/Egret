@@ -692,7 +692,7 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
     ## LU factorization
     MLU_MP = scipy.sparse.linalg.splu(M)
 
-    if contingencies is not None:
+    if contingencies:
         contingency_compensators = \
             precompute_contingency_matricies( graph, MLU_MP, At_masked.T, Bd,
                                               mapping_bus_to_idx, mapping_branch_to_idx, 
@@ -756,7 +756,7 @@ class _ContingencyCompensator:
 class _ContingencyCompensators(abc.Mapping):
     def __init__(self, compensators, L, U, Pr, Pc):
         self._compensators = compensators
-        for c in compensators:
+        for c in compensators.values():
             c._global = weakref.ref(self)
         self._L = L
         self._U = U

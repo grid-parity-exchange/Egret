@@ -198,6 +198,11 @@ class _MaximalViolationsStore:
                 lower_lazy_limits, lower_enforced_limits,
                 monitored_indices, index_names, outer_name=None):
 
+        if outer_name:
+            # contingencies are named by cn, branch_idx, reduce to
+            # branch_idx for this function
+            monitored_indices = set(idx[1] for idx in monitored_indices if idx[0] == outer_name)
+
         ## check upper bound
         upper_viol_lazy_array = flow_array - upper_lazy_limits
 
@@ -209,7 +214,7 @@ class _MaximalViolationsStore:
         upper_viol_array = flow_array[upper_viol_lazy_idx] - upper_enforced_limits[upper_viol_lazy_idx]
         self._calculate_total_and_monitored_violations(upper_viol_array, upper_viol_lazy_idx, monitored_indices,
                                                         flow_variable, flow_array, index_names, upper_enforced_limits,
-                                                        name )
+                                                        name, outer_name)
 
         ## viol_lazy_idx will hold the lines we're adding
         ## this iteration -- don't want to add lines
@@ -231,7 +236,7 @@ class _MaximalViolationsStore:
         lower_viol_array =  lower_enforced_limits[lower_viol_lazy_idx] - flow_array[lower_viol_lazy_idx]
         self._calculate_total_and_monitored_violations(lower_viol_array, lower_viol_lazy_idx, monitored_indices,
                                                         flow_variable, flow_array, index_names, lower_enforced_limits,
-                                                        name )
+                                                        name, outer_name )
 
         ## viol_lazy_idx will hold the lines we're adding
         ## this iteration -- don't want to add lines
@@ -245,7 +250,7 @@ class _MaximalViolationsStore:
 
     def _calculate_total_and_monitored_violations(self, viol_array, viol_lazy_idx, monitored_indices,
                                                         flow_variable, flow_array, index_names, limits,
-                                                        name ):
+                                                        name, outer_name ):
         ## viol_idx_idx will be indexed by viol_lazy_idx
         viol_idx_idx = np.nonzero(viol_array > 0)[0]
         viol_idx = frozenset(viol_lazy_idx[viol_idx_idx])
@@ -257,6 +262,8 @@ class _MaximalViolationsStore:
 
         for i in viol_in_mb:
             element_name = index_names[i]
+            if outer_name:
+                element_name = (outer_name, element_name)
             thermal_limit = limits[i]
             logger.info(self.prepend_str+_generate_flow_viol_warning(flow_variable, name, element_name, flow_array[i], thermal_limit, self.baseMVA, self.time))
 
@@ -327,10 +334,11 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
         ## In this way, we avoid (number of contingenies) adds PFV+PFV_delta_c
 
-        lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
-        lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
-        enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
-        enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
+        print("CHECKING CONTINGENCY FLOWS")
+        #lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
+        #lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
+        #enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
+        #enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
         for cn, comp in PTDF.contingency_compensators.items():
             VA_delta = PTDF.MLU.solve( comp.M *((-comp.c)*(comp.M.T@VA)) )
             PF_delta = PTDF.B_dA@VA_delta
@@ -339,12 +347,20 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
             if comp.branch_out in PTDF.branchname_to_index_masked_map:
                 branch_out_idx = PTDF.branchname_to_index_masked_map[comp.branch_out]
                 PF_delta[branch_out_idx] = -PFV[branch_out_idx]
-            violations_store.check_and_add_violations('contingency', PF_delta, mb.pfc,
-                                                      lazy_contingency_limits_upper, enforced_contingency_limits_upper,
-                                                      lazy_contingency_limits_lower, enforced_contingency_limits_lower,
+            PFC = PFV + PF_delta
+            violations_store.check_and_add_violations('contingency', PFC, mb.pfc,
+                                                     # lazy_contingency_limits_upper, enforced_contingency_limits_upper,
+                                                     # lazy_contingency_limits_lower, enforced_contingency_limits_lower,
+                                                      PTDF.lazy_contingency_limits, PTDF.enforced_contingency_limits,
+                                                     -PTDF.lazy_contingency_limits, -PTDF.enforced_contingency_limits,
                                                       mb._contingencies_monitored, PTDF.branches_keys_masked,
                                                       outer_name = cn)
 
+    print(f"branches_monitored: {mb._idx_monitored}")
+    print(f"interfaces_monitored: {mb._interfaces_monitored}")
+    print(f"contingencies_monitored: {mb._contingencies_monitored}")
+    print(f"Violations being added: {violations_store.violations_store}")
+    print(f"Violations in model: {violations_store.monitored_violations}")
 
     viol_lazy = _LazyViolations(branch_lazy_violations=set(violations_store.get_violations_named('branch')),
                                 interface_lazy_violations=set(violations_store.get_violations_named('interface')),
@@ -471,6 +487,8 @@ def _iter_over_int_viol_set(int_viol_set, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
 def _iter_over_cont_viol_set(cont_viol_set, mb, PTDF, abs_ptdf_tol, rel_ptdf_tol):
     for (cn, i_b) in cont_viol_set:
         bn = PTDF.branches_keys_masked[i_b]
+        if (cn, bn) not in mb._contingency_set:
+            mb._contingency_set.add((cn,bn))
         if mb.pfc[cn, bn].expr is None:
             expr = libbranch.get_contingency_power_flow_expr_ptdf_approx(mb, cn, bn, PTDF,
                                                         abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
@@ -574,6 +592,7 @@ def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                                       obj_coef*mb.pf_slack_neg[bn] )
         if persistent_solver:
             solver.add_constraint(constr[bn])
+        print(f"adding constraint for branch {bn}")
 
     _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                 PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
@@ -614,6 +633,7 @@ def _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_optio
                                                         obj_coef*mb.pfi_slack_neg[i_n] )
         if persistent_solver:
             solver.add_constraint(constr[i_n])
+        print(f"adding constraint for interface {i_n}")
 
 def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                 PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
@@ -643,6 +663,7 @@ def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_opt
                                                           obj_coef*mb.pfc_slack_neg[cn,bn] )
         if persistent_solver:
             solver.add_constraint(constr[cn,bn])
+        print(f"adding constraint for contingency {(cn, i_b)}")
 
 ## helper for generating pf
 def _iter_over_initial_set(branches, branches_in_service, PTDF):
@@ -690,7 +711,7 @@ def add_initial_monitored_interfaces(mb, interfaces, ptdf_options, PTDF):
         constr[i_n], _ = _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit)
         int_viol_in_mb.append(i)
 
-def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I):
+def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I, slacks_C):
     active_slack_tol = m._ptdf_options['active_flow_tol']
 
     branchname_index_map = PTDF_next.branchname_to_index_masked_map
@@ -698,9 +719,11 @@ def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I):
 
     viol_lazy = set()
     int_viol_lazy = set()
+    cont_viol_lazy = set()
 
     idx_monitored = b_next._idx_monitored
     interfaces_monitored = b_next._interfaces_monitored
+    contingencies_monitored = b_next._contingencies_monitored
 
     for bn, slack in slacks.items():
         if abs(slack) <= active_slack_tol:
@@ -718,9 +741,19 @@ def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I):
                 if idx not in interfaces_monitored:
                     int_viol_lazy.add(idx)
 
+    for cn, slack in slacks_C.items():
+        if abs(slack) <= active_slack_tol:
+            ## in case the topology has changed
+            c, bn = cn
+            if bn in branchname_index_map:
+                bi = interfacename_index_map[bn]
+                if (c, bi) not in contingencies_monitored:
+                    cont_viol_lazy.add((c, bi))
+
     flows = _CalculatedFlows()
     viol_lazy = _LazyViolations(branch_lazy_violations=viol_lazy,
-                                interface_lazy_violations=int_viol_lazy)
+                                interface_lazy_violations=int_viol_lazy,
+                                contingency_lazy_violations=cont_viol_lazy)
 
     return flows, viol_lazy
 

@@ -12,7 +12,7 @@ This module provides functions that create the modules for typical DCOPF formula
 
 #TODO: document this with examples
 """
-import pyomo.environ as pe
+import pyomo.environ as pyo
 import numpy as np
 import egret.model_library.transmission.tx_utils as tx_utils
 import egret.model_library.transmission.tx_calc as tx_calc
@@ -26,6 +26,7 @@ from egret.model_library.defn import CoordinateType, ApproximationType, BasePoin
 from egret.data.data_utils import map_items, zip_items
 from egret.models.copperplate_dispatch import (_include_system_feasibility_slack,
                                                _validate_and_extract_slack_penalty)
+from egret.models.dcopf import _lazy_ptdf_dcopf_model_solve_loop
 from egret.common.log import logger
 from math import pi, radians
 
@@ -59,7 +60,7 @@ def create_scopf_model(model_data, include_feasibility_slack=False, base_point=B
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
-    model = pe.ConcreteModel()
+    model = pyo.ConcreteModel()
 
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
@@ -126,9 +127,13 @@ def create_scopf_model(model_data, include_feasibility_slack=False, base_point=B
                               )
 
     ### add "blank" power flow expressions
-    libbranch.declare_expr_pfc(model=model,
-                               index_set=(contingencies.keys(), branches_idx),
-                               )
+    model._contingencies = pyo.Set(initialize=contingencies.keys())
+    model._branches = pyo.Set(initialize=branches_idx)
+    model._contingency_set = pyo.Set(within=model._contingencies*model._branches)
+    model.pfc = pyo.Expression(model._contingency_set)
+    #libbranch.declare_expr_pfc(model=model,
+    #                           index_set=model._contingency_set,
+    #                           )
 
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
@@ -152,7 +157,7 @@ def create_scopf_model(model_data, include_feasibility_slack=False, base_point=B
 
     ### add "blank" real power flow limits
     libbranch.declare_ineq_p_contingency_branch_thermal_bounds(model=model,
-                                                               index_set=(contingencies.keys(), branches_idx),
+                                                               index_set=model._contingency_set,
                                                                pc_thermal_limits=None,
                                                                approximation_type=None,
                                                                )
@@ -173,87 +178,10 @@ def create_scopf_model(model_data, include_feasibility_slack=False, base_point=B
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
-    model.obj = pe.Objective(expr=obj_expr)
+    model.obj = pyo.Objective(expr=obj_expr)
 
 
     return model, md
-
-def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
-    '''
-    The lazy PTDF DCOPF solver loop. This function iteratively
-    adds violated transmission constraints until either the result is
-    transmission feasible or we're tracking every violated constraint
-    in the model
-
-    Parameters
-    ----------
-    m : pyomo.environ.ConcreteModel
-        An egret DCOPF model with no transmission constraints
-    md : egret.data.ModelData
-        An egret ModelData object
-    solver : pyomo.opt.solver
-        A pyomo solver object
-    solver_tee : bool (optional)
-        For displaying the solver log (default is True)
-    symbolic_solver_labels : bool (optional)
-        Use symbolic solver labels when writing to the solver (default is False)
-    iteration_limit : int (optional)
-        Number of iterations before a hard termination (default is 100000)
-
-    Returns
-    -------
-    egret.common.lazy_ptdf_utils.LazyPTDFTerminationCondition : the termination status
-    pyomo.opt.results.SolverResults : The results object from the pyomo solver
-    int : The number of iterations before termination
-
-    '''
-    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
-
-    PTDF = m._PTDF
-
-    ptdf_options = m._ptdf_options
-
-    persistent_solver = isinstance(solver, PersistentSolver)
-
-    for i in range(iteration_limit):
-
-        flows, viol_num, mon_viol_num, viol_lazy \
-                = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
-
-        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,viol_num)
-        if mon_viol_num:
-            iter_status_str += ", {} of which are already monitored".format(mon_viol_num)
-
-        logger.info(iter_status_str)
-
-        if viol_num <= 0:
-            ## in this case, there are no violations!
-            ## load the duals now too, if we're using a persistent solver
-            if persistent_solver:
-                solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.NORMAL
-
-        elif viol_num == mon_viol_num:
-            logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
-            if persistent_solver:
-                solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
-
-        lpu.add_violations(viol_lazy, flows, m, md, solver, ptdf_options, PTDF)
-        total_flow_constr_added = len(viol_lazy)
-        logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
-
-        if persistent_solver:
-            solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
-            solver.load_vars()
-        else:
-            solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
-
-    else: # we hit the iteration limit
-        logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
-        if persistent_solver:
-            solver.load_duals()
-        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT
 
 
 def solve_scopf(model_data,
@@ -262,7 +190,7 @@ def solve_scopf(model_data,
                 solver_tee = True,
                 symbolic_solver_labels = False,
                 options = None,
-                dcopf_model_generator = create_btheta_dcopf_model,
+                scopf_model_generator = create_scopf_model,
                 return_model = False,
                 return_results = False,
                 **kwargs):
@@ -302,14 +230,14 @@ def solve_scopf(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
-    m, md = dcopf_model_generator(model_data, **kwargs)
+    m, md = scopf_model_generator(model_data, **kwargs)
 
-    m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+    m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
 
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,solver_options=options, return_solver=True)
 
-    if dcopf_model_generator == create_ptdf_dcopf_model and m._ptdf_options['lazy']:
+    if m._ptdf_options['lazy']:
         iter_limit = m._ptdf_options['iteration_limit']
         term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
 
@@ -327,38 +255,23 @@ def solve_scopf(model_data,
 
     ## calculate the power flows from our PTDF matrix for maximum precision
     ## calculate the LMPC (LMP congestion) using numpy
-    if dcopf_model_generator == create_ptdf_dcopf_model:
-        PTDF = m._PTDF
+    PTDF = m._PTDF
 
-        PFV, _, VA = PTDF.calculate_PFV(m)
+    PFV, _, VA = PTDF.calculate_PFV(m)
 
-        branches_idx = PTDF.branches_keys
-        for i,bn in enumerate(branches_idx):
-            branches[bn]['pf'] = PFV[i]
-    else:
-        for k, k_dict in branches.items():
-            k_dict['pf'] = value(m.pf[k])
+    branches_idx = PTDF.branches_keys
+    for i,bn in enumerate(branches_idx):
+        branches[bn]['pf'] = PFV[i]
 
-    if dcopf_model_generator == create_ptdf_dcopf_model:
-        if hasattr(m, 'p_load_shed'):
-            md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
-        buses_idx = PTDF.buses_keys
-        LMP = PTDF.calculate_LMP(m, m.dual, m.eq_p_balance)
-        for i,b in enumerate(buses_idx):
-            b_dict = buses[b]
-            b_dict['lmp'] = LMP[i]
-            b_dict['pl'] = value(m.pl[b])
-            b_dict['va'] = VA[i]
-    else:
-        for b,b_dict in buses.items():
-            if hasattr(m, 'p_load_shed'):
-                b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
-            b_dict['pl'] = value(m.pl[b])
-            if dcopf_model_generator == create_btheta_dcopf_model:
-                b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
-                b_dict['va'] = value(m.va[b])
-            else:
-                raise Exception("Unrecognized dcopf_model_generator {}".format(dcopf_model_generator))
+    if hasattr(m, 'p_load_shed'):
+        md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
+    buses_idx = PTDF.buses_keys
+    LMP = PTDF.calculate_LMP(m, m.dual, m.eq_p_balance)
+    for i,b in enumerate(buses_idx):
+        b_dict = buses[b]
+        b_dict['lmp'] = LMP[i]
+        b_dict['pl'] = value(m.pl[b])
+        b_dict['va'] = VA[i]
 
     for k, k_dict in dc_branches.items():
         k_dict['pf'] = value(m.dcpf[k])

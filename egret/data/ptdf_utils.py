@@ -150,6 +150,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
                                                      self.buses_keys,
                                                      self._reference_bus,
                                                      self._base_point,
+                                                     contingencies=self.contingencies,
                                                      mapping_bus_to_idx=self._busname_to_index_map,
                                                      mapping_branch_to_idx=self._branchname_to_index_map,
                                                      interfaces = self.interfaces,
@@ -306,16 +307,17 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
             self._ptdf_rows[branch_name] = PTDF_row
         return PTDF_row
 
-    def _get_contingency_row(contingency_name, branch_name):
+    def _get_contingency_row(self, contingency_name, branch_name):
         if (contingency_name, branch_name) in self._contingency_rows:
             cont_PTDF_row = self._contingency_rows[contingency_name,branch_name]
         else:
             ## TODO: should we be using post-compensation if the PTDF row is already calculated?
             branch_idx = self._branchname_to_index_map[branch_name]
-            cc = self._contingency_compenators[contingency_name]
-            hatF = cc.U.solve((B_dA[branch_idx]@cc.Pc).toarray(out=self._bus_sensi_buffer)[0], 'T')
+            cc = self.contingency_compensators[contingency_name]
+            hatF = cc.U.solve((self.B_dA[branch_idx]@cc.Pc).toarray(out=self._bus_sensi_buffer)[0], 'T')
             delF = cc.Wbar*((-cc.c)*(cc.W.T@hatF))
             cont_PTDF_row = cc.Pr.T@cc.L.solve(hatF+delF, 'T')
+            #print(f"contingency row: {cont_PTDF_row}")
             self._contingency_rows[contingency_name, branch_name] = cont_PTDF_row
         return cont_PTDF_row
 
@@ -375,7 +377,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         ptdf_row = self._get_contingency_row(contingency_name, branch_name)
         branch_idx = self._branchname_to_index_map[branch_name]
 
-        phi_compensator = self._contingency_compenators[contingency_name].phi_compensator
+        phi_compensator = self.contingency_compensators[contingency_name].phi_compensator
 
         phi_adj = ptdf_row@(self.phi_adjust_array+phi_compensator)
             ## phi adj   +     phase shift
@@ -434,9 +436,12 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         PFV_I = PFV_I.T
 
         ## VA is reversed in sign
-        VA = -VA.T
+        if masked:
+            VA = VA.T[0]
+        else:
+            VA = -self._insert_reference_bus(VA.T[0], 0.)
 
-        return PFV.A[0], PFV_I.A[0], self._insert_reference_bus(VA[0], 0.)
+        return PFV.A[0], PFV_I.A[0], VA
 
     def calculate_masked_PFV(self, mb):
         '''
