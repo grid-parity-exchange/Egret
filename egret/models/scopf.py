@@ -276,6 +276,14 @@ def solve_scopf(model_data,
     for k, k_dict in dc_branches.items():
         k_dict['pf'] = value(m.dcpf[k])
 
+    contingencies = dict(md.elements(element_type='contingency'))
+    contingency_flows = PTDF.calculate_monitored_contingency_flows(m)
+    for (cn,bn), flow in contingency_flows.items():
+        c_dict = contingencies[cn]
+        if 'monitored_branches' not in c_dict:
+            c_dict['monitored_branches'] = {}
+        c_dict['monitored_branches'][bn] = {'pf': flow}
+
     unscale_ModelData_to_pu(md, inplace=True)
 
     if return_model and return_results:

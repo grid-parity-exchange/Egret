@@ -158,9 +158,9 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
 
         self.MLU = MLU
         self.B_dA = B_dA
-        self.B_dA_I = B_dA_I
-
+        self.ref_bus_mask = ref_bus_mask
         self.contingency_compensators = contingency_compensators
+        self.B_dA_I = B_dA_I
 
         self._calculate_phase_shift_flow_adjuster()
         self._calculate_phi_adjust(ref_bus_mask)
@@ -562,9 +562,29 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
 
         LMPE = value(dual[bus_balance_constr])
 
-        LMP = LMPE + LMPC + LMPI
+        if self.contingencies:
+            LMPCC = np.zeros_like(LMPC)
+            for (cn, bn), constr in mb.ineq_pf_contingency_branch_thermal_bounds.items():
+                dual_value = value(dual[constr])
+                if dual_value != 0.:
+                    LMPCC += (-dual_value)*self._contingency_rows[cn, bn]
+
+            LMP = LMPE + LMPC + LMPI + LMPCC
+        else:
+            LMP = LMPE + LMPC + LMPI
 
         return self._insert_reference_bus(LMP, LMPE)
+
+    def calculate_monitored_contingency_flows(self, mb):
+        NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys_no_ref), float, count=len(self.buses_keys_no_ref))
+        NWV += self.phi_adjust_array.T
+        NWV = NWV.A[0]
+
+        flows_dict = {}
+        for name in mb.ineq_pf_contingency_branch_thermal_bounds:
+            flows_dict[name] = (self._contingency_rows[name])@NWV
+
+        return flows_dict
 
     def calculate_masked_PFV_delta(self, cn, PFV, VA):
         '''

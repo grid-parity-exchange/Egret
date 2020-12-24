@@ -10,7 +10,7 @@
 ## helpers for flow verification across dcopf and unit commitment models
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 from egret.model_library.defn import ApproximationType
-from egret.common.log import logger
+from egret.common.log import logger, logging
 import collections.abc as abc
 import egret.model_library.transmission.branch as libbranch
 import pyomo.environ as pyo
@@ -270,8 +270,7 @@ class _MaximalViolationsStore:
         viol_in_mb = viol_idx.intersection(monitored_indices)
         self.monitored_violations += len(viol_in_mb)
 
-        #for i in viol_in_mb:
-        for i in monitored_indices:
+        for i in viol_in_mb:
             element_name = index_names[i]
             thermal_limit = limits[i]
             flow = flow_array[i]
@@ -279,24 +278,35 @@ class _MaximalViolationsStore:
                 element_name = (outer_name, element_name)
                 thermal_limit += other_flows[i]
                 flow += other_flows[i]
-            #logger.info(self.prepend_str+_generate_flow_viol_warning(flow_variable, name, element_name, flow, thermal_limit, self.baseMVA, self.time))
-            if outer_name:
-                #flow_variable[element_name].pprint()
-                print(f'delta: {flow_array[i]}')
-                print(f'base : {other_flows[i]}')
-                print(f'flow : {flow_array[i]+other_flows[i]}')
-                print(f'model: {pyo.value(flow_variable[element_name])}')
-                if not math.isclose(pyo.value(flow_variable[element_name]), flow_array[i]+other_flows[i]):
-                    print(f'contingency: {element_name[0]}, branch_idx: {i}')
-                    diff = pyo.value(flow_variable[element_name]) - (flow_array[i]+other_flows[i])
-                    print(f'ABSOLUTE DIFFERENCE: { abs(diff) }')
-                    #flow_variable[element_name].pprint()
-                    #raise Exception()
-                print('')
-            else:
-                print(f'flow : {flow_array[i]}')
-                print(f'model: {pyo.value(flow_variable[element_name])}')
-                print('')
+            logger.info(self.prepend_str+_generate_flow_viol_warning(flow_variable, name, element_name, flow, thermal_limit, self.baseMVA, self.time))
+
+        ## useful debugging code
+        if logger.level <= logging.DEBUG:
+            for i in monitored_indices:
+                element_name = index_names[i]
+                thermal_limit = limits[i]
+                flow = flow_array[i]
+                if outer_name:
+                    element_name = (outer_name, element_name)
+                    thermal_limit += other_flows[i]
+                    flow += other_flows[i]
+                    print(f'contingency: {element_name[0]}, branch: {element_name[1]}')
+                    print(f'delta: {flow_array[i]}')
+                    print(f'base : {other_flows[i]}')
+                    print(f'flow : {flow_array[i]+other_flows[i]}')
+                    print(f'model: {pyo.value(flow_variable[element_name])}')
+                    if not math.isclose(pyo.value(flow_variable[element_name]), flow_array[i]+other_flows[i]):
+                        print(f'contingency: {element_name[0]}, branch_idx: {i}')
+                        diff = pyo.value(flow_variable[element_name]) - (flow_array[i]+other_flows[i])
+                        print(f'ABSOLUTE DIFFERENCE: { abs(diff) }')
+                        flow_variable[element_name].pprint()
+                        raise Exception()
+                    print('')
+                else:
+                    print(f'{name}: {element_name}')
+                    print(f'flow : {flow_array[i]}')
+                    print(f'model: {pyo.value(flow_variable[element_name])}')
+                    print('')
 
 
 ## to hold the indicies of the violations
@@ -345,8 +355,6 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
     if PTDF.contingencies and \
            violations_store.total_violations == 0:
-        #    (violations_store.total_violations < max_viol_add or \
-        #      violations_store.min_flow_violation() < active_slack_tol):
         ## NOTE: checking contingency constraints in general could be very expensive
         ##       we probably want to delay doing so until we have a nearly transmission feasible
         ##       solution
@@ -365,28 +373,24 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
         ## In this way, we avoid (number of contingenies) adds PFV+PFV_delta_c
 
-        print("CHECKING CONTINGENCY FLOWS")
+        logger.info("Checking contingency flows...")
         lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
         lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
         enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
         enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
         for cn in PTDF.contingency_compensators:
-
             PFV_delta = PTDF.calculate_masked_PFV_delta(cn, PFV, VA)
-            #PFC = PFV + PF_delta
             violations_store.check_and_add_violations('contingency', PFV_delta, mb.pfc,
                                                       lazy_contingency_limits_upper, enforced_contingency_limits_upper,
                                                       lazy_contingency_limits_lower, enforced_contingency_limits_lower,
-                                                    #  PTDF.lazy_contingency_limits, PTDF.enforced_contingency_limits,
-                                                    # -PTDF.lazy_contingency_limits, -PTDF.enforced_contingency_limits,
                                                       mb._contingencies_monitored, PTDF.branches_keys_masked,
                                                       outer_name = cn, PFV = PFV)
 
-    print(f"branches_monitored: {mb._idx_monitored}")
-    print(f"interfaces_monitored: {mb._interfaces_monitored}")
-    print(f"contingencies_monitored: {mb._contingencies_monitored}")
-    print(f"Violations being added: {violations_store.violations_store}")
-    print(f"Violations in model: {violations_store.monitored_violations}")
+    logger.debug(f"branches_monitored: {mb._idx_monitored}\n"
+                 f"interfaces_monitored: {mb._interfaces_monitored}\n"
+                 f"contingencies_monitored: {mb._contingencies_monitored}\n"
+                 f"Violations being added: {violations_store.violations_store}\n"
+                 f"Violations in model: {violations_store.monitored_violations}\n")
 
     viol_lazy = _LazyViolations(branch_lazy_violations=set(violations_store.get_violations_named('branch')),
                                 interface_lazy_violations=set(violations_store.get_violations_named('interface')),
@@ -618,7 +622,6 @@ def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                                       obj_coef*mb.pf_slack_neg[bn] )
         if persistent_solver:
             solver.add_constraint(constr[bn])
-        print(f"adding constraint for branch {bn}")
 
     _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                 PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
@@ -689,7 +692,6 @@ def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_opt
                                                           obj_coef*mb.pfc_slack_neg[cn,bn] )
         if persistent_solver:
             solver.add_constraint(constr[cn,bn])
-        print(f"adding constraint for contingency {(cn, i_b)}")
 
 ## helper for generating pf
 def _iter_over_initial_set(branches, branches_in_service, PTDF):
