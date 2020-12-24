@@ -458,8 +458,7 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
             assert element_type is None
             assert element_subtype is None
             for name, sys_attr in system_dict.items():
-                if name in attributes:
-                    transform_func(system_dict, name, sys_attr, baseMVA)
+                transform_func(system_dict, name, sys_attr, baseMVA, attributes)
         
         elif attr_type == 'element_type':
             if element_type not in md.data['elements']:

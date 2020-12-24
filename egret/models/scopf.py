@@ -129,11 +129,10 @@ def create_scopf_model(model_data, include_feasibility_slack=False, base_point=B
     ### add "blank" power flow expressions
     model._contingencies = pyo.Set(initialize=contingencies.keys())
     model._branches = pyo.Set(initialize=branches_idx)
+    ### NOTE: important that this not be dense, we'll add elements
+    ###       as we find violations
     model._contingency_set = pyo.Set(within=model._contingencies*model._branches)
     model.pfc = pyo.Expression(model._contingency_set)
-    #libbranch.declare_expr_pfc(model=model,
-    #                           index_set=model._contingency_set,
-    #                           )
 
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
