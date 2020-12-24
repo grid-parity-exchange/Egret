@@ -8,7 +8,7 @@
 #  ___________________________________________________________________________
 
 """
-This module provides functions that create the modules for typical DCOPF formulations.
+This module provides functions that create the modules for typical Security-Constrained OPF.
 
 #TODO: document this with examples
 """
@@ -195,7 +195,7 @@ def solve_scopf(model_data,
                 return_results = False,
                 **kwargs):
     '''
-    Create and solve a new dcopf model
+    Create and solve a new scopf model
 
     Parameters
     ----------
@@ -212,7 +212,7 @@ def solve_scopf(model_data,
         Use symbolic solver labels. Useful for debugging; default is False.
     options : dict (optional)
         Other options to pass into the solver. Default is dict().
-    dcopf_model_generator : function (optional)
+    scopf_model_generator : function (optional)
         Function for generating the dcopf model. Default is
         egret.models.dcopf.create_btheta_dcopf_model
     return_model : bool (optional)
