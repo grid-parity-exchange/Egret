@@ -614,20 +614,24 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
     m_p_nw = model.p_nw
+    value = pe.value
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
-            if abs(coef) >= ptdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
+    coef_list = []
+    var_list = []
+    residual_list = [const]
+    for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+        if abs(coef) >= ptdf_tol:
+            coef_list.append(coef)
+            var_list.append(m_p_nw[bus_name])
+        else:
+            residual_list.append(coef*value(m_p_nw[bus_name]))
+    const = math.fsum(residual_list)
 
-        lin_expr_list = [const] + coef_list + var_list 
-        expr = LinearExpression(lin_expr_list)
+    if isinstance(m_p_nw, pe.Var):
+        expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+        expr = quicksum( (coef*var for coef, var in zip(coef_list, var_list)), start=const, linear=True)
 
     return expr
 
@@ -678,20 +682,24 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
 
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     m_p_nw = model.p_nw
+    value = pe.value
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
-            if abs(coef) >= ptdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
+    coef_list = []
+    var_list = []
+    residual_list = [const]
+    for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
+        if abs(coef) >= ptdf_tol:
+            coef_list.append(coef)
+            var_list.append(m_p_nw[bus_name])
+        else:
+            residual_list.append(coef*value(m_p_nw[bus_name]))
+    const = math.fsum(residual_list)
 
-        lin_expr_list = [const] + coef_list + var_list 
-        expr = LinearExpression(lin_expr_list)
+    if isinstance(m_p_nw, pe.Var):
+        expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+        expr = quicksum( (coef*var for coef, var in zip(coef_list, var_list)), start=const, linear=True)
 
     return expr
 
@@ -739,22 +747,24 @@ def get_contingency_power_flow_expr_ptdf_approx(model, contingency_name, branch_
 
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
     m_p_nw = model.p_nw
+    value = pe.value
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in PTDF.get_contingency_branch_ptdf_iterator(contingency_name, branch_name):
-            if abs(coef) >= ptdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
+    coef_list = []
+    var_list = []
+    residual_list = [const]
+    for bus_name, coef in PTDF.get_contingency_branch_ptdf_iterator(contingency_name, branch_name):
+        if abs(coef) >= ptdf_tol:
+            coef_list.append(coef)
+            var_list.append(m_p_nw[bus_name])
+        else:
+            residual_list.append(coef*value(m_p_nw[bus_name]))
+    const = math.fsum(residual_list)
 
-        lin_expr_list = [const] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
+    if isinstance(m_p_nw, pe.Var):
+        expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name]
-            for bus_name, coef in PTDF.get_contingency_branch_ptdf_iterator(contingency_name, branch_name)
-            if abs(coef) >= ptdf_tol), start=const, linear=True)
+        expr = quicksum( (coef*var for coef, var in zip(coef_list, var_list)), start=const, linear=True)
 
     return expr
 
@@ -803,21 +813,24 @@ def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
 
     m_p_nw = model.p_nw
-
+    value = pe.value
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name):
-            if abs(coef) >= ptdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
+    coef_list = []
+    var_list = []
+    residual_list = [const]
+    for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name):
+        if abs(coef) >= ptdf_tol:
+            coef_list.append(coef)
+            var_list.append(m_p_nw[bus_name])
+        else:
+            residual_list.append(coef*value(m_p_nw[bus_name]))
+    const = math.fsum(residual_list)
 
-        lin_expr_list = [const] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
+    if isinstance(m_p_nw, pe.Var):
+        expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+        expr = quicksum( (coef*var for coef, var in zip(coef_list, var_list)), start=const, linear=True)
 
     return expr
 

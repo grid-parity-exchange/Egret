@@ -16,6 +16,7 @@ import egret.model_library.transmission.branch as libbranch
 import pyomo.environ as pyo
 import numpy as np
 import copy as cp
+import math
 
 from enum import Enum
 
@@ -196,7 +197,7 @@ class _MaximalViolationsStore:
     def check_and_add_violations(self, name, flow_array, flow_variable,
                 upper_lazy_limits, upper_enforced_limits,
                 lower_lazy_limits, lower_enforced_limits,
-                monitored_indices, index_names, outer_name=None):
+                monitored_indices, index_names, outer_name=None, PFV=None):
 
         if outer_name:
             # contingencies are named by cn, branch_idx, reduce to
@@ -214,7 +215,7 @@ class _MaximalViolationsStore:
         upper_viol_array = flow_array[upper_viol_lazy_idx] - upper_enforced_limits[upper_viol_lazy_idx]
         self._calculate_total_and_monitored_violations(upper_viol_array, upper_viol_lazy_idx, monitored_indices,
                                                         flow_variable, flow_array, index_names, upper_enforced_limits,
-                                                        name, outer_name)
+                                                        name, outer_name, PFV)
 
         ## viol_lazy_idx will hold the lines we're adding
         ## this iteration -- don't want to add lines
@@ -236,7 +237,7 @@ class _MaximalViolationsStore:
         lower_viol_array =  lower_enforced_limits[lower_viol_lazy_idx] - flow_array[lower_viol_lazy_idx]
         self._calculate_total_and_monitored_violations(lower_viol_array, lower_viol_lazy_idx, monitored_indices,
                                                         flow_variable, flow_array, index_names, lower_enforced_limits,
-                                                        name, outer_name )
+                                                        name, outer_name, PFV)
 
         ## viol_lazy_idx will hold the lines we're adding
         ## this iteration -- don't want to add lines
@@ -250,7 +251,7 @@ class _MaximalViolationsStore:
 
     def _calculate_total_and_monitored_violations(self, viol_array, viol_lazy_idx, monitored_indices,
                                                         flow_variable, flow_array, index_names, limits,
-                                                        name, outer_name ):
+                                                        name, outer_name, other_flows ):
         ## viol_idx_idx will be indexed by viol_lazy_idx
         viol_idx_idx = np.nonzero(viol_array > 0)[0]
         viol_idx = frozenset(viol_lazy_idx[viol_idx_idx])
@@ -260,13 +261,31 @@ class _MaximalViolationsStore:
         viol_in_mb = viol_idx.intersection(monitored_indices)
         self.monitored_violations += len(viol_in_mb)
 
-        for i in viol_in_mb:
+        #for i in viol_in_mb:
+        for i in monitored_indices:
             element_name = index_names[i]
+            thermal_limit = limits[i]
+            flow = flow_array[i]
             if outer_name:
                 element_name = (outer_name, element_name)
-            thermal_limit = limits[i]
-            logger.info(self.prepend_str+_generate_flow_viol_warning(flow_variable, name, element_name, flow_array[i], thermal_limit, self.baseMVA, self.time))
-
+                thermal_limit += other_flows[i]
+                flow += other_flows[i]
+            #logger.info(self.prepend_str+_generate_flow_viol_warning(flow_variable, name, element_name, flow, thermal_limit, self.baseMVA, self.time))
+            if outer_name:
+                #flow_variable[element_name].pprint()
+                print(f'delta: {flow_array[i]}')
+                print(f'base : {other_flows[i]}')
+                print(f'flow : {flow_array[i]+other_flows[i]}')
+                print(f'model: {pyo.value(flow_variable[element_name])}')
+                if not math.isclose(pyo.value(flow_variable[element_name]), flow_array[i]+other_flows[i]):
+                    print(f'contingency: {element_name[0]}, branch_idx: {i}')
+                    flow_variable[element_name].pprint()
+                    raise Exception()
+                print('')
+            else:
+                print(f'flow : {flow_array[i]}')
+                print(f'model: {pyo.value(flow_variable[element_name])}')
+                print('')
 
 
 ## to hold the indicies of the violations
@@ -314,8 +333,10 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
                                             mb._interfaces_monitored, PTDF.interface_keys)
 
     if PTDF.contingencies and \
-            (violations_store.total_violations < max_viol_add or \
-              violations_store.min_flow_violation() < active_slack_tol):
+            True:
+        #   violations_store.total_violations == 0:
+        #    (violations_store.total_violations < max_viol_add or \
+        #      violations_store.min_flow_violation() < active_slack_tol):
         ## NOTE: checking contingency constraints in general could be very expensive
         ##       we probably want to delay doing so until we have a nearly transmission feasible
         ##       solution
@@ -335,26 +356,31 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
         ## In this way, we avoid (number of contingenies) adds PFV+PFV_delta_c
 
         print("CHECKING CONTINGENCY FLOWS")
-        #lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
-        #lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
-        #enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
-        #enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
+        lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
+        lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
+        enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
+        enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
         for cn, comp in PTDF.contingency_compensators.items():
-            VA_delta = PTDF.MLU.solve( comp.M *((-comp.c)*(comp.M.T@VA)) )
-            PF_delta = PTDF.B_dA@VA_delta
+            VA_delta = PTDF.MLU.solve( (comp.M *((-comp.c)*(comp.M.T@VA))) )
+            VA_delta.shape = (VA_delta.shape[0],1)
+            PF_delta = PTDF.B_dA_masked@VA_delta
+            PF_delta += PTDF.phase_shift_flow_adjuster_array_masked
+            PF_delta = PF_delta.T.A[0]
+            #PF_delta = PF_delta.T[0]
+            #print(f'PF_delta: {PF_delta}')
 
             # zero-out the flow on this line, if we're monitoring it
             if comp.branch_out in PTDF.branchname_to_index_masked_map:
                 branch_out_idx = PTDF.branchname_to_index_masked_map[comp.branch_out]
                 PF_delta[branch_out_idx] = -PFV[branch_out_idx]
-            PFC = PFV + PF_delta
-            violations_store.check_and_add_violations('contingency', PFC, mb.pfc,
-                                                     # lazy_contingency_limits_upper, enforced_contingency_limits_upper,
-                                                     # lazy_contingency_limits_lower, enforced_contingency_limits_lower,
-                                                      PTDF.lazy_contingency_limits, PTDF.enforced_contingency_limits,
-                                                     -PTDF.lazy_contingency_limits, -PTDF.enforced_contingency_limits,
+            #PFC = PFV + PF_delta
+            violations_store.check_and_add_violations('contingency', PF_delta, mb.pfc,
+                                                      lazy_contingency_limits_upper, enforced_contingency_limits_upper,
+                                                      lazy_contingency_limits_lower, enforced_contingency_limits_lower,
+                                                    #  PTDF.lazy_contingency_limits, PTDF.enforced_contingency_limits,
+                                                    # -PTDF.lazy_contingency_limits, -PTDF.enforced_contingency_limits,
                                                       mb._contingencies_monitored, PTDF.branches_keys_masked,
-                                                      outer_name = cn)
+                                                      outer_name = cn, PFV = PFV)
 
     print(f"branches_monitored: {mb._idx_monitored}")
     print(f"interfaces_monitored: {mb._interfaces_monitored}")

@@ -126,7 +126,6 @@ phi_adjust_2 = phi_adjust_2[ref_bus_maskn2]
 
 tt.tic()
 buff = np.zeros((len(index_set_bus)-1,1))
-'''
 ## need L/U factors like in table I scheme 3
 _pr_pc_len = len(index_set_bus) - 1
 assert _pr_pc_len == B_dA.shape[1]
@@ -202,15 +201,12 @@ tt.toc('computed z')
 c = 1/(1/dely + z)
 
 tt.toc('computed c')
-'''
 comp = contingency_compensators['c0']
 '''
 assert all(W == comp.W)
 assert all(Wbar == comp.Wbar)
 assert c == comp.c
 assert all(M1_masked == comp.M)
-'''
-
 W = comp.W
 Wbar = comp.Wbar
 c = comp.c
@@ -220,6 +216,7 @@ L_factor = contingency_compensators.L
 U_factor = contingency_compensators.U
 Pc = contingency_compensators.Pc
 Pr = contingency_compensators.Pr
+'''
 
 #tt.toc('verified compensator')
 
@@ -293,7 +290,7 @@ if not np.allclose(VA0n2_new, VA0n2):
     error = True
 
 # branch PTDFs
-row_idx = 2
+row_idx = 381
 assert branch_idx != row_idx
 if branch_idx > row_idx:
     offset = 0
@@ -309,6 +306,8 @@ PTDF_row = MLU_MP.solve(B_dA[row_idx].toarray(out=buff)[0],'T')
 tt.toc('got row from base case')
 
 PTDF_rown2 = MLU_MPn2.solve(B_dA[row_idx].toarray(out=buff)[0],'T')
+print(f"PTDF row mod: {PTDF_rown2}")
+print(f"PTDF row mod abs sum: {np.abs(PTDF_rown2).sum()}")
 tt.toc('got row from augmented case')
 
 hatF = U_factor.solve((B_dA[row_idx]@Pc).toarray(out=buff)[0], 'T')
