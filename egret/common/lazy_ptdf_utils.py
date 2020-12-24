@@ -191,6 +191,15 @@ class _MaximalViolationsStore:
             val = viol_array[viol_indices[idx]]
             if val < self.min_flow_violation() and len(self.violations_store) >= self.max_viol_add:
                 break
+            # If this violation is close in value to
+            # one already in the set, it is likely
+            # to be a parallel constraint.
+            # If we haven't added any constraints yet
+            # any(()) is False, so this won't fire
+            close_to_existing = any( math.isclose( val, existing ) for existing in self.violations_store.values() )
+            if close_to_existing:
+                viol_indices.pop(idx)
+                continue
             self._add_violation( name, other_name, viol_indices[idx], val )
             viol_indices.pop(idx)
 
@@ -279,8 +288,10 @@ class _MaximalViolationsStore:
                 print(f'model: {pyo.value(flow_variable[element_name])}')
                 if not math.isclose(pyo.value(flow_variable[element_name]), flow_array[i]+other_flows[i]):
                     print(f'contingency: {element_name[0]}, branch_idx: {i}')
-                    flow_variable[element_name].pprint()
-                    raise Exception()
+                    diff = pyo.value(flow_variable[element_name]) - (flow_array[i]+other_flows[i])
+                    print(f'ABSOLUTE DIFFERENCE: { abs(diff) }')
+                    #flow_variable[element_name].pprint()
+                    #raise Exception()
                 print('')
             else:
                 print(f'flow : {flow_array[i]}')
@@ -333,8 +344,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
                                             mb._interfaces_monitored, PTDF.interface_keys)
 
     if PTDF.contingencies and \
-            True:
-        #   violations_store.total_violations == 0:
+           violations_store.total_violations == 0:
         #    (violations_store.total_violations < max_viol_add or \
         #      violations_store.min_flow_violation() < active_slack_tol):
         ## NOTE: checking contingency constraints in general could be very expensive
@@ -360,21 +370,11 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
         lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
         enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
         enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
-        for cn, comp in PTDF.contingency_compensators.items():
-            VA_delta = PTDF.MLU.solve( (comp.M *((-comp.c)*(comp.M.T@VA))) )
-            VA_delta.shape = (VA_delta.shape[0],1)
-            PF_delta = PTDF.B_dA_masked@VA_delta
-            PF_delta += PTDF.phase_shift_flow_adjuster_array_masked
-            PF_delta = PF_delta.T.A[0]
-            #PF_delta = PF_delta.T[0]
-            #print(f'PF_delta: {PF_delta}')
+        for cn in PTDF.contingency_compensators:
 
-            # zero-out the flow on this line, if we're monitoring it
-            if comp.branch_out in PTDF.branchname_to_index_masked_map:
-                branch_out_idx = PTDF.branchname_to_index_masked_map[comp.branch_out]
-                PF_delta[branch_out_idx] = -PFV[branch_out_idx]
+            PFV_delta = PTDF.calculate_masked_PFV_delta(cn, PFV, VA)
             #PFC = PFV + PF_delta
-            violations_store.check_and_add_violations('contingency', PF_delta, mb.pfc,
+            violations_store.check_and_add_violations('contingency', PFV_delta, mb.pfc,
                                                       lazy_contingency_limits_upper, enforced_contingency_limits_upper,
                                                       lazy_contingency_limits_lower, enforced_contingency_limits_lower,
                                                     #  PTDF.lazy_contingency_limits, PTDF.enforced_contingency_limits,

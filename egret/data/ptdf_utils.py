@@ -411,6 +411,41 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
     def _insert_reference_bus(self, bus_array, val):
         return np.insert(bus_array, self._busname_to_index_map[self._reference_bus], val)
 
+    def _calculate_PFV_delta(self, cn, PFV, VA, masked):
+        comp = self.contingency_compensators[cn]
+
+        if not masked:
+            # fix VA
+            VA = -VA[self.ref_bus_mask]
+
+        # if a phase shifter is taken out, we have
+        # to do a bit more work
+        VA_comp = (comp.VA_compensator is not None)
+        if VA_comp:
+            VA0 = VA+comp.VA_compensator
+        else:
+            VA0 = VA
+
+        VA_delta = self.MLU.solve( (comp.M *((-comp.c)*(comp.M.T@VA0))) )
+        if VA_comp:
+            VA_delta += comp.VA_compensator
+
+        if masked:
+            PF_delta = self.B_dA_masked@VA_delta
+        else:
+            PF_delta = self.B_dA@VA_delta
+        #print(f'PF_delta: {PF_delta}')
+
+        # zero-out the flow on this line, if we're monitoring it
+        if masked and comp.branch_out in self.branchname_to_index_masked_map:
+            branch_out_idx = self.branchname_to_index_masked_map[comp.branch_out]
+            PF_delta[branch_out_idx] = -PFV[branch_out_idx]
+        else:
+            branch_out_idx = self._branchname_to_index_map[comp.branch_out]
+            PF_delta[branch_out_idx] = -PFV[branch_out_idx]
+
+        return PF_delta
+
     def _calculate_PFV(self, mb, masked):
         NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys_no_ref), float, count=len(self.buses_keys_no_ref))
         NWV += self.phi_adjust_array.T
@@ -530,6 +565,49 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         LMP = LMPE + LMPC + LMPI
 
         return self._insert_reference_bus(LMP, LMPE)
+
+    def calculate_masked_PFV_delta(self, cn, PFV, VA):
+        '''
+        Calculate a vector of partial real power
+        flows indexed by branches_masked_keys, for given
+        contingency cn, for given base-case real
+        power flow and voltage angles given by
+        calculate_masked_PFV
+
+        Parameters
+        ----------
+        cn  : contingency name to calculate PFV_delta for
+        PFV : vector of flows returned from calculate_masked_PFV
+        VA  : vector of voltage angles returned from calculate_masked_PFV
+
+        Returns
+        -------
+        PFV_delta: np.arrays for partial contingency flow differences,
+                 such that PFV + PFV_delta is the contingeny flow
+        '''
+        return self._calculate_PFV_delta(cn, PFV, VA, masked=True)
+
+    def calculate_PFV_delta(self, cn, PFV, VA):
+        '''
+        Calculate a vector of real power
+        flows indexed by branches_keys, for given
+        contingency cn, for given base-case real
+        power flow and voltage angles given by
+        calculate_PFV
+
+        Parameters
+        ----------
+        cn  : contingency name to calculate PFV_delta for
+        PFV : vector of flows returned from calculate_PFV
+        VA  : vector of voltage angles returned from calculate_PFV
+
+        Returns
+        -------
+        PFV_delta: np.arrays for partial contingency flow differences,
+                 such that PFV + PFV_delta is the contingeny flow
+        '''
+        return self._calculate_PFV_delta(cn, PFV, VA, masked=False)
+
 
 class PTDFMatrix(_PTDFManagerBase):
     '''

@@ -8,6 +8,7 @@ import scipy.sparse.linalg
 import sys
 
 from pyutilib.misc.timing import TicTocTimer
+from math import radians
 
 tt = TicTocTimer()
 
@@ -79,6 +80,8 @@ MLU_MP, B_dA, ref_bus_mask, contingency_compensators = tx_calc.calculate_ptdf_fa
 phi_adjust = tx_calc.calculate_phi_adjust(branches,index_set_branch,index_set_bus,mapping_bus_to_idx=mapping_bus_to_idx)
 phi_adjust = phi_adjust[ref_bus_mask]
 
+phase_shift_array = np.fromiter(( -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in (branches[bn] for bn in index_set_branch)), float, count=len(index_set_branch))
+
 print(contingency_compensators)
 
 Bd = tx_calc._calculate_Bd(branches, index_set_branch)
@@ -123,6 +126,8 @@ MLU_MPn2, B_dAn2, ref_bus_maskn2, _ = tx_calc.calculate_ptdf_factorization(branc
 phi_adjust_2 = tx_calc.calculate_phi_adjust(branchesn2,index_set_branchn2,index_set_busn2,mapping_bus_to_idx=mapping_bus_to_idxn2)
 
 phi_adjust_2 = phi_adjust_2[ref_bus_maskn2]
+
+phase_shift_array_2 = np.fromiter(( -(1/branch['reactance']) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) if (branch['branch_type'] == 'transformer') else 0. for branch in (branchesn2[bn] for bn in index_set_branchn2)), float, count=len(index_set_branchn2))
 
 tt.tic()
 buff = np.zeros((len(index_set_bus)-1,1))
@@ -237,16 +242,30 @@ NWV = np.fromiter((p_nw[b] for b in index_set_bus), float, count=len(index_set_b
 NWV = NWV[ref_bus_mask]
 
 
-VA0 = MLU_MP.solve(NWV)
+VA0 = MLU_MP.solve((NWV+phi_adjust.T).A[0])
+if comp.phi_compensator.nnz > 0:
+    #VA_comp = MLU_MP.solve((comp.phi_compensator.T).A[0])
+    VA_comp = comp.VA_compensator
+else:
+    VA_comp = 0
+print(VA_comp)
 
-VA0n2 = MLU_MPn2.solve(NWV)
+VA0_comp_full = MLU_MP.solve((NWV+phi_adjust_2.T).A[0])
+
+row_idx = 381
+if not np.allclose(VA0_comp_full, (VA0+VA_comp)):
+    print("ADASD problem with phase angle adjustment")
+    error = True
+
+VA0n2 = MLU_MPn2.solve((NWV+phi_adjust_2.T).A[0])
 
 tt.tic('setting up adjust array')
 
-adjust_array = M1_masked*((-c)*(M1_masked.T@VA0))
+adjust_array = M1_masked*((-c)*(M1_masked.T@(VA0+VA_comp)))
 tt.toc('computed adjust_array')
 
 VA_delta = MLU_MP.solve(adjust_array)
+VA_delta += VA_comp
 tt.toc('computed VA_delta')
 
 if not np.allclose(VA0+VA_delta, VA0n2):
@@ -255,21 +274,25 @@ if not np.allclose(VA0+VA_delta, VA0n2):
 tt.tic('verified VA')
 
 PF0 = B_dA@VA0
+PF0 += phase_shift_array
 
 tt.toc('computed base-case flows')
 
-PF_delta = B_dA@VA_delta
+PF_delta = B_dA@(VA_delta)
 ## zero-out flow on the line
 PF_delta[branch_idx] = -PF0[branch_idx]
 tt.toc('computed PF_delta')
 
 PF0n2 = B_dAn2@VA0n2
+PF0n2 += phase_shift_array_2
 
 ## insert 0 for the line taken out
 PF0n2 = np.insert(PF0n2, branch_idx, 0.)
 
 if not np.allclose(PF0+PF_delta, PF0n2, atol=1e-06):
     print("ASDASD problem with flow adjustement")
+    print(f"Flow PF0n2[branch_idx] : {PF0n2[branch_idx]}")
+    print(f"Flow comp[branch_idx] : {PF0[branch_idx]+PF_delta[branch_idx]}")
     error = True
 
 if error:
@@ -280,7 +303,7 @@ else:
 error = False
 
 # try using mid-compensation for VA0n2
-hatF = L_factor.solve(Pr@NWV)
+hatF = L_factor.solve(Pr@(NWV+phi_adjust.T+comp.phi_compensator.T).A[0])
 delF = W*((-c)*(Wbar.T@hatF))
 VA0n2_new = Pc@(U_factor.solve(hatF+delF))
 #VA0n2_new = Pc@(U_factor.solve((hatF+delF.T)[0]))
@@ -290,7 +313,6 @@ if not np.allclose(VA0n2_new, VA0n2):
     error = True
 
 # branch PTDFs
-row_idx = 381
 assert branch_idx != row_idx
 if branch_idx > row_idx:
     offset = 0
@@ -322,6 +344,7 @@ tt.toc('got augmented case row from base case')
 
 if not np.allclose(PTDF_rown2_new, PTDF_rown2):
     print("Problem with PTDF construction")
+    print(f"sum absolute difference: { abs(PTDF_rown2-PTDF_rown2_new).sum() }")
     error = True
 
 if error:
