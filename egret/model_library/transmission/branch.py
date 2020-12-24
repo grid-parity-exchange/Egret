@@ -619,14 +619,10 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     ## to build these dense constraints much faster
     coef_list = []
     var_list = []
-    residual_list = [const]
     for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
         if abs(coef) >= ptdf_tol:
             coef_list.append(coef)
             var_list.append(m_p_nw[bus_name])
-        else:
-            residual_list.append(coef*value(m_p_nw[bus_name]))
-    const = math.fsum(residual_list)
 
     if isinstance(m_p_nw, pe.Var):
         expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
@@ -687,14 +683,10 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
     ## to build these dense constraints much faster
     coef_list = []
     var_list = []
-    residual_list = [const]
     for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
         if abs(coef) >= ptdf_tol:
             coef_list.append(coef)
             var_list.append(m_p_nw[bus_name])
-        else:
-            residual_list.append(coef*value(m_p_nw[bus_name]))
-    const = math.fsum(residual_list)
 
     if isinstance(m_p_nw, pe.Var):
         expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
@@ -752,14 +744,10 @@ def get_contingency_power_flow_expr_ptdf_approx(model, contingency_name, branch_
     ## to build these dense constraints much faster
     coef_list = []
     var_list = []
-    residual_list = [const]
     for bus_name, coef in PTDF.get_contingency_branch_ptdf_iterator(contingency_name, branch_name):
         if abs(coef) >= ptdf_tol:
             coef_list.append(coef)
             var_list.append(m_p_nw[bus_name])
-        else:
-            residual_list.append(coef*value(m_p_nw[bus_name]))
-    const = math.fsum(residual_list)
 
     if isinstance(m_p_nw, pe.Var):
         expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
@@ -818,14 +806,10 @@ def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol
     ## to build these dense constraints much faster
     coef_list = []
     var_list = []
-    residual_list = [const]
     for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name):
         if abs(coef) >= ptdf_tol:
             coef_list.append(coef)
             var_list.append(m_p_nw[bus_name])
-        else:
-            residual_list.append(coef*value(m_p_nw[bus_name]))
-    const = math.fsum(residual_list)
 
     if isinstance(m_p_nw, pe.Var):
         expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
