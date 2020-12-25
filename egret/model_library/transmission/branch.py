@@ -582,7 +582,6 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
     m_p_nw = model.p_nw
-    value = pe.value
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
     coef_list = []
@@ -646,7 +645,6 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
 
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     m_p_nw = model.p_nw
-    value = pe.value
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
     coef_list = []
@@ -707,7 +705,6 @@ def get_contingency_power_flow_expr_ptdf_approx(model, contingency_name, branch_
 
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
     m_p_nw = model.p_nw
-    value = pe.value
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
     coef_list = []
@@ -769,7 +766,6 @@ def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
 
     m_p_nw = model.p_nw
-    value = pe.value
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
     coef_list = []
