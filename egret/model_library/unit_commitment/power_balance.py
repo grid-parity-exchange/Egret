@@ -109,14 +109,8 @@ def _setup_interface_slacks(m,block,tm):
 def _setup_contingency_slacks(m,block,tm):
     # declare the interface slack variables
     # they have a sparse index set
-    libbranch.declare_var_pfc_slack_pos(model=block,
-                                        index_set=m.Contingencies,
-                                        domain=NonNegativeReals,
-                                        dense=False)
-    libbranch.declare_var_pfc_slack_neg(model=block,
-                                        index_set=m.Contingencies,
-                                        domain=NonNegativeReals,
-                                        dense=False)
+    block.pfc_slack_pos = Var(block._contingency_set, domain=NonNegativeReals, dense=False)
+    block.pfc_slack_neg = Var(block._contingency_set, domain=NonNegativeReals, dense=False)
 
 def _ptdf_dcopf_network_model(block,tm):
     m, gens_by_bus, bus_p_loads, bus_gs_fixed_shunts = \
@@ -161,10 +155,10 @@ def _ptdf_dcopf_network_model(block,tm):
     _setup_interface_slacks(m,block,tm)
 
     ### contingency setup
-    libbranch.declare_expr_pfc(model=block,
-                               index_set=m.Contingencies
-                               )
-
+    ### NOTE: important that this not be dense, we'll add elements
+    ###       as we find violations
+    block._contingency_set = Set(within=m.Contingencies*m.TransmissionLines)
+    block.pfc = Expression(block._contingency_set)
     _setup_contingency_slacks(m,block,tm)
 
     ### Get the PTDF matrix from cache, from file, or create a new one
@@ -175,7 +169,7 @@ def _ptdf_dcopf_network_model(block,tm):
         reference_bus = value(m.ReferenceBus)
 
         ## NOTE: For now, just use a flat-start for unit commitment
-        PTDF = ptdf_utils.VirtualPTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, branches_keys=branches_in_service, buses_keys=buses_idx, interfaces=interfaces)
+        PTDF = ptdf_utils.VirtualPTDFMatrix(branches, buses, reference_bus, BasePointType.FLATSTART, ptdf_options, contingencies=contingencies, branches_keys=branches_in_service, buses_keys=buses_idx, interfaces=interfaces)
 
         m._PTDFs[branches_out_service] = PTDF
 
@@ -207,7 +201,7 @@ def _ptdf_dcopf_network_model(block,tm):
                                                 )
         ### declare the "blank" interface flow limits
         libbranch.declare_ineq_p_contingency_branch_thermal_bounds(model=block,
-                                                                   index_set=m.Contingencies,
+                                                                   index_set=block._contingency_set,
                                                                    pc_thermal_limits=None,
                                                                    approximation_type=None,
                                                                    slacks=True,
@@ -268,7 +262,9 @@ def _btheta_dcopf_network_model(block,tm):
 
     buses, branches, \
     branches_in_service, branches_out_service, \
-    interfaces, _ = _setup_egret_network_topology(m, tm)
+    interfaces, contingencies = _setup_egret_network_topology(m, tm)
+    if contingencies:
+        raise RuntimeError("Contingency constraints only supported in lazy-PTDF mode")
 
     ## need the inlet/outlet relationship given some lines may be out
     inlet_branches_by_bus = dict()
@@ -695,6 +691,9 @@ def power_balance_constraints(model, slacks=True):
     adds the demand and network constraints to the model
     '''
     model.reactive_power = False
+
+    if model.Contingencies:
+        raise RuntimeError("Contingency constraints only supported in lazy-PTDF mode")
 
     # system variables
     # amount of power flowing along each line, at each time period

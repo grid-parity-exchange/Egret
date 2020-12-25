@@ -959,6 +959,7 @@ def _save_uc_results(m, relaxed):
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
     interfaces = dict(md.elements(element_type='interface'))
+    contingencies = dict(md.elements(element_type='contingency'))
     storage = dict(md.elements(element_type='storage'))
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
@@ -1262,6 +1263,18 @@ def _save_uc_results(m, relaxed):
                     else:
                         pf_violation_dict[dt] = 0.
                 i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
+        if contingencies:
+            for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                contingency_flows = PTDF.calculate_monitored_contingency_flows(b)
+                for (cn,bn), flow in contingency_flows.items():
+                    c_dict = contingencies[cn]
+                    if 'monitored_branches' not in c_dict:
+                        c_dict['monitored_branches'] = _time_series_dict([{} for _ in data_time_periods])
+                    monitored_branches = c_dict['monitored_branches']['values'][dt]
+                    monitored_branches[bn] = {'pf' : flow}
+                    if (cn,bn) in b.pfc_slack_pos:
+                        monitored_branches[bn]['pf_violation'] = value(b.pfc_slack_pos[cn,bn]-b.pfc_slack_neg[cn,bn])
 
         for l,l_dict in branches.items():
             pf_dict = _preallocated_list(data_time_periods)

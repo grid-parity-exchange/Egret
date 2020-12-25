@@ -440,7 +440,7 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         if masked and comp.branch_out in self.branchname_to_index_masked_map:
             branch_out_idx = self.branchname_to_index_masked_map[comp.branch_out]
             PF_delta[branch_out_idx] = -PFV[branch_out_idx]
-        else:
+        elif not masked:
             branch_out_idx = self._branchname_to_index_map[comp.branch_out]
             PF_delta[branch_out_idx] = -PFV[branch_out_idx]
 

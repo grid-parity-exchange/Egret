@@ -80,38 +80,6 @@ def declare_var_pf_slack_neg(model, index_set, **kwargs):
     decl.declare_var('pf_slack_neg', model=model, index_set=index_set, **kwargs)
 
 
-def declare_var_pfc(model, index_set, **kwargs):
-    """
-    Create variable for the real part of the power flow in the "from"
-    end of the transmission line
-    """
-    decl.declare_var('pfc', model=model, index_set=index_set, **kwargs)
-
-
-def declare_expr_pfc(model, index_set, **kwargs):
-    """
-    Create expression for the real part of the power flow in the "from"
-    end of the transmission line
-    """
-    decl.declare_expr('pfc', model=model, index_set=index_set, **kwargs)
-
-
-def declare_var_pfc_slack_pos(model, index_set, **kwargs):
-    """
-    Create the positive slack variable for the real part of power flow
-    in the "from" end of the transmission line
-    """
-    decl.declare_var('pfc_slack_pos', model=model, index_set=index_set, **kwargs)
-
-
-def declare_var_pfc_slack_neg(model, index_set, **kwargs):
-    """
-    Create the negative slack variable for the real part of power flow
-    in the "from" end of the transmission line
-    """
-    decl.declare_var('pfc_slack_neg', model=model, index_set=index_set, **kwargs)
-
-
 def declare_var_pfi(model, index_set, **kwargs):
     """
     Create variable for the real part of the power flow through an interface
@@ -1077,7 +1045,7 @@ def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
                 pos_slack = m.pfc_slack_pos[contingency_name, branch_name]
                 uc_model = slack_cost_expr.parent_block()
                 slack_cost_expr.expr += (uc_model.TimePeriodLengthHours
-                                         * uc_model.ContingencyLimitPenalty[contingency_name, branch_name]
+                                         * uc_model.ContingencyLimitPenalty
                                          * (neg_slack + pos_slack) )
                 assert len(m.pfc_slack_pos) == len(m.pfc_slack_neg)
             else:

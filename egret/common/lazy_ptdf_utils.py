@@ -373,7 +373,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
         ## In this way, we avoid (number of contingenies) adds PFV+PFV_delta_c
 
-        logger.info("Checking contingency flows...")
+        logger.debug("Checking contingency flows...")
         lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
         lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
         enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
@@ -419,9 +419,6 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
     slack_tol = ptdf_options['active_flow_tol']
 
     persistent_solver = isinstance(solver, PersistentSolver)
-
-    if persistent_solver:
-        _load_pf_slacks(solver, model, [time])
 
     ## get the lines we're monitoring
     idx_monitored = mb._idx_monitored
@@ -536,6 +533,9 @@ def _generate_branch_thermal_bounds(mb, bn, thermal_limit):
             neg_slack = mb.pf_slack_neg[bn]
             pos_slack = mb.pf_slack_pos[bn]
             new_var = False
+        # initialize to 0.
+        neg_slack.value = 0.
+        pos_slack.value = 0.
     else:
         neg_slack = None
         pos_slack = None
@@ -554,6 +554,9 @@ def _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit):
             neg_slack = mb.pfi_slack_neg[i_n]
             pos_slack = mb.pfi_slack_pos[i_n]
             new_var = False
+        # initialize to 0.
+        neg_slack.value = 0.
+        pos_slack.value = 0.
     else:
         neg_slack = None
         pos_slack = None
@@ -572,6 +575,9 @@ def _generate_contingency_bounds(mb, cn, minimum_limit, maximum_limit):
             neg_slack = mb.pfc_slack_neg[cn]
             pos_slack = mb.pfc_slack_pos[cn]
             new_var = False
+        # initialize to 0.
+        neg_slack.value = 0.
+        pos_slack.value = 0.
     else:
         neg_slack = None
         pos_slack = None
@@ -679,7 +685,7 @@ def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_opt
         contingencies_monitored.append((cn, i_b))
         if new_slacks:
             m = model
-            obj_coef = m.TimePeriodLengthHours*m.ContingencyLimitPenalty[cn, bn]
+            obj_coef = pyo.value(m.TimePeriodLengthHours*m.ContingencyLimitPenalty)
 
             if persistent_solver:
                 if m is not m.model():
@@ -774,7 +780,7 @@ def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I, slacks_C):
             ## in case the topology has changed
             c, bn = cn
             if bn in branchname_index_map:
-                bi = interfacename_index_map[bn]
+                bi = branchname_index_map[bn]
                 if (c, bi) not in contingencies_monitored:
                     cont_viol_lazy.add((c, bi))
 
@@ -831,6 +837,8 @@ def _load_pf_slacks(solver, m, t_subset):
         vars_to_load.extend(b.pf_slack_neg.values())
         vars_to_load.extend(b.pfi_slack_pos.values())
         vars_to_load.extend(b.pfi_slack_neg.values())
+        vars_to_load.extend(b.pfc_slack_pos.values())
+        vars_to_load.extend(b.pfc_slack_neg.values())
     # XpressPersistent raises an exception if
     # this list is empty
     if vars_to_load:

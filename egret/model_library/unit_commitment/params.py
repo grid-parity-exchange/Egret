@@ -1251,8 +1251,10 @@ def load_params(model, model_data):
     model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
     model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
 
-    model.Contingencies = Set(initialize=( (cn, bn) for cn in contingencies for bn in branches ) )
-    model.ContingencyLimitPenalty = Param(model.Contingencies, within=NonNegativeReals, default=system.get('contingency_flow_violation_cost', BigPenalty/2.), mutable=True)
+    model.Contingencies = Set(initialize=contingencies.keys())
+
+    # leaving this unindexed for now for simpility
+    model.ContingencyLimitPenalty = Param(within=NonNegativeReals, initialize=system.get('contingency_flow_violation_cost', BigPenalty/2.), mutable=True)
 
     #
     # STORAGE parameters
