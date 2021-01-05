@@ -38,7 +38,7 @@ def _verify_must_run_t0_state_consistency(model):
                 for t in range(m.TimePeriods.first(), value(m.InitialTimePeriodsOnLine[g])+m.TimePeriods.first()):
                     fixed_commitment = value(m.FixedCommitment[g,t])
                     if (fixed_commitment is not None) and (fixed_commitment == 0):
-                        print("DATA ERROR: The generator %s has been flagged as off at time %d, but its T0 state=%d is inconsistent with its minimum up time=%d" % (g, t, t0_state, min_down_time))
+                        print("DATA ERROR: The generator %s has been flagged as off at time %d, but its T0 state=%d is inconsistent with its minimum up time=%d" % (g, t, t0_state, min_up_time))
                         return False
         return True
     
