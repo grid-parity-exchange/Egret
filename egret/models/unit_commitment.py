@@ -952,6 +952,10 @@ def _preallocated_list(other_iter):
 def _save_uc_results(m, relaxed):
     from pyomo.environ import value
 
+    # dual suffix is on top-level model
+    if relaxed:
+        dual = m.model().dual
+
     md = m.model_data
 
     # save results data to ModelData object
@@ -1194,7 +1198,7 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
-                    lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])/time_period_length_hours
+                    lmp_dict[dt] = value(dual[m.TransmissionBlock[mt].eq_p_balance[b]])/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
         for i,i_dict in interfaces.items():
@@ -1245,7 +1249,7 @@ def _save_uc_results(m, relaxed):
                 voltage_angle_dict[mt][bn] = VA[i]
 
             if relaxed:
-                LMP = PTDF.calculate_LMP(b, m.dual, b.eq_p_balance)
+                LMP = PTDF.calculate_LMP(b, dual, b.eq_p_balance)
                 lmps_dict[mt] = dict()
                 for i,bn in enumerate(buses_idx):
                     lmps_dict[mt][bn] = LMP[i]
@@ -1325,7 +1329,7 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
-                    lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])/time_period_length_hours
+                    lmp_dict[dt] = value(dual[m.PowerBalance[b,mt]])/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
         for i,i_dict in interfaces.items():
@@ -1354,7 +1358,7 @@ def _save_uc_results(m, relaxed):
         if relaxed:
             p_price_dict = _preallocated_list(data_time_periods)
             for dt, mt in enumerate(m.TimePeriods):
-                p_price_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance])/time_period_length_hours
+                p_price_dict[dt] = value(dual[m.TransmissionBlock[mt].eq_p_balance])/time_period_length_hours
             sys_dict['p_price'] = _time_series_dict(p_price_dict)
     else:
         raise Exception("Unrecongized network type "+m.power_balance)
@@ -1372,7 +1376,7 @@ def _save_uc_results(m, relaxed):
             for dt, mt in enumerate(m.TimePeriods):
                 ## TODO: if the 'relaxed' flag is set, we should automatically
                 ##       pick a formulation which uses the MLR reserve constraints
-                sr_p_dict[dt] = value(m.dual[m.EnforceReserveRequirements[mt]])/time_period_length_hours
+                sr_p_dict[dt] = value(dual[m.EnforceReserveRequirements[mt]])/time_period_length_hours
             sys_dict['reserve_price'] = _time_series_dict(sr_p_dict)
 
 
@@ -1469,7 +1473,7 @@ def _save_uc_results(m, relaxed):
                     if relaxed:
                         req_price_dict = _preallocated_list(data_time_periods)
                         for dt, mt in enumerate(m.TimePeriods):
-                            req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])/time_period_length_hours
+                            req_price_dict[dt] = value(dual[req_dict['balance_m'][me,mt]])/time_period_length_hours
                         e_dict[req_dict['price']] = _time_series_dict(req_price_dict)
 
     def _populate_system_reserves(sys_dict):
@@ -1482,7 +1486,7 @@ def _save_uc_results(m, relaxed):
                 if relaxed:
                     req_price_dict = _preallocated_list(data_time_periods)
                     for dt, mt in enumerate(m.TimePeriods):
-                        req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])/time_period_length_hours
+                        req_price_dict[dt] = value(dual[req_dict['balance_m'][mt]])/time_period_length_hours
                     sys_dict[req_dict['price']] = _time_series_dict(req_price_dict)
     
     _populate_zonal_reserves(areas, 'area_')
