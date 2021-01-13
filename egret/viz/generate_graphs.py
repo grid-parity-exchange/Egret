@@ -6,7 +6,7 @@ import textwrap
 import matplotlib as mpl
 ## catch when we're running linux without X
 if os.name == 'posix' and 'DISPLAY' not in os.environ:
-        mpl.use('Agg')
+    mpl.use('Agg')
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -534,9 +534,48 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                    edgecolor=None, linewidth=0,
                    label='Reserve Shortfall')
             bottom += reserve_shortfall_array
+
+
+    # Plot over-generation, if applicable
+    bus_dict = egret_model_data.data['elements']['bus']
+    total_over_gen_by_hour = np.zeros(len(indices))
+
+    for bus, bus_data in bus_dict.items():
+        p_balance_violation = attribute_to_array(bus_data['p_balance_violation'])
+        over_gen = np.maximum(0, -p_balance_violation)
+
+        total_over_gen_by_hour += over_gen
+
+    if sum(total_over_gen_by_hour) > 0.0:
+        component_color = '#fff000'
+        ax.bar(indices, total_over_gen_by_hour, bar_width, bottom=bottom, color=component_color,
+               edgecolor=None, linewidth=0,
+               label='Over Generation')
+        bottom += total_over_gen_by_hour
+
+    # Add renewable curtailment.
+    generators_dict = egret_model_data.data['elements']['generator']
+    total_renewable_curtailment_by_hour = np.zeros(len(indices))
+
+    for _, gen_data in generators_dict.items():
+        generator_type = gen_data['generator_type']
+
+        if generator_type == 'renewable':
+            p_max = attribute_to_array(gen_data['p_max'])
+            pg = attribute_to_array(gen_data['pg'])
+
+            p_curtailed = np.maximum(p_max - pg, 0)
+
+            total_renewable_curtailment_by_hour += p_curtailed
+
+    if sum(total_renewable_curtailment_by_hour) > 0.0:
+        component_color = '#ff0000'
+        ax.bar(indices, total_renewable_curtailment_by_hour, bar_width, bottom=bottom, color=component_color,
+               edgecolor=None, linewidth=0,
+               label='Renewables Curtailed')
+        bottom += total_renewable_curtailment_by_hour
     
     # Add implicit reserves, if applicable.
-    generators_dict = egret_model_data.data['elements']['generator']
     reserves_by_hour = np.zeros(len(indices))
 
     for _, gen_data in generators_dict.items():
@@ -589,26 +628,6 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                label='Available Quickstart')
         bottom += total_quickstart_capacity_by_hour
     
-    # Add renewable curtailment.
-    total_renewable_curtailment_by_hour = np.zeros(len(indices))
-
-    for _, gen_data in generators_dict.items():
-        generator_type = gen_data['generator_type']
-
-        if generator_type == 'renewable':
-            p_max = attribute_to_array(gen_data['p_max'])
-            pg = attribute_to_array(gen_data['pg'])
-
-            p_curtailed = np.maximum(p_max - pg, 0)
-
-            total_renewable_curtailment_by_hour += p_curtailed
-    
-    if sum(total_renewable_curtailment_by_hour) > 0.0:
-        component_color = '#ff0000'
-        ax.bar(indices, total_renewable_curtailment_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Renewables Curtailed')
-        bottom += total_renewable_curtailment_by_hour
     
     # Labels and such.
     plt.xticks(indices[::x_tick_frequency], time_labels[::x_tick_frequency], rotation=0)
@@ -655,7 +674,7 @@ def main():
             )
         
         solved_md = solve_unit_commitment(md,
-                        'gurobi',
+                        'cbc',
                         mipgap = 0.001,
                         timelimit = None,
                         solver_tee = True,
@@ -684,7 +703,7 @@ def main():
             md = ModelData(md_dict)
 
             solved_md = solve_unit_commitment(md,
-                            'gurobi',
+                            'cbc',
                             mipgap = 0.001,
                             timelimit = None,
                             solver_tee = True,
