@@ -1046,7 +1046,10 @@ def _save_uc_results(m, relaxed):
             pg_dict[dt] = value(m.PowerGenerated[g,mt])
             if reserve_requirement:
                 rg_dict[dt] = value(m.ReserveProvided[g,mt])
-            commitment_dict[dt] = value(m.UnitOn[g,mt])
+            if relaxed:
+                commitment_dict[dt] = value(m.UnitOn[g,mt])
+            else:
+                commitment_dict[dt] = int(round(value(m.UnitOn[g,mt])))
             commitment_cost_dict[dt] = value(m.ShutdownCost[g,mt])
             if g in m.DualFuelGenerators:
                 commitment_cost_dict[dt] += value(m.DualFuelCommitmentCost[g,mt])
@@ -1057,7 +1060,10 @@ def _save_uc_results(m, relaxed):
 
             if regulation:
                 if g in m.AGC_Generators:
-                    reg_prov[dt] = value(m.RegulationOn[g,mt])
+                    if relaxed:
+                        reg_prov[dt] = value(m.RegulationOn[g,mt])
+                    else:
+                        reg_prov[dt] = int(round(value(m.RegulationOn[g,mt])))
                     reg_up_supp[dt] = value(m.RegulationReserveUp[g,mt])
                     reg_dn_supp[dt] = value(m.RegulationReserveDn[g,mt])
                     commitment_cost_dict[dt] += value(m.RegulationCostCommitment[g,mt])
