@@ -510,6 +510,24 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     
     ax.step(demand_indices, demand_by_hour, linewidth=3, color='#000000', where='post')
     
+    # Plot over-generation, if applicable
+    bus_dict = egret_model_data.data['elements']['bus']
+    total_over_gen_by_hour = np.zeros(len(indices))
+
+    for bus, bus_data in bus_dict.items():
+        p_balance_violation = attribute_to_array(bus_data['p_balance_violation'])
+        over_gen = np.maximum(0, -p_balance_violation)
+
+        total_over_gen_by_hour += over_gen
+
+    if sum(total_over_gen_by_hour) > 0.0:
+        # the over-gen will overlay the excess generation
+        bottom -= total_over_gen_by_hour
+        component_color = '#fff000'
+        ax.bar(indices, total_over_gen_by_hour, bar_width, bottom=bottom, color=component_color,
+               edgecolor=None, linewidth=0,
+               label='Over Generation')
+        bottom += total_over_gen_by_hour
     # Add reserve requirements, if applicable.
     reserve_requirements_array = attribute_to_array(egret_model_data.data['system'].get('reserve_requirement'))
     if reserve_requirements_array is not None:
@@ -536,22 +554,6 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
             bottom += reserve_shortfall_array
 
 
-    # Plot over-generation, if applicable
-    bus_dict = egret_model_data.data['elements']['bus']
-    total_over_gen_by_hour = np.zeros(len(indices))
-
-    for bus, bus_data in bus_dict.items():
-        p_balance_violation = attribute_to_array(bus_data['p_balance_violation'])
-        over_gen = np.maximum(0, -p_balance_violation)
-
-        total_over_gen_by_hour += over_gen
-
-    if sum(total_over_gen_by_hour) > 0.0:
-        component_color = '#fff000'
-        ax.bar(indices, total_over_gen_by_hour, bar_width, bottom=bottom, color=component_color,
-               edgecolor=None, linewidth=0,
-               label='Over Generation')
-        bottom += total_over_gen_by_hour
 
     # Add renewable curtailment.
     generators_dict = egret_model_data.data['elements']['generator']
