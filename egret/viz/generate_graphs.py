@@ -137,7 +137,8 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                             x_tick_frequency=1,
                             title='', 
                             plot_individual_generators=False,
-                            show_individual_components=False):
+                            show_individual_components=False,
+                            save_fig=None):
     '''
     Creates a stack graph using an egret ModelData object solved using the egret.models.unit_commitment.solve_unit_commitment() function.
 
@@ -155,7 +156,12 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
         If True, individual generator output will be plotted and labeled. Raises a ValueError if there are more than 5 generators in the model. Raises a ValueError if show_individual_components is simultaneously True; default is False
     show_individual_components : bool (optional)
         If True, individual generator output within a generation type will be discretely indicated. Raises a ValueError if plot_individual_generators is simultaneously True; default is False 
+    save_fig : str (optional)
+        If provided, the path to save the figure, if not provided, the subplots will be returned
 
+    Returns
+    -------
+    (fig, ax) matplotlib.pyplot subplots if save_fig not provided, None otherwise.
     '''
 
     ## functions for interfacing with EGRET time structure
@@ -654,8 +660,11 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     ax.set_xlabel('Time')
     ax.yaxis.grid(True)
 
-    return fig, ax
-
+    if save_fig is None:
+        return fig, ax
+    else:
+        plt.savefig(save_fig)
+        plt.close()
 
 def main():
     import json
