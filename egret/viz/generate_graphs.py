@@ -9,6 +9,7 @@ if os.name == 'posix' and 'DISPLAY' not in os.environ:
     mpl.use('Agg')
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import seaborn as sns
 import numpy as np
 
@@ -633,8 +634,10 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     
     # Labels and such.
     plt.xticks(indices[::x_tick_frequency], time_labels[::x_tick_frequency], rotation=0)
-    ax.set_yticklabels(['{:,}'.format(int(x)) for x in ax.get_yticks().tolist()])
-    
+    ticks_loc = ax.get_yticks().tolist()
+    ax.yaxis.set_major_locator(ticker.FixedLocator(ticks_loc))
+    ax.set_yticklabels(['{:,}'.format(int(x)) for x in ticks_loc])
+
     # sns.despine(offset=10, trim=True)
 
     # Put legend outside on the right.
