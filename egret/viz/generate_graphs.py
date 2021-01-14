@@ -6,9 +6,10 @@ import textwrap
 import matplotlib as mpl
 ## catch when we're running linux without X
 if os.name == 'posix' and 'DISPLAY' not in os.environ:
-        mpl.use('Agg')
+    mpl.use('Agg')
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import seaborn as sns
 import numpy as np
 
@@ -136,7 +137,8 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                             x_tick_frequency=1,
                             title='', 
                             plot_individual_generators=False,
-                            show_individual_components=False):
+                            show_individual_components=False,
+                            save_fig=None):
     '''
     Creates a stack graph using an egret ModelData object solved using the egret.models.unit_commitment.solve_unit_commitment() function.
 
@@ -154,7 +156,12 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
         If True, individual generator output will be plotted and labeled. Raises a ValueError if there are more than 5 generators in the model. Raises a ValueError if show_individual_components is simultaneously True; default is False
     show_individual_components : bool (optional)
         If True, individual generator output within a generation type will be discretely indicated. Raises a ValueError if plot_individual_generators is simultaneously True; default is False 
+    save_fig : str (optional)
+        If provided, the path to save the figure, if not provided, the subplots will be returned
 
+    Returns
+    -------
+    (fig, ax) matplotlib.pyplot subplots if save_fig not provided, None otherwise.
     '''
 
     ## functions for interfacing with EGRET time structure
@@ -510,6 +517,24 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     
     ax.step(demand_indices, demand_by_hour, linewidth=3, color='#000000', where='post')
     
+    # Plot over-generation, if applicable
+    bus_dict = egret_model_data.data['elements']['bus']
+    total_over_gen_by_hour = np.zeros(len(indices))
+
+    for bus, bus_data in bus_dict.items():
+        p_balance_violation = attribute_to_array(bus_data['p_balance_violation'])
+        over_gen = np.maximum(0, -p_balance_violation)
+
+        total_over_gen_by_hour += over_gen
+
+    if sum(total_over_gen_by_hour) > 0.0:
+        # the over-gen will overlay the excess generation
+        bottom -= total_over_gen_by_hour
+        component_color = '#fff000'
+        ax.bar(indices, total_over_gen_by_hour, bar_width, bottom=bottom, color=component_color,
+               edgecolor=None, linewidth=0,
+               label='Over Generation')
+        bottom += total_over_gen_by_hour
     # Add reserve requirements, if applicable.
     reserve_requirements_array = attribute_to_array(egret_model_data.data['system'].get('reserve_requirement'))
     if reserve_requirements_array is not None:
@@ -534,9 +559,32 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                    edgecolor=None, linewidth=0,
                    label='Reserve Shortfall')
             bottom += reserve_shortfall_array
+
+
+
+    # Add renewable curtailment.
+    generators_dict = egret_model_data.data['elements']['generator']
+    total_renewable_curtailment_by_hour = np.zeros(len(indices))
+
+    for _, gen_data in generators_dict.items():
+        generator_type = gen_data['generator_type']
+
+        if generator_type == 'renewable':
+            p_max = attribute_to_array(gen_data['p_max'])
+            pg = attribute_to_array(gen_data['pg'])
+
+            p_curtailed = np.maximum(p_max - pg, 0)
+
+            total_renewable_curtailment_by_hour += p_curtailed
+
+    if sum(total_renewable_curtailment_by_hour) > 0.0:
+        component_color = '#ff0000'
+        ax.bar(indices, total_renewable_curtailment_by_hour, bar_width, bottom=bottom, color=component_color,
+               edgecolor=None, linewidth=0,
+               label='Renewables Curtailed')
+        bottom += total_renewable_curtailment_by_hour
     
     # Add implicit reserves, if applicable.
-    generators_dict = egret_model_data.data['elements']['generator']
     reserves_by_hour = np.zeros(len(indices))
 
     for _, gen_data in generators_dict.items():
@@ -589,31 +637,13 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                label='Available Quickstart')
         bottom += total_quickstart_capacity_by_hour
     
-    # Add renewable curtailment.
-    total_renewable_curtailment_by_hour = np.zeros(len(indices))
-
-    for _, gen_data in generators_dict.items():
-        generator_type = gen_data['generator_type']
-
-        if generator_type == 'renewable':
-            p_max = attribute_to_array(gen_data['p_max'])
-            pg = attribute_to_array(gen_data['pg'])
-
-            p_curtailed = np.maximum(p_max - pg, 0)
-
-            total_renewable_curtailment_by_hour += p_curtailed
-    
-    if sum(total_renewable_curtailment_by_hour) > 0.0:
-        component_color = '#ff0000'
-        ax.bar(indices, total_renewable_curtailment_by_hour, bar_width, bottom=bottom, color=component_color, 
-               edgecolor=None, linewidth=0, 
-               label='Renewables Curtailed')
-        bottom += total_renewable_curtailment_by_hour
     
     # Labels and such.
     plt.xticks(indices[::x_tick_frequency], time_labels[::x_tick_frequency], rotation=0)
-    ax.set_yticklabels(['{:,}'.format(int(x)) for x in ax.get_yticks().tolist()])
-    
+    ticks_loc = ax.get_yticks().tolist()
+    ax.yaxis.set_major_locator(ticker.FixedLocator(ticks_loc))
+    ax.set_yticklabels(['{:,}'.format(int(x)) for x in ticks_loc])
+
     # sns.despine(offset=10, trim=True)
 
     # Put legend outside on the right.
@@ -630,8 +660,11 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     ax.set_xlabel('Time')
     ax.yaxis.grid(True)
 
-    return fig, ax
-
+    if save_fig is None:
+        return fig, ax
+    else:
+        plt.savefig(save_fig)
+        plt.close()
 
 def main():
     import json
@@ -655,7 +688,7 @@ def main():
             )
         
         solved_md = solve_unit_commitment(md,
-                        'gurobi',
+                        'cbc',
                         mipgap = 0.001,
                         timelimit = None,
                         solver_tee = True,
@@ -684,7 +717,7 @@ def main():
             md = ModelData(md_dict)
 
             solved_md = solve_unit_commitment(md,
-                            'gurobi',
+                            'cbc',
                             mipgap = 0.001,
                             timelimit = None,
                             solver_tee = True,
