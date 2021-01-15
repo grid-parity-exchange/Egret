@@ -65,8 +65,8 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
                             initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
                             bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
                                              {k: v**2 for k, v in bus_attrs['v_max'].items()}))
-    libbranch.declare_var_c(model=model, index_set=unique_bus_pairs)
-    libbranch.declare_var_s(model=model, index_set=unique_bus_pairs)
+    # libbranch.declare_var_c(model=model, index_set=unique_bus_pairs)
+    # libbranch.declare_var_s(model=model, index_set=unique_bus_pairs)
 
     ### declare the polar voltages
     va_bounds = {k: (-math.pi, math.pi) for k in bus_attrs['va']}
@@ -160,6 +160,8 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     decl.declare_var('u', model=model, index_set=branch_attrs['names'], within=pe.Binary)
 
+    model.u.fix(1)
+
     branch_name_set = decl.declare_set('branch_name', model=model, index_set=branch_attrs['names'])
 
     model.box_index_set = pe.RangeSet(Q)
@@ -168,7 +170,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     model.u_branch = pe.Var(branch_name_set, model.box_index_set, within=pe.Binary)
 
     #For selecting the appropriate interval of the PWL approximation
-    model.dva_branch = pe.Var(branch_name_set, model.box_index_set, within=pe.Binary)
+    model.dva_branch = pe.Var(branch_name_set, model.box_index_set)
 
     #(5) - Constraints for the on/off variable u
 
@@ -222,6 +224,8 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     #(8) - Approximating power flow equation by PWL approximation
 
+
+
     #Active_from_bus
     def pwl_active_from_ub_rule(model, branch_name, i):
     	branch = branches[branch_name]
@@ -231,10 +235,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
-
-    	coords = branch_dict["Active_from_bus"][branch_name]['boxes']['coefficients'][i-1]
-    	M = 10*(g+b) + 2*(coords[0]+coords[1]+coords[2]+coords[3])
-    	return -model.pf[branch_name] + coords[0]*model.vm[from_bus] + coords[1]*model.vm[to_bus] + coords[2]*model.dva_branch[branch_name, i] + coords[3] <= M*(1-model.u_branch[branch_name, i])
+    	coeffs = branch_dict["Active_from_bus"][branch_name]['boxes']['coefficients'][i-1]
+    	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
+    	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	return -model.pf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] <= M*(1-model.u_branch[branch_name, i])
 
     model.pwl_active_from_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_from_ub_rule)
 
@@ -247,9 +251,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
 
-    	coords = branch_dict["Active_from_bus"][branch_name]['boxes']['coefficients'][i-1]
-    	M = -(10*(g+b) + 2*(coords[0]+coords[1]+coords[2]+coords[3]))
-    	return -model.pf[branch_name] + coords[0]*model.vm[from_bus] + coords[1]*model.vm[to_bus] + coords[2]*model.dva_branch[branch_name, i] + coords[3] >= M*(1-model.u_branch[branch_name, i])
+    	coeffs = branch_dict["Active_from_bus"][branch_name]['boxes']['coefficients'][i-1]
+    	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
+    	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	return -model.pf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] >= M*(1-model.u_branch[branch_name, i])
 
     model.pwl_active_from_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_from_lb_rule)
 
@@ -263,9 +268,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
 
-    	coords = branch_dict["Active_to_bus"][branch_name]['boxes']['coefficients'][i-1]
-    	M = 10*(g+b) + 2*(coords[0]+coords[1]+coords[2]+coords[3])
-    	return -model.pt[branch_name] + coords[0]*model.vm[from_bus] + coords[1]*model.vm[to_bus] + coords[2]*model.dva_branch[branch_name, i] + coords[3] <= M*(1-model.u_branch[branch_name, i])
+    	coeffs = branch_dict["Active_to_bus"][branch_name]['boxes']['coefficients'][i-1]
+    	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
+    	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	return -model.pt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] <= M*(1-model.u_branch[branch_name, i])
 
     model.pwl_active_to_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_to_ub_rule)
 
@@ -278,9 +284,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
 
-    	coords = branch_dict["Active_to_bus"][branch_name]['boxes']['coefficients'][i-1]
-    	M = -(10*(g+b) + 2*(coords[0]+coords[1]+coords[2]+coords[3]))
-    	return -model.pt[branch_name] + coords[0]*model.vm[from_bus] + coords[1]*model.vm[to_bus] + coords[2]*model.dva_branch[branch_name, i] + coords[3] >= M*(1-model.u_branch[branch_name, i])
+    	coeffs = branch_dict["Active_to_bus"][branch_name]['boxes']['coefficients'][i-1]
+    	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
+    	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	return -model.pt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] >= M*(1-model.u_branch[branch_name, i])
 
     model.pwl_active_to_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_to_lb_rule)
 
@@ -295,9 +302,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
 
-    	coords = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coefficients'][i-1]
-    	M = 10*(g+b) + 2*(coords[0]+coords[1]+coords[2]+coords[3])
-    	return -model.qf[branch_name] + coords[0]*model.vm[from_bus] + coords[1]*model.vm[to_bus] + coords[2]*model.dva_branch[branch_name, i] + coords[3] <= M*(1-model.u_branch[branch_name, i])
+    	coeffs = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coefficients'][i-1]
+    	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
+    	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	return -model.qf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] <= M*(1-model.u_branch[branch_name, i])
 
     model.pwl_reactive_from_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_from_ub_rule)
 
@@ -310,9 +318,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
 
-    	coords = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coefficients'][i-1]
-    	M = -(10*(g+b) + 2*(coords[0]+coords[1]+coords[2]+coords[3]))
-    	return -model.qf[branch_name] + coords[0]*model.vm[from_bus] + coords[1]*model.vm[to_bus] + coords[2]*model.dva_branch[branch_name, i] + coords[3] >= M*(1-model.u_branch[branch_name, i])
+    	coeffs = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coefficients'][i-1]
+    	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
+    	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	return -model.qf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] >= M*(1-model.u_branch[branch_name, i])
 
     model.pwl_reactive_from_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_from_lb_rule)
 
@@ -327,9 +336,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
 
-    	coords = branch_dict["Reactive_to_bus"][branch_name]['boxes']['coefficients'][i-1]
-    	M = 10*(g+b) + 2*(coords[0]+coords[1]+coords[2]+coords[3])
-    	return -model.qt[branch_name] + coords[0]*model.vm[from_bus] + coords[1]*model.vm[to_bus] + coords[2]*model.dva_branch[branch_name, i] + coords[3] <= M*(1-model.u_branch[branch_name, i])
+    	coeffs = branch_dict["Reactive_to_bus"][branch_name]['boxes']['coefficients'][i-1]
+    	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
+    	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	return -model.qt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] <= M*(1-model.u_branch[branch_name, i])
 
     model.pwl_reactive_to_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_to_ub_rule)
 
@@ -342,9 +352,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
 
-    	coords = branch_dict["Reactive_to_bus"][branch_name]['boxes']['coefficients'][i-1]
-    	M = -(10*(g+b) + 2*(coords[0]+coords[1]+coords[2]+coords[3]))
-    	return -model.qt[branch_name] + coords[0]*model.vm[from_bus] + coords[1]*model.vm[to_bus] + coords[2]*model.dva_branch[branch_name, i] + coords[3] >= M*(1-model.u_branch[branch_name, i])
+    	coeffs = branch_dict["Reactive_to_bus"][branch_name]['boxes']['coefficients'][i-1]
+    	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
+    	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	return -model.qt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] >= M*(1-model.u_branch[branch_name, i])
 
     model.pwl_reactive_to_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_to_lb_rule)
 
@@ -379,10 +390,10 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
                                                   )
 
     # declare angle difference limits on interconnected buses
-    libbranch.declare_ineq_angle_diff_branch_lbub_c_s(model=model,
-                                                      index_set=branch_attrs['names'],
-                                                      branches=branches
-                                                      )
+    # libbranch.declare_ineq_angle_diff_branch_lbub_c_s(model=model,
+    #                                                   index_set=branch_attrs['names'],
+    #                                                   branches=branches
+    #                                                   )
 
     ### declare the generator cost objective
     libgen.declare_expression_pgqg_operating_cost(model=model,
@@ -418,8 +429,8 @@ if __name__ == '__main__':
 	with open(json_filename, "r") as read_file:
 		branch_dict = json.load(read_file)
 
-	opt = pe.SolverFactory("knitroampl")
+	opt = pe.SolverFactory("gurobi")
 
 	MC_model = _create_base_ac_with_pwl_approx_model(md_dict, branch_dict, 10, include_feasibility_slack=False)[0]
 
-	opt.solve(MC_model, tee=True)
+	opt.solve(MC_model, tee=True, keepfiles=True, symbolic_solver_labels=True)
