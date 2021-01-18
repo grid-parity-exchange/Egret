@@ -12,9 +12,13 @@ This module collects some helper functions useful for performing
 different computations for transmission models
 """
 import math
+import weakref
+import collections.abc as abc
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg
+import networkx as nx
+
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 from egret.common.log import logger
@@ -273,6 +277,20 @@ def calculate_va_from_vj_vr(vj, vr):
         return va
     return None
 
+def _get_susceptance(branch, approximation_type):
+    if branch['branch_type'] == 'transformer':
+        tau = branch['transformer_tap_ratio']
+    else:
+        tau = 1.
+
+    if approximation_type == ApproximationType.PTDF:
+        x = branch['reactance']
+        b = -1./(tau*x)
+    elif approximation_type == ApproximationType.PTDF_LOSSES:
+        b = calculate_susceptance(branch)/tau
+    else:
+        raise RuntimeError("Could not find appropriate susceptance value")
+    return b
 
 def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART,approximation_type=ApproximationType.PTDF):
     """
@@ -290,15 +308,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        tau = 1.0
-        if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
-
-        if approximation_type == ApproximationType.PTDF:
-            x = branch['reactance']
-            b = -1/(tau*x)
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            b = calculate_susceptance(branch)/tau
+        b = _get_susceptance(branch, approximation_type)
 
         if base_point == BasePointType.FLATSTART:
             val = -b
@@ -339,15 +349,7 @@ def _calculate_Bd(branches,index_set_branch,base_point=BasePointType.FLATSTART,a
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        tau = 1.0
-        if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
-
-        if approximation_type == ApproximationType.PTDF:
-            x = branch['reactance']
-            b = -1/(tau*x)
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            b = calculate_susceptance(branch)/tau
+        b = _get_susceptance(branch, approximation_type)
 
         if base_point == BasePointType.FLATSTART:
             val = b
@@ -456,18 +458,13 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
 
-        tau = 1.0
-        shift = 0.0
         if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
+        else: # shift == 0
+            continue
 
-        b = 0.
-        if approximation_type == ApproximationType.PTDF:
-            x = branch['reactance']
-            b = -(1/x)*(shift/tau)
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            b = calculate_susceptance(branch)*(shift/tau)
+        b = _get_susceptance(branch, approximation_type)
+        b *= shift
 
         row_from.append(mapping_bus_to_idx[from_bus])
         row_to.append(mapping_bus_to_idx[to_bus])
@@ -478,6 +475,46 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
     phi_to = sp.coo_matrix((data,(row_to,col)), shape=(_len_bus,_len_branch))
 
     return phi_from.tocsr(), phi_to.tocsr()
+
+def calculate_phi_adjust(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
+    """
+    Compute the phase shifter constant for fixed phase shift transformers
+    """
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    row = []
+    col = []
+    data = []
+
+    for idx_col, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        if branch['branch_type'] == 'transformer' and branch['transformer_phase_shift'] != 0.:
+            shift = math.radians(branch['transformer_phase_shift'])
+        else: # shift == 0
+            continue
+
+        b = _get_susceptance(branch, approximation_type)
+        b *= shift
+
+        row.append(mapping_bus_to_idx[from_bus])
+        col.append(0)
+        data.append(b)
+
+        row.append(mapping_bus_to_idx[to_bus])
+        col.append(0)
+        data.append(-b)
+
+    phi_adjust = sp.coo_matrix((data,(row,col)), shape=(_len_bus,1))
+
+    return phi_adjust.tocsc()
 
 
 def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=None):
@@ -609,6 +646,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
 def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,reference_bus,
                                  base_point=BasePointType.FLATSTART,
+                                 contingencies=None,
                                  mapping_bus_to_idx=None,
                                  mapping_branch_to_idx=None,
                                  interfaces=None,
@@ -629,7 +667,8 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
     _ref_bus_idx = mapping_bus_to_idx[reference_bus]
 
     ## check if the network is connected
-    connected = check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx)
+    graph = construct_connection_graph(branches, mapping_bus_to_idx)
+    connected = check_network_connection(graph, index_set_bus)
 
     if not connected:
         raise RuntimeError("Network is not connected, cannot use PTDF formulation")
@@ -653,15 +692,213 @@ def calculate_ptdf_factorization(branches,buses,index_set_branch,index_set_bus,r
     ## LU factorization
     MLU_MP = scipy.sparse.linalg.splu(M)
 
+    if contingencies:
+        contingency_compensators = \
+            precompute_contingency_matricies( graph, MLU_MP, At_masked.T, Bd,
+                                              mapping_bus_to_idx, mapping_branch_to_idx, 
+                                              ref_bus_mask,
+                                              branches, contingencies )
+    else:
+        contingency_compensators = {}
+
     if interfaces is None:
-        return MLU_MP, B_dA, ref_bus_mask
+        return MLU_MP, B_dA, ref_bus_mask, contingency_compensators
     else:
         if mapping_bus_to_idx is None:
             mapping_branch_to_idx = {branch_n: i for i, branch_n in enumerate(index_set_branch)}
         I = _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx)
         B_dA_I = I@B_dA
 
-        return MLU_MP, B_dA, ref_bus_mask, B_dA_I, I
+        return MLU_MP, B_dA, ref_bus_mask, contingency_compensators, B_dA_I, I
+
+class _ContingencyCompensator:
+    def __init__(self, M, c, W, Wbar, phi_compensator, VA_compensator, branch_out):
+        self._M = M
+        self._c = c
+        self._W = W
+        self._Wbar = Wbar
+        self._phi_compensator = phi_compensator
+        self._VA_compensator = VA_compensator
+        self._branch_out = branch_out
+        self._global = None
+
+    @property
+    def M(self):
+        return self._M
+    @property
+    def c(self):
+        return self._c
+    @property
+    def W(self): 
+        return self._W
+    @property
+    def Wbar(self): 
+        return self._Wbar
+    @property
+    def phi_compensator(self):
+        return self._phi_compensator
+    @property
+    def VA_compensator(self):
+        return self._VA_compensator
+    @property
+    def branch_out(self):
+        return self._branch_out
+
+    @property
+    def L(self):
+        return self._global()._L
+    @property
+    def U(self):
+        return self._global()._U
+    @property
+    def Pr(self):
+        return self._global()._Pr
+    @property
+    def Pc(self):
+        return self._global()._Pc
+
+class _ContingencyCompensators(abc.Mapping):
+    def __init__(self, compensators, L, U, Pr, Pc):
+        self._compensators = compensators
+        for c in compensators.values():
+            c._global = weakref.ref(self)
+        self._L = L
+        self._U = U
+        self._Pr = Pr
+        self._Pc = Pc
+
+    def __getitem__(self, key):
+        return self._compensators[key]
+
+    def __iter__(self):
+        return iter(self._compensators)
+
+    def __len__(self):
+        return len(self._compensators)
+
+    @property
+    def L(self):
+        return self._L
+    @property
+    def U(self):
+        return self._U
+    @property
+    def Pr(self): 
+        return self._Pr
+    @property
+    def Pc(self): 
+        return self._Pc
+
+
+def precompute_contingency_matricies( graph, MLU_MP, A, Bd,\
+                                      mapping_bus_to_idx,  mapping_branch_to_idx, 
+                                      ref_bus_mask,
+                                      branches, contingencies):
+
+    contingencies_monitored = {}
+    for c, cdict in contingencies.items():
+        if 'branch_contingency' not in cdict:
+            logger.warning(f"Contingency {c} does not have a branch specified; ignoring")
+            continue
+        branches_out = cdict['branch_contingency'] 
+        if isinstance( branches_out, list ):
+            if len(branches_out) == 0:
+                logger.warning(f"Contingency {c} does not have a branch specified; ignoring")
+                continue
+            if len(branches_out) > 1:
+                raise RuntimeError(f"Contingency {c} has multiple branches. This is not currently supported")
+            branch_out = branches_out[0]
+            if branch_out not in branches:
+                raise RuntimeError(f"Contingency {c} is already out!")
+        elif branches_out in mapping_branch_to_idx:
+            branch_out = branches_out
+        else:
+            raise RuntimeError(f"Contingencies must be specified as a list of branches or single branch")
+
+        contingencies_monitored[c] = branch_out
+
+    _check_contingencies_not_disconnecting(graph, branches, mapping_bus_to_idx, contingencies_monitored.values()) 
+    
+    ## things for every possible modification
+    _bus_len = A.shape[1]
+    Pr = sp.csc_matrix((np.ones(_bus_len), (MLU_MP.perm_r, np.arange(_bus_len))))
+    Pc = sp.csc_matrix((np.ones(_bus_len), (np.arange(_bus_len), MLU_MP.perm_c)))
+
+    ## shouldn't need to re-order
+    splu_options = {
+                     "Equil":False,
+                     "ColPerm":"NATURAL",
+                     #"DiagPivotThresh":0.0,
+                   }
+    L_factor = sp.linalg.splu(MLU_MP.L,options=splu_options)
+    U_factor = sp.linalg.splu(MLU_MP.U,options=splu_options)
+
+    buff = np.zeros((_bus_len,1))
+
+    compensators = {}
+
+    for cn, branch_out in contingencies_monitored.items():
+        branch_out_idx = mapping_branch_to_idx[branch_out]
+
+        M = A[branch_out_idx].T
+        dely = -Bd[branch_out_idx, branch_out_idx]
+
+        # NOTE: The conversions involved here are a bottleneck. 
+        #       Egret should probably implement its own sparse 
+        #       triangular solver. Batching (collecting Pr@M,
+        #       Pc.T@M for every branch_out) could also be tried.
+        W = sp.csc_matrix( L_factor.solve((Pr@M).toarray(out=buff)) )
+        Wbar = sp.csc_matrix( U_factor.solve((Pc.T@M).toarray(out=buff), 'T') )
+
+        # NOTE: With a single change, these are simple inverses.
+        #       If we go to multiple contingencies, this needs to 
+        #       use matrix inverses and the code should be re-visited.
+        z = (Wbar.T@W)[0,0]
+        c = 1./((1./dely) + z)
+
+        # Compute phi_compensator
+        branch = branches[branch_out]
+
+        if branch['branch_type'] == 'transformer' and branch['transformer_phase_shift'] != 0.:
+            shift = math.radians(branch['transformer_phase_shift'])
+
+            neg_b = shift*dely
+
+            row = [mapping_bus_to_idx[branch['from_bus']], mapping_bus_to_idx[branch['to_bus']]]
+            col = [0, 0]
+            data = [neg_b, -neg_b]
+
+            phi_comp = sp.coo_matrix((data,(row,col)), shape=(_bus_len+1,1)).tocsc()[ref_bus_mask]
+            VA_comp = MLU_MP.solve(phi_comp.toarray(out=buff).T[0])
+
+        else:
+            phi_comp = sp.coo_matrix(([],([],[])), shape=(_bus_len,1)).tocsc()
+            VA_comp = None
+
+        comp = _ContingencyCompensator(M=M, c=c, W=W, Wbar=Wbar, phi_compensator=phi_comp,\
+                                        VA_compensator=VA_comp, branch_out=branch_out)
+
+        compensators[cn] = comp
+
+    contingency_compensators = _ContingencyCompensators(compensators=compensators, L=L_factor, U=U_factor, Pr=Pr, Pc=Pc)
+
+    return contingency_compensators
+
+def _check_contingencies_not_disconnecting( graph, branches, mapping_bus_to_idx, contingency_branches ):
+    if len(contingency_branches) < 10:
+        for bn in contingency_branches:
+            connected = check_contingency_connection(graph, branches, [bn], mapping_bus_to_idx)
+            if not connected:
+                raise RuntimeError(f"Contingency {bn} disconnects the network!")
+        return
+    else:
+        all_connected_contigencies = get_N_minus_1_branches(graph, branches, mapping_bus_to_idx)
+        bad_contingencies = set(contingency_branches).difference(all_connected_contigencies)
+
+        if len(bad_contingencies) == 0:
+            return
+        for bn in bad_contingencies:
+            raise RuntimeError(f"Contingency {bn} disconnects the network!")
 
 def _calculate_interface_matrix(interfaces, index_set_interface, mapping_branch_to_idx):
     """
@@ -727,7 +964,8 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     _ref_bus_idx = mapping_bus_to_idx[reference_bus]
 
     ## check if the network is connected
-    connected = check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx)
+    graph = construct_connection_graph(branches, mapping_bus_to_idx)
+    connected = check_network_connection(graph, index_set_bus)
 
     J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF)
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus,mapping_bus_to_idx)
@@ -832,7 +1070,8 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
         return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
 
     ## check if the network is connected
-    connected = check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx)
+    graph = construct_connection_graph(branches, mapping_bus_to_idx)
+    connected = check_network_connection(graph, index_set_bus)
 
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
     AA = calculate_absolute_adjacency_matrix(A)
@@ -982,12 +1221,8 @@ def calculate_absolute_adjacency_matrix(adjacency_matrix):
     """
     return np.absolute(adjacency_matrix)
 
-def check_network_connection(branches, index_set_branch, index_set_bus, mapping_bus_to_idx):
-    """
-    Checks for the connectivity of the network and prints some helpful information to the
-    logger if the network is disconnected
-    """
-    _len_bus = len(index_set_bus)
+def construct_connection_graph(branches, mapping_bus_to_idx):
+    _len_bus = len(mapping_bus_to_idx)
 
     row = []
     col = []
@@ -1000,10 +1235,92 @@ def check_network_connection(branches, index_set_branch, index_set_bus, mapping_
         row.append(mapping_bus_to_idx[from_bus])
         col.append(mapping_bus_to_idx[to_bus])
 
-    data = np.ones((len(branches),), dtype=int)
+    data = np.ones((len(branches),), dtype=np.uint8)
 
     graph = sp.coo_matrix((data,(row,col)), shape=(_len_bus, _len_bus)).tocsr()
 
+    return graph
+
+def check_contingency_connection(graph, branches, branches_removed, mapping_bus_to_idx):
+    """
+    Checks the connectivity after removing the branches in branches_removed
+
+    Parameters
+    ----------
+    graph : output from construct_connection_graph
+    branches : dictionary of branches
+    branches_removed : list of names of branches removed by this contingency
+    mapping_bus_to_idx : bus name to index dictionary
+    """
+    _len_bus = len(mapping_bus_to_idx)
+
+    row = []
+    col = []
+    data = []
+
+    for branch_name in branches_removed:
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        row.append(mapping_bus_to_idx[from_bus])
+        col.append(mapping_bus_to_idx[to_bus])
+
+    data = np.ones((len(branches_removed),), dtype=np.uint8)
+
+    graph_delta = sp.coo_matrix((data,(row,col)), shape=(_len_bus, _len_bus)).tocsr()
+
+    graph -= graph_delta
+    n_components = sp.csgraph.connected_components(csgraph=graph, directed=False, return_labels=False)
+    graph += graph_delta
+
+    return (n_components == 1)
+
+def get_N_minus_1_branches(graph, branches, mapping_bus_to_idx):
+    """
+    Gets a list of branches which can be monitored using N-1 tools
+
+    Returns
+    -------
+    List of branches for which removing one does not disconnect the network
+    """
+    potential_bridges = set(nx.bridges(nx.Graph(graph)))
+
+    ## networkx.bridges does not handle multi-edges cleanly, 
+    ## so we need to remove some it found if a redundant
+    ## branch connects two nodes
+    bridges_to_remove = set()
+    for bridge in potential_bridges:
+        swap = (bridge[1], bridge[0])
+        if graph[bridge] + graph[swap] > 1:
+            bridges_to_remove.add(bridge)
+
+    bridges = potential_bridges - bridges_to_remove
+
+    branches_not_disconnecting = []
+    for bn, branch in branches.items():
+        idx_from, idx_to = mapping_bus_to_idx[branch['from_bus']], \
+                            mapping_bus_to_idx[branch['to_bus']]
+        if (idx_from, idx_to) in bridges:
+            continue
+        elif (idx_to, idx_from) in bridges:
+            continue
+        else:
+            branches_not_disconnecting.append(bn)
+
+    return branches_not_disconnecting 
+
+def check_network_connection(graph, index_set_bus):
+    """
+    Checks for the connectivity of the network and prints some helpful information to the
+    logger if the network is disconnected
+
+    Parameters
+    ----------
+    graph : output from construct_connection_graph
+    index_set_bus : list mapping bus indices to bus names (only used to generate warnings)
+    """
+    
     n_components, labels = sp.csgraph.connected_components(csgraph=graph, directed=False, return_labels=True)
 
     if n_components > 1:

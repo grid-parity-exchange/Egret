@@ -245,3 +245,19 @@ def test_uc_ptdf_termination():
     md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, return_results=True, **kwargs)
 
     assert results.egret_metasolver['iterations'] == 1
+
+def test_scuc():
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', 'test_scuc_masked.json')
+
+    md_in = ModelData.read(input_json_file_name)
+    md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True)
+
+    md_baseline = ModelData.read(os.path.join(
+                            current_dir, 'uc_test_instances', 'test_scuc_full_enforce_relaxed_sol.json'))
+    assert math.isclose( md_results.data['system']['total_cost'], md_baseline.data['system']['total_cost'], rel_tol=rel_tol)
+
+    ptdf_options = {'branch_kv_threshold':300, 'kv_threshold_type':'both'}
+    md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, ptdf_options=ptdf_options)
+    md_baseline = ModelData.read(os.path.join(
+                            current_dir, 'uc_test_instances', 'test_scuc_sparse_enforce_sol.json'))
+    assert math.isclose( md_results.data['system']['total_cost'], md_baseline.data['system']['total_cost'], rel_tol=rel_tol)

@@ -365,6 +365,11 @@ scaled_attributes = {
                                                                          'pf',
                                                                          'pf_violation',
                                                                        ],
+                       ('element_type', 'contingency', None) : [ 
+                                                                 'violation_penalty',
+                                                                 'pf',
+                                                                 'pf_violation',
+                                                               ],
                        ('system_attributes', None, None ) : [
                                                         'load_mismatch_cost',
                                                         'reserve_shortfall_cost',
@@ -381,10 +386,10 @@ def unscale_ModelData_to_pu(model_data, inplace=False):
     return _convert_modeldata_pu(model_data, _multiply_by_baseMVA, inplace)
 
 
-def _multiply_by_baseMVA(element, attr_name, attr, baseMVA):
-    _scale_by_baseMVA(_mul, _div, element, attr_name, attr, baseMVA)
-def _divide_by_baseMVA(element, attr_name, attr, baseMVA):
-    _scale_by_baseMVA(_div, _mul, element, attr_name, attr, baseMVA)
+def _multiply_by_baseMVA(element, attr_name, attr, baseMVA, attributes):
+    _scale_by_baseMVA(_mul, _div, element, attr_name, attr, baseMVA, attributes)
+def _divide_by_baseMVA(element, attr_name, attr, baseMVA, attributes):
+    _scale_by_baseMVA(_div, _mul, element, attr_name, attr, baseMVA, attributes)
 
 def _mul(a,b):
     return a*b
@@ -396,7 +401,7 @@ def _get_op(normal_op, inverse_op, attr_name):
         return inverse_op 
     return normal_op
 
-def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
+def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA, attributes):
     if attr is None:
         return
     if isinstance(attr, dict):
@@ -405,7 +410,7 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
             values_list = attr['values']
             for time, value in enumerate(values_list):
                 if isinstance(value, dict):
-                    _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA)
+                    _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
                 else:
                     values_list[time] = op( value , baseMVA )
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
@@ -424,10 +429,14 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
             new_values = [ ( normal_op(point,baseMVA), fuel) \
                             for (point, fuel) in values_list_of_tuples ]
             attr['values'] = new_values
-
-    else:
+        else: # recurse deeper
+            for k,v in attr.items():
+                _scale_by_baseMVA(normal_op, inverse_op, attr, k, v, baseMVA, attributes)
+    elif attr_name in attributes:
         op = _get_op(normal_op, inverse_op, attr_name)
         element[attr_name] = op( attr , baseMVA )
+    else:
+        return
 
 
 ## NOTE: ideally this would be done in the definitions of
@@ -449,8 +458,7 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
             assert element_type is None
             assert element_subtype is None
             for name, sys_attr in system_dict.items():
-                if name in attributes:
-                    transform_func(system_dict, name, sys_attr, baseMVA)
+                transform_func(system_dict, name, sys_attr, baseMVA, attributes)
         
         elif attr_type == 'element_type':
             if element_type not in md.data['elements']:
@@ -459,15 +467,13 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
             if element_subtype is None:
                 for name, element in element_dict.items():
                     for attr_name, attr in element.items():
-                        if attr_name in attributes:
-                            transform_func(element, attr_name, attr, baseMVA)
+                        transform_func(element, attr_name, attr, baseMVA, attributes)
             else: ## allow for different actions depending on the subtype
                 for name, element in element_dict.items():
                     element_subtype_key = element_type+'_type'
                     if element_subtype == element[element_subtype_key]:
                         for attr_name, attr in element.items():
-                            if attr_name in attributes:
-                                transform_func(element, attr_name, attr, baseMVA)
+                            transform_func(element, attr_name, attr, baseMVA, attributes)
 
     if inplace:
         return

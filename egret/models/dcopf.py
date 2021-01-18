@@ -386,6 +386,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
 
     '''
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+    from egret.common.solver_interface import _solve_model
 
     PTDF = m._PTDF
 
@@ -395,7 +396,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
 
     for i in range(iteration_limit):
 
-        PFV, PFV_I, viol_num, mon_viol_num, viol_lazy, int_viol_lazy \
+        flows, viol_num, mon_viol_num, viol_lazy \
                 = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
 
         iter_status_str = "iteration {0}, found {1} violation(s)".format(i,viol_num)
@@ -417,15 +418,15 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
 
-        lpu.add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, m, md, solver, ptdf_options, PTDF)
-        total_flow_constr_added = len(viol_lazy) + len(int_viol_lazy)
+        lpu.add_violations(viol_lazy, flows, m, md, solver, ptdf_options, PTDF)
+        total_flow_constr_added = len(viol_lazy)
         logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
         if persistent_solver:
-            solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+            m, results, solver = _solve_model(m, solver, solver_tee=solver_tee, return_solver=True, vars_to_load=[], set_instance=False)
             solver.load_vars()
         else:
-            solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
+            m, results, solver = _solve_model(m, solver, solver_tee=solver_tee, return_solver=True)
 
     else: # we hit the iteration limit
         logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
