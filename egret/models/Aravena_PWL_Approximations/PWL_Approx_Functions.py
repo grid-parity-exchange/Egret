@@ -47,13 +47,13 @@ def power_flow_through_branch(Vi, Vj, delta, branch, bus_type = "from_bus", powe
         if bus_type == "from_bus":
         	return Vi**2*g - Vi*Vj*g*np.cos(delta) - Vi*Vj*b*np.sin(delta)
         else:
-            return Vj**2*g - Vi*Vj*g*np.cos(delta) + Vi*Vj*b*np.sin(delta)
+            return Vj**2*g - Vi*Vj*g*np.cos(delta) - Vi*Vj*b*np.sin(delta)
 
     else:
         if bus_type == "from_bus":
     	    return -Vi**2*b + Vi*Vj*b*np.cos(delta) - Vi*Vj*g*np.sin(delta)
         else:
-            return -Vj**2*b + Vi*Vj*b*np.cos(delta) + Vi*Vj*g*np.sin(delta)
+            return -Vj**2*b + Vi*Vj*b*np.cos(delta) - Vi*Vj*g*np.sin(delta)
 
 
 
@@ -142,15 +142,11 @@ def triple_integral_coefs(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, d
 
     #a_{i,1}
     if power_type == "Active":
-        if bus_type == "from_bus":
-            cross_term_6 = 2*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
-        else:
-            cross_term_6 = -2*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
+        cross_term_6 = 2*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
+        
     else:
-        if bus_type == "from_bus":
-            cross_term_6 = 2*g*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
-        else:
-            cross_term_6 = -2*g*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
+        cross_term_6 = 2*g*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
+        
 
     #a_{i,2}*a_{i,3}
     cross_term_7 = 2*(Vi_upper-Vi_lower)*((Vj_upper**2-Vj_lower**2)/2)*((delta_upper**2-delta_lower**2)/2)
@@ -178,15 +174,11 @@ def triple_integral_coefs(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, d
 
     #a_{i, 2}
     if power_type == "Active":
-        if bus_type == "from_bus":
-            cross_term_11 = 2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
-        else:
-            cross_term_11 = -2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
+        cross_term_11 = 2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
+        
     else:
-        if bus_type == "from_bus":
-            cross_term_11 = 2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
-        else:
-            cross_term_11 = -2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
+        cross_term_11 = 2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
+
 
     #a_{i, 3}*b_i
     cross_term_12 = 2*(Vi_upper-Vi_lower)*(Vj_upper-Vj_lower)*((delta_upper**2-delta_lower**2)/2)
@@ -211,15 +203,10 @@ def triple_integral_coefs(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, d
 
     #a_{i, 3}
     if power_type == "Active":
-        if bus_type == "from_bus":
-            cross_term_15 = 2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*((-delta_upper*np.cos(delta_upper) + np.sin(delta_upper)) - (-delta_lower*np.cos(delta_lower) + np.sin(delta_lower)))
-        else:
-            cross_term_15 = -2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*((-delta_upper*np.cos(delta_upper) + np.sin(delta_upper)) - (-delta_lower*np.cos(delta_lower) + np.sin(delta_lower)))
+        cross_term_15 = 2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*((-delta_upper*np.cos(delta_upper) + np.sin(delta_upper)) - (-delta_lower*np.cos(delta_lower) + np.sin(delta_lower)))
     else:
-        if bus_type == "from_bus":
-            cross_term_15 = 2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*((-delta_upper*np.cos(delta_upper) + np.sin(delta_upper)) - (-delta_lower*np.cos(delta_lower) + np.sin(delta_lower)))
-        else:
-            cross_term_15 = -2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*((-delta_upper*np.cos(delta_upper) + np.sin(delta_upper)) - (-delta_lower*np.cos(delta_lower) + np.sin(delta_lower)))
+        cross_term_15 = 2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*((-delta_upper*np.cos(delta_upper) + np.sin(delta_upper)) - (-delta_lower*np.cos(delta_lower) + np.sin(delta_lower)))
+
 
     #b_i
     if power_type == "Active":
@@ -241,15 +228,10 @@ def triple_integral_coefs(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, d
 
     #b_i
     if power_type == "Active":
-        if bus_type == "from_bus":
-            cross_term_18 = 2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
-        else:
-            cross_term_18 = -2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
+        cross_term_18 = 2*b*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
     else:
-        if bus_type == "from_bus":
-            cross_term_18 = 2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
-        else:
-            cross_term_18 = -2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
+        cross_term_18 = 2*g*((Vi_upper**2-Vi_lower**2)/2)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
+
 
     #constant
     if power_type == "Active":
@@ -268,24 +250,19 @@ def triple_integral_coefs(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, d
         if bus_type == "from_bus":
             cross_term_20 = -2*g*b*((Vi_upper**4-Vi_lower**4)/4)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
         else:
-            cross_term_20 = 2*g*b*((Vj_upper**4-Vj_lower**4)/4)*((Vi_upper**2-Vi_lower**2)/2)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
+            cross_term_20 = -2*g*b*((Vj_upper**4-Vj_lower**4)/4)*((Vi_upper**2-Vi_lower**2)/2)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
     else:
         if bus_type == "from_bus":
             cross_term_20 = 2*g*b*((Vi_upper**4-Vi_lower**4)/4)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
         else:
-            cross_term_20 = -2*g*b*((Vj_upper**4-Vj_lower**4)/4)*((Vi_upper**2-Vi_lower**2)/2)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
+            cross_term_20 = 2*g*b*((Vj_upper**4-Vj_lower**4)/4)*((Vi_upper**2-Vi_lower**2)/2)*(-np.cos(delta_upper) - (-np.cos(delta_lower)))
 
     #constant
     if power_type == "Active":
-        if bus_type == "from_bus":
-            cross_term_21 = g*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(2*delta_upper)/2 - (-np.cos(2*delta_lower)/2))
-        else:
-            cross_term_21 = -g*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(2*delta_upper)/2 - (-np.cos(2*delta_lower)/2))
+        cross_term_21 = g*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(2*delta_upper)/2 - (-np.cos(2*delta_lower)/2))
     else:
-        if bus_type == "from_bus":
-            cross_term_21 = -g*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(2*delta_upper)/2 - (-np.cos(2*delta_lower)/2))
-        else:
-            cross_term_21 = g*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(2*delta_upper)/2 - (-np.cos(2*delta_lower)/2))
+        cross_term_21 = -g*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**3-Vj_lower**3)/3)*(-np.cos(2*delta_upper)/2 - (-np.cos(2*delta_lower)/2))
+
 
     #Return list of coefficients [a_{i,1}^2, a_{i, 2}^2, a_{i, 3}^2, b_i^2, a_{i,1}a_{i,2}, a_{i,1}a_{i,3}, a_{i,1}b_i, a_{i,2}a_{i,3}, a_{i,2}b_{i}, a_{i,3}b_i, a_{i,1}, a_{i,2}, a_{i,3}, b_i, constant]
     #Could also return as dict instead? -WL
@@ -316,7 +293,7 @@ def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delt
 
     Vi_partition = [Vi_lower, Vi_upper]
     Vj_partition = [Vj_lower, Vj_upper]
-    delta_partition = eq_curvature_partition(delta_lower, delta_upper, 10, branch, bus_type = bus_type, power_type=power_type)
+    delta_partition = eq_curvature_partition(delta_lower, delta_upper, 4, branch, bus_type = bus_type, power_type=power_type)
 
     model = pe.ConcreteModel()
 
@@ -528,7 +505,7 @@ if __name__ == '__main__':
                     branch_p_b_dict[branch_name] = pwl_model_branch_preprocessing(from_bus_lb, from_bus_ub, to_bus_lb, to_bus_ub, delta_lb, delta_ub, branch, bus_type, power_type)
                 all_branches_coefs_dict[power_type + '_' + bus_type] = branch_p_b_dict
     
-    json_filename = case + '_delta_10_curvature_partition.json'
+    json_filename = case + '_delta_4_curvature_partition.json'
     with open(json_filename, 'w') as file:
         json.dump(all_branches_coefs_dict, file, indent=2)
 

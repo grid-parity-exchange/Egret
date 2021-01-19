@@ -35,9 +35,9 @@ def power_equation(delta, branch, bus_type = "from_bus", power_type = "Reactive"
 
 	else:
 		if power_type == "Active":
-			return g - g*np.cos(delta) + b*np.sin(delta)
+			return g - g*np.cos(delta) - b*np.sin(delta)
 		else:
-			return -b + b*np.cos(delta) + g*np.sin(delta)
+			return -b + b*np.cos(delta) - g*np.sin(delta)
 
 def power_deriv(delta, branch, bus_type = "from_bus", power_type = "Reactive"):
 	if not (power_type =="Active" or power_type =="Reactive"):
@@ -49,33 +49,21 @@ def power_deriv(delta, branch, bus_type = "from_bus", power_type = "Reactive"):
 	g = tx_calc.calculate_conductance(branch)
 	b = tx_calc.calculate_susceptance(branch)
 
-	if bus_type == "from_bus":
-		if power_type == "Active":
-			return g*np.sin(delta) - b*np.cos(delta)
-		else:
-			return -b*np.sin(delta) - g*np.cos(delta)
-
+	
+	if power_type == "Active":
+		return g*np.sin(delta) - b*np.cos(delta)
 	else:
-		if power_type == "Active":
-			return g*np.sin(delta) + b*np.cos(delta)
-		else:
-			return -b*np.sin(delta) + g*np.cos(delta)
+		return -b*np.sin(delta) - g*np.cos(delta)
 
 def power_second_deriv(delta, branch, bus_type = "from_bus", power_type = "Reactive"):
 	g = tx_calc.calculate_conductance(branch)
 	b = tx_calc.calculate_susceptance(branch)
 
-	if bus_type == "from_bus":
-		if power_type == "Active":
-			return g*np.cos(delta) + b*np.sin(delta)
-		else:
-			return -b*np.cos(delta) + g*np.sin(delta)
-
+	
+	if power_type == "Active":
+		return g*np.cos(delta) + b*np.sin(delta)
 	else:
-		if power_type == "Active":
-			return g*np.cos(delta) - b*np.sin(delta)
-		else:
-			return -b*np.cos(delta) - g*np.sin(delta)
+		return -b*np.cos(delta) + g*np.sin(delta)
 
 def curvature(delta, branch, bus_type = "from_bus", power_type = "Reactive"):
 	return np.absolute(power_second_deriv(delta, branch, bus_type, power_type))/(1+(power_deriv(delta, branch, bus_type, power_type))**2)
