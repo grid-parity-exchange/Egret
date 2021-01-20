@@ -433,7 +433,7 @@ def pwl_model_branch_preprocessing(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta
     coeffs = []
 
     for i in range(len(boxes)):
-        box_coeffs = [pe.value(pwl_model.ai1[i]), pe.value(pwl_model.ai2[i]), pe.value(pwl_model.ai3[i]), pe.value(pwl_model.bi[i])]
+        box_coeffs = [round(pe.value(pwl_model.ai1[i]), 5), round(pe.value(pwl_model.ai2[i]), 5), round(pe.value(pwl_model.ai3[i]), 5), round(pe.value(pwl_model.bi[i]), 5)]
         coeffs.append(box_coeffs)
 
     branch_dict['boxes'] = {'coords': box_coords_list, 'coefficients': coeffs}
