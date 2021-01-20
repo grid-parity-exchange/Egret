@@ -143,7 +143,6 @@ def triple_integral_coefs(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, d
     #a_{i,1}
     if power_type == "Active":
         cross_term_6 = 2*b*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
-        
     else:
         cross_term_6 = 2*g*((Vi_upper**3-Vi_lower**3)/3)*((Vj_upper**2-Vj_lower**2)/2)*(-np.cos(delta_upper) + np.cos(delta_lower))
         
@@ -336,7 +335,7 @@ def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delt
     
     def box_obj_rule(model, i):
         box = boxes[i]
-        box_coefs = triple_integral_coefs(box[0][0], box[0][1], box[1][0], box[1][1], box[2][0], box[2][1], branch, bus_type, power_type)
+        box_coefs = triple_integral_coefs(box[0][0], box[0][1], box[1][0], box[1][1], box[2][0], box[2][1], branch, bus_type=bus_type, power_type=power_type)
         return box_coefs[0]*model.ai1[i]*model.ai1[i] + box_coefs[1]*model.ai2[i]*model.ai2[i] + box_coefs[2]*model.ai3[i]*model.ai3[i] + box_coefs[3]*model.bi[i]*model.bi[i] + \
                         box_coefs[4]*model.ai1[i]*model.ai2[i] + box_coefs[5]*model.ai1[i]*model.ai3[i] + box_coefs[6]*model.ai1[i]*model.bi[i] + box_coefs[7]*model.ai2[i]*model.ai3[i] + \
                         box_coefs[8]*model.ai2[i]*model.bi[i] + box_coefs[9]*model.ai3[i]*model.bi[i] + box_coefs[10]*model.ai1[i] + box_coefs[11]*model.ai2[i] + box_coefs[12]*model.ai3[i] + \
@@ -456,10 +455,6 @@ if __name__ == '__main__':
 
     branches = dict(md.elements(element_type='branch'))
     branch_attrs = md.attributes(element_type='branch')
-
-    # branch = branches['1']
-
-    # print(branch)
 
     buses = dict(md.elements(element_type='bus'))
     bus_attrs = md.attributes(element_type='bus')

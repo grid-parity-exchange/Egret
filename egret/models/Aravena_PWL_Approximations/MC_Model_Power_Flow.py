@@ -425,12 +425,12 @@ if __name__ == '__main__':
 	md = md_dict.clone_in_service()
 
 	
-	json_filename = case + '_delta_10_curvature_partition.json'
+	json_filename = case + '_delta_4_curvature_partition.json'
 	with open(json_filename, "r") as read_file:
 		branch_dict = json.load(read_file)
 
 	opt = pe.SolverFactory("gurobi")
 
-	MC_model = _create_base_ac_with_pwl_approx_model(md_dict, branch_dict, 10, include_feasibility_slack=False)[0]
+	MC_model = _create_base_ac_with_pwl_approx_model(md_dict, branch_dict, 4, include_feasibility_slack=False)[0]
 
 	opt.solve(MC_model, tee=True, keepfiles=True, symbolic_solver_labels=True)

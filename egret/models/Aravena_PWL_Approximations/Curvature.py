@@ -24,20 +24,11 @@ def power_equation(delta, branch, bus_type = "from_bus", power_type = "Reactive"
 	g = tx_calc.calculate_conductance(branch)
 	b = tx_calc.calculate_susceptance(branch)
 
-	from_bus = branch['from_bus']
-	to_bus = branch['to_bus']
-
-	if bus_type == "from_bus":
-		if power_type == "Active":
-			return g - g*np.cos(delta) - b*np.sin(delta)
-		else:
-			return -b + b*np.cos(delta) - g*np.sin(delta)
-
+	
+	if power_type == "Active":
+		return g - g*np.cos(delta) - b*np.sin(delta)
 	else:
-		if power_type == "Active":
-			return g - g*np.cos(delta) - b*np.sin(delta)
-		else:
-			return -b + b*np.cos(delta) - g*np.sin(delta)
+		return -b + b*np.cos(delta) - g*np.sin(delta)
 
 def power_deriv(delta, branch, bus_type = "from_bus", power_type = "Reactive"):
 	if not (power_type =="Active" or power_type =="Reactive"):
@@ -180,13 +171,21 @@ if __name__ == '__main__':
     branch = branches['10']
     print(branch)
 
-    partition = eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="from_bus")
+    from_partition = eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="from_bus")
 
-    refined_partition = refined_eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="from_bus", power_type="Reactive", eps=0.0001, lin_tol = 0.5)
+    to_partition = eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="to_bus")
 
-    print("Unrefined partition:", partition)
+    from_refined_partition = refined_eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="from_bus", power_type="Reactive", eps=0.0001, lin_tol = 0.5)
 
-    print("Refined partition:", refined_partition)
+    to_refined_partition = refined_eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="to_bus", power_type="Reactive", eps=0.0001, lin_tol = 0.5)
+
+    print("Unrefined from partition:", from_partition)
+
+    print("Unrefined to partition:", to_partition)
+
+    print("Refined from partition:", from_refined_partition)
+
+    print("Refined to partition: ", to_refined_partition)
 
     x = np.linspace(-np.pi/6, np.pi/6)
 
@@ -196,15 +195,15 @@ if __name__ == '__main__':
     #plt.plot(x, y2)
     #plt.show()
 
-    for i in range(len(partition) - 1):
-    	x = np.linspace(partition[i], partition[i+1])
+    for i in range(len(from_partition) - 1):
+    	x = np.linspace(from_partition[i], from_partition[i+1])
     	y = power_equation(x, branch)
     	plt.plot(x, y)
 
     plt.show()
 
-    for i in range(len(refined_partition) - 1):
-    	x = np.linspace(refined_partition[i], refined_partition[i+1])
+    for i in range(len(from_refined_partition) - 1):
+    	x = np.linspace(from_refined_partition[i], from_refined_partition[i+1])
     	y = power_equation(x, branch)
     	plt.plot(x, y)
 

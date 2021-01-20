@@ -30,14 +30,14 @@ if __name__ == '__main__':
 
 
 	
-	json_filename = case + '_delta_10_curvature_partition.json'
+	json_filename = case + '_delta_4_curvature_partition.json'
 	with open(json_filename, "r") as read_file:
 		full_branches_dict = json.load(read_file)
 
 	branch_av_sq_diff_dict = dict([])
 
-	for power_type in power_types:
-		for bus_type in bus_types:
+	for bus_type in bus_types:
+		for power_type in power_types:
 			p_b_branches_dict = full_branches_dict[power_type + '_' + bus_type]
 			p_b_branch_av_sq_diff_dict = dict([])
 			for branch_name in p_b_branches_dict.keys():
