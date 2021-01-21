@@ -55,7 +55,8 @@ if __name__ == '__main__':
 						pwl_approx = coeffs_list[0]*point[0]+coeffs_list[1]*point[1]+coeffs_list[2]*point[2]+coeffs_list[3]
 						box_sq_diffs.append((power_flow - pwl_approx)**2)
 					branch_sq_diffs.append((sum(box_sq_diffs))/(len(box_sq_diffs)))
-				p_b_branch_av_sq_diff_dict[branch_name] = (sum(branch_sq_diffs))/(len(branch_sq_diffs))
+				p_b_branch_av_sq_diff_dict[branch_name] = (sum(branch_sq_diffs))/(len(branch_sq_diffs)) #Uncomment this line for a branch overview. 
+				#p_b_branch_av_sq_diff_dict[branch_name] = branch_sq_diffs #Uncomment this line for more specific information for boxes. 
 			branch_av_sq_diff_dict[power_type + '_' + bus_type] = p_b_branch_av_sq_diff_dict
 
 	print(branch_av_sq_diff_dict) 
