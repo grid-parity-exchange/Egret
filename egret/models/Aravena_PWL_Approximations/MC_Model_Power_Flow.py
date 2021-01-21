@@ -166,61 +166,70 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     model.box_index_set = pe.RangeSet(Q)
 
+    model.power_type_set = pe.Set(initialize=[0,1])
+    #Note: 0 is for power_type == "Active"; 1 is for power_type=="Reactive"
+
     #For active power energization/deenergization
-    model.u_branch = pe.Var(branch_name_set, model.box_index_set, within=pe.Binary)
+    model.u_branch = pe.Var(branch_name_set, model.box_index_set, model.power_type_set, within=pe.Binary)
 
     #For selecting the appropriate interval of the PWL approximation
-    model.dva_branch = pe.Var(branch_name_set, model.box_index_set)
+    model.dva_branch = pe.Var(branch_name_set, model.box_index_set, model.power_type_set)
 
     #(5) - Constraints for the on/off variable u
 
-    def u_sum_rule(model, branch_name):
-    	return model.u[branch_name] == sum(model.u_branch[branch_name, i] for i in model.box_index_set)
+    def u_sum_rule(model, branch_name, j):
+    	return model.u[branch_name] == sum(model.u_branch[branch_name, i, j] for i in model.box_index_set)
 
-    model.u_sum_Constr = pe.Constraint(branch_name_set, rule=u_sum_rule)
+    model.u_sum_Constr = pe.Constraint(branch_name_set, model.power_type_set, rule=u_sum_rule)
 
 
     #(6) - Constraints that sum of dva variables should be equal to total dva
 
     #Upper bound constraints
 
-    def delta_branch_ub_rule(model, branch_name):
+    def delta_branch_ub_rule(model, branch_name, j):
     	branch = branches[branch_name]
 
     	from_bus = branch['from_bus']
     	to_bus = branch['to_bus']
 
-    	return -model.dva[(from_bus, to_bus)] + sum(model.dva_branch[branch_name, i] for i in model.box_index_set) <= math.pi*(1-model.u[branch_name])
+    	return -model.dva[(from_bus, to_bus)] + sum(model.dva_branch[branch_name, i, j] for i in model.box_index_set) <= math.pi*(1-model.u[branch_name])
 
-    model.delta_branch_ub_Constr = pe.Constraint(branch_name_set, rule=delta_branch_ub_rule)
+    model.delta_branch_ub_Constr = pe.Constraint(branch_name_set, model.power_type_set, rule=delta_branch_ub_rule)
 
     #Lower bound constraints
 
-    def delta_branch_lb_rule(model, branch_name):
+    def delta_branch_lb_rule(model, branch_name, j):
     	branch = branches[branch_name]
 
     	from_bus = branch['from_bus']
     	to_bus = branch['to_bus']
 
-    	return -model.dva[(from_bus, to_bus)] + sum(model.dva_branch[branch_name, i] for i in model.box_index_set) >= -math.pi*(1-model.u[branch_name])
+    	return -model.dva[(from_bus, to_bus)] + sum(model.dva_branch[branch_name, i, j] for i in model.box_index_set) >= -math.pi*(1-model.u[branch_name])
 
-    model.delta_branch_lb_Constr = pe.Constraint(branch_name_set, rule=delta_branch_lb_rule)
+    model.delta_branch_lb_Constr = pe.Constraint(branch_name_set, model.power_type_set, rule=delta_branch_lb_rule)
 
     #(7) - Constraints that force dva variable to be in only one interval
 
     #Upper bound
 
-    def delta_branch_box_ub_rule(model, branch_name, i):
-    	delta_ub = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coords'][i-1][7][2]
-    	return model.dva_branch[branch_name, i] <= delta_ub*model.u_branch[branch_name, i]
+    def delta_branch_box_ub_rule(model, branch_name, i, j):
+    	if j==0:
+    		delta_ub = branch_dict["Active_from_bus"][branch_name]['boxes']['coords'][i-1][7][2]
+    	else:
+    		delta_ub = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coords'][i-1][7][2]
+    	return model.dva_branch[branch_name, i, j] <= delta_ub*model.u_branch[branch_name, i, j]
 
-    model.delta_branch_box_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=delta_branch_box_ub_rule)
+    model.delta_branch_box_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, model.power_type_set, rule=delta_branch_box_ub_rule)
 
-    def delta_branch_box_lb_rule(model, branch_name, i):
-    	delta_lb = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coords'][i-1][0][2]
-    	return model.dva_branch[branch_name, i] >= delta_lb*model.u_branch[branch_name, i]
+    def delta_branch_box_lb_rule(model, branch_name, i, j):
+    	if j==0:
+    		delta_lb = branch_dict["Active_from_bus"][branch_name]['boxes']['coords'][i-1][0][2]
+    	else:
+    		delta_lb = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coords'][i-1][0][2]
+    	return model.dva_branch[branch_name, i, j] >= delta_lb*model.u_branch[branch_name, i, j]
 
-    model.delta_branch_box_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=delta_branch_box_lb_rule)
+    model.delta_branch_box_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, model.power_type_set, rule=delta_branch_box_lb_rule)
 
     #(8) - Approximating power flow equation by PWL approximation
 
@@ -238,7 +247,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	coeffs = branch_dict["Active_from_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
     	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
-    	return -model.pf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] <= M*(1-model.u_branch[branch_name, i])
+    	return -model.pf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 0] + coeffs[3] <= M*(1-model.u_branch[branch_name, i, 0])
 
     model.pwl_active_from_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_from_ub_rule)
 
@@ -254,7 +263,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	coeffs = branch_dict["Active_from_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
     	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
-    	return -model.pf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] >= M*(1-model.u_branch[branch_name, i])
+    	return -model.pf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 0] + coeffs[3] >= M*(1-model.u_branch[branch_name, i, 0])
 
     model.pwl_active_from_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_from_lb_rule)
 
@@ -271,7 +280,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	coeffs = branch_dict["Active_to_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
     	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
-    	return -model.pt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] <= M*(1-model.u_branch[branch_name, i])
+    	return -model.pt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 0] + coeffs[3] <= M*(1-model.u_branch[branch_name, i, 0])
 
     model.pwl_active_to_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_to_ub_rule)
 
@@ -287,7 +296,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	coeffs = branch_dict["Active_to_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
     	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
-    	return -model.pt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] >= M*(1-model.u_branch[branch_name, i])
+    	return -model.pt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 0] + coeffs[3] >= M*(1-model.u_branch[branch_name, i, 0])
 
     model.pwl_active_to_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_to_lb_rule)
 
@@ -305,7 +314,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	coeffs = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
     	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
-    	return -model.qf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] <= M*(1-model.u_branch[branch_name, i])
+    	return -model.qf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 1] + coeffs[3] <= M*(1-model.u_branch[branch_name, i, 1])
 
     model.pwl_reactive_from_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_from_ub_rule)
 
@@ -321,7 +330,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	coeffs = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
     	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
-    	return -model.qf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] >= M*(1-model.u_branch[branch_name, i])
+    	return -model.qf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 1] + coeffs[3] >= M*(1-model.u_branch[branch_name, i, 1])
 
     model.pwl_reactive_from_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_from_lb_rule)
 
@@ -339,7 +348,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	coeffs = branch_dict["Reactive_to_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
     	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
-    	return -model.qt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] <= M*(1-model.u_branch[branch_name, i])
+    	return -model.qt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 1] + coeffs[3] <= M*(1-model.u_branch[branch_name, i, 1])
 
     model.pwl_reactive_to_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_to_ub_rule)
 
@@ -355,7 +364,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	coeffs = branch_dict["Reactive_to_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
     	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
-    	return -model.qt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i] + coeffs[3] >= M*(1-model.u_branch[branch_name, i])
+    	return -model.qt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 1] + coeffs[3] >= M*(1-model.u_branch[branch_name, i, 1])
 
     model.pwl_reactive_to_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_to_lb_rule)
 
@@ -429,7 +438,7 @@ if __name__ == '__main__':
 	with open(json_filename, "r") as read_file:
 		branch_dict = json.load(read_file)
 
-	opt = pe.SolverFactory("gurobi")
+	opt = pe.SolverFactory("cplex")
 
 	MC_model = _create_base_ac_with_pwl_approx_model(md_dict, branch_dict, 4, include_feasibility_slack=False)[0]
 
