@@ -15,7 +15,7 @@ from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
 from egret.data.data_utils import map_items, zip_items
 from math import pi, radians, sqrt
 
-from egret.models.acopf import _include_feasibility_slack, solve_acopf, create_psv_acopf_model
+from egret.models.acopf import _include_feasibility_slack, solve_acopf, create_psv_acopf_model, create_rsv_acopf_model
 
 from egret.models.lpac import create_cold_start_lpac_model, solve_lpac
 
@@ -27,16 +27,19 @@ if __name__ == '__main__':
     filename = 'pglib_opf_case30_ieee.m'
     test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
     model_data = create_ModelData(test_case)
-    baron_options = {'LPSol': 3, 'CplexLibName': "C:/Program Files/IBM/ILOG/CPLEX_Studio129/cplex/bin/x64_win64/cplex1290.dll"}
+    baron_options = {'LPSol': 8}# 'CplexLibName': "C:/Program Files/IBM/ILOG/CPLEX_Studio129/cplex/bin/x64_win64/cplex1290.dll"}
     knitro_options = {'maxit': 20000}
     kwargs = {'include_feasibility_slack':False}
+    kwargs_for_lpac={}
     #md,m,results = solve_lpac(model_data, "baron",options=baron_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
     #md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True,**kwargs)
     #md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    ac_md, ac_m, ac_results = solve_acopf(model_data, "knitroampl", options=knitro_options,acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
+    md,m,results = solve_lpac(model_data, "cplex",lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    updated_knitro_options = {'maxit': 20000, 'strat_warm_start': 1}
+    ac_md, ac_m, ac_results = solve_acopf(model_data, "knitroampl",options=knitro_options,acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
+    ac_md, ac_m, ac_results = solve_acopf(model_data, "baron",options=baron_options,acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
     
-    #print(ac_results)
+    #print(ac_results
     lpac_pg_gens = []
     lpac_qg_gens = []
     for gen in md.elements(element_type="generator"):

@@ -885,17 +885,17 @@ if __name__ == '__main__':
     import os
     from egret.parsers.matpower_parser import create_ModelData
 
-    filename = 'pglib_opf_case30_ieee.m'
+    filename = 'pglib_opf_case300_ieee.m'
     test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
     model_data = create_ModelData(test_case)
     baron_options = {'LPSol': 3, 'CplexLibName': "C:/Program Files/IBM/ILOG/CPLEX_Studio129/cplex/bin/x64_win64/cplex1290.dll", 'summary': 1, 'SumName': "summary"}
     knitro_options = {'maxit': 20000}
     kwargs = {'include_feasibility_slack':False}
     kwargs_for_lpac = {'mode': "uniform"}
-    #md,m,results = solve_lpac(model_data, "baron", lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True,**kwargs)
-    md,m,results = solve_lpac(model_data, "cplex", ac_solver = "knitroampl", ac_options=knitro_options,lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
-    md,m,results = solve_lpac(model_data, "knitroampl",lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
-    md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    md,m,results = solve_lpac(model_data, "baron", options=baron_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    # md,m,results = solve_lpac(model_data, "cplex", ac_solver = "knitroampl", ac_options=knitro_options,lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    # md,m,results = solve_lpac(model_data, "knitroampl", options=knitro_options,lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    # md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
     #ac_md, ac_m, ac_results = solve_acopf(model_data, "knitroampl", options=knitro_options,acopf_model_generator=create_rsv_acopf_model,return_model=True, return_results=True,**kwargs)
     
     
