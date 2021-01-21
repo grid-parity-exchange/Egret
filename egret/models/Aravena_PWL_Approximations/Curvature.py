@@ -63,7 +63,7 @@ def curvature(delta, branch, bus_type = "from_bus", power_type = "Reactive"):
 #Functions for Partitioning the domain into Q pieces of equal curvature
 #########################
 
-def curvature_target_x_value(integration_lb, interval_lb, interval_ub, target_value, branch, bus_type, power_type="Reactive", eps = 0.0001):
+def curvature_target_x_value(integration_lb, interval_lb, interval_ub, target_value, branch, bus_type="from_bus", power_type="Reactive", eps = 0.0001):
 	#Finds an approximation for a value x in the domain where accumulated curvature is equal to a target value
 	#The strategy is to recursively narrow down the given interval into smaller and smaller intervals until an acceptable point is found. 
 	x = np.linspace(interval_lb, interval_ub)
@@ -78,7 +78,7 @@ def curvature_target_x_value(integration_lb, interval_lb, interval_ub, target_va
 		if cumulated_curvature - target_value > eps:
 			return curvature_target_x_value(integration_lb, x[i-1], x[i], target_value, branch, bus_type, power_type, eps)
 
-def eq_curvature_partition(lb, ub, Q, branch, bus_type, power_type="Reactive", eps = 0.0001):
+def eq_curvature_partition(lb, ub, Q, branch, bus_type="from_bus", power_type="Reactive", eps = 0.0001):
 	#Divides the domain [lb, ub] into Q pieces of (approximately) equal curvature
 	if Q == 1:
 		return [lb, ub]
@@ -89,7 +89,7 @@ def eq_curvature_partition(lb, ub, Q, branch, bus_type, power_type="Reactive", e
 	breakpoints.append(ub)
 	return breakpoints
 
-def dev_from_linear(lb, ub, branch, bus_type, power_type="Reactive", lin_tol=0.1):
+def dev_from_linear(lb, ub, branch, bus_type="bus_type", power_type="Reactive", lin_tol=0.1):
 	#Finds an x-value where deviation from normal is more than an epsilon tolerance
 	x = np.linspace(lb, ub)
 	slope = (power_equation(x[1], branch, bus_type, power_type) - power_equation(x[0], branch, bus_type, power_type))/(x[1] - x[0])
@@ -113,7 +113,7 @@ def close_to_linear_cuts(lb, ub, branch, bus_type, power_type="Reactive", lin_to
 		return partition + close_to_linear_cuts(x, ub, branch, bus_type, power_type, lin_tol)
 	
 
-def refined_eq_curvature_partition(lb, ub, Q, branch, bus_type, power_type = "Reactive", eps=0.0001, lin_tol=0.1):
+def refined_eq_curvature_partition(lb, ub, Q, branch, bus_type="from_bus", power_type = "Reactive", eps=0.0001, lin_tol=0.1):
 	partition = eq_curvature_partition(lb, ub, Q, branch, bus_type, power_type, eps)
 	refined_partition = [lb]
 	for i in range(Q):
@@ -171,13 +171,13 @@ if __name__ == '__main__':
     branch = branches['10']
     print(branch)
 
-    from_partition = eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="from_bus")
+    from_partition = eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, power_type="Active")
 
-    to_partition = eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="to_bus")
+    to_partition = eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, power_type="Active")
 
-    from_refined_partition = refined_eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="from_bus", power_type="Reactive", eps=0.0001, lin_tol = 0.5)
+    from_refined_partition = refined_eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, power_type="Reactive")
 
-    to_refined_partition = refined_eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, bus_type="to_bus", power_type="Reactive", eps=0.0001, lin_tol = 0.5)
+    to_refined_partition = refined_eq_curvature_partition(-np.pi/6, np.pi/6, 20, branch, power_type="Reactive")
 
     print("Unrefined from partition:", from_partition)
 

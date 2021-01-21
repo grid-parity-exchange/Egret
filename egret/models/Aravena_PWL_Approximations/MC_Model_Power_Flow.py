@@ -427,7 +427,7 @@ if __name__ == '__main__':
 	from egret.parsers.matpower_parser import create_ModelData
 
 	path = os.path.dirname(__file__)
-	case = 'case14_ieee'
+	case = 'case30_ieee'
 	filename = 'pglib_opf_' + case + '.m'
 	test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
 	md_dict = create_ModelData(test_case)
@@ -441,5 +441,7 @@ if __name__ == '__main__':
 	opt = pe.SolverFactory("cplex")
 
 	MC_model = _create_base_ac_with_pwl_approx_model(md_dict, branch_dict, 4, include_feasibility_slack=False)[0]
+
+	#MC_model.pprint()
 
 	opt.solve(MC_model, tee=True, keepfiles=True, symbolic_solver_labels=True)

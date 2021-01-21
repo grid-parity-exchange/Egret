@@ -292,7 +292,7 @@ def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delt
 
     Vi_partition = [Vi_lower, Vi_upper]
     Vj_partition = [Vj_lower, Vj_upper]
-    delta_partition = eq_curvature_partition(delta_lower, delta_upper, 4, branch, bus_type = bus_type, power_type=power_type)
+    delta_partition = eq_curvature_partition(delta_lower, delta_upper, 10, branch, bus_type = bus_type, power_type=power_type)
 
     model = pe.ConcreteModel()
 
@@ -500,7 +500,7 @@ if __name__ == '__main__':
                     branch_p_b_dict[branch_name] = pwl_model_branch_preprocessing(from_bus_lb, from_bus_ub, to_bus_lb, to_bus_ub, delta_lb, delta_ub, branch, bus_type, power_type)
                 all_branches_coefs_dict[power_type + '_' + bus_type] = branch_p_b_dict
     
-    json_filename = case + '_delta_4_curvature_partition.json'
+    json_filename = case + '_delta_10_curvature_partition.json'
     with open(json_filename, 'w') as file:
         json.dump(all_branches_coefs_dict, file, indent=2)
 
