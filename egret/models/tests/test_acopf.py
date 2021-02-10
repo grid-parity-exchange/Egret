@@ -53,6 +53,29 @@ class TestPSVACOPF(unittest.TestCase):
         self.assertTrue(comparison)
 
 
+class TestArctanACOPF(unittest.TestCase):
+    show_output = True
+
+    @classmethod
+    def setUpClass(self):
+        download_dir = os.path.join(current_dir, 'transmission_test_instances')
+        if not os.path.exists(os.path.join(download_dir, 'pglib-opf-master')):
+            from egret.thirdparty.get_pglib_opf import get_pglib_opf
+            get_pglib_opf(download_dir)
+
+    @parameterized.expand(zip(test_cases, soln_cases))
+    def test_acopf_model(self, test_case, soln_case):
+        md_soln = ModelData.read(soln_case)
+        md_dict = create_ModelData(test_case)
+
+        model, scaled_md = create_atan_acopf_model(md_dict)
+        opt = pe.SolverFactory('ipopt')
+        res = opt.solve(model)
+
+        self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
+        self.assertAlmostEqual(pe.value(model.obj)/md_soln.data['system']['total_cost'], 1, 4)
+
+
 class TestRSVACOPF(unittest.TestCase):
     show_output = True
 
