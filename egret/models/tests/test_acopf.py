@@ -20,7 +20,7 @@ from parameterized import parameterized
 from egret.parsers.matpower_parser import create_ModelData
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee']#,'pglib_opf_case3012wp_k']
+case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee','pglib_opf_case3012wp_k']
 test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
 soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'acopf_solution_files', '{}_acopf_solution.json'.format(i)) for i in case_names]
 
@@ -73,7 +73,7 @@ class TestArctanACOPF(unittest.TestCase):
         res = opt.solve(model)
 
         self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
-        self.assertAlmostEqual(pe.value(model.obj)/md_soln.data['system']['total_cost'], 1, 5)
+        self.assertAlmostEqual(pe.value(model.obj)/md_soln.data['system']['total_cost'], 1, 4)
 
 
 class TestRSVACOPF(unittest.TestCase):
