@@ -23,6 +23,7 @@ from collections import OrderedDict
 from pyomo.contrib.fbbt.fbbt import fbbt
 import warnings
 import logging
+from typing import List, Tuple, AbstractSet
 try:
     import coramin
     coramin_available = True
@@ -301,6 +302,41 @@ def declare_eq_s(model, index_set, coordinate_type=CoordinateType.POLAR):
         raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
 
 
+def declare_eq_dva_arctan(model, index_set):
+    m = model
+    con_set = decl.declare_set('_con_eq_dva_arctan', model, index_set)
+    m.eq_dva_arctan = pe.Constraint(con_set)
+
+    for from_bus, to_bus in con_set:
+        expr = m.dva[from_bus, to_bus] == pe.atan(m.s[from_bus, to_bus] / m.c[from_bus, to_bus])
+        m.eq_dva_arctan[from_bus, to_bus] = expr
+
+
+def declare_eq_dva_cycle_sum(model, cycle_basis: List[List], valid_bus_pairs: AbstractSet[Tuple]):
+    m = model
+    m.dva_cycle_sum_set = pe.Set(initialize=list(range(len(cycle_basis))))
+    m.eq_dva_cycle_sum = pe.Constraint(m.dva_cycle_sum_set)
+
+    for con_ndx, cycle in enumerate(cycle_basis):
+        expr = 0
+        for ndx in range(len(cycle) - 1):
+            b1 = cycle[ndx]
+            b2 = cycle[ndx + 1]
+            assert ((b1, b2) in valid_bus_pairs) != ((b2, b1) in valid_bus_pairs)  # exclusive or
+            if (b1, b2) in valid_bus_pairs:
+                expr += m.dva[b1, b2]
+            else:
+                expr -= m.dva[b2, b1]
+        b1 = cycle[-1]
+        b2 = cycle[0]
+        assert ((b1, b2) in valid_bus_pairs) != ((b2, b1) in valid_bus_pairs)
+        if (b1, b2) in valid_bus_pairs:
+            expr += m.dva[b1, b2]
+        else:
+            expr -= m.dva[b2, b1]
+        m.eq_dva_cycle_sum[con_ndx] = expr == 0
+
+
 def declare_eq_branch_current(model, index_set, branches, coordinate_type=CoordinateType.RECTANGULAR):
     """
     Create the equality constraints for the real and imaginary current
@@ -441,17 +477,18 @@ def declare_ineq_soc(model, index_set, use_outer_approximation=False):
         con_set = decl.declare_set("_con_ineq_soc", model, index_set)
         m.ineq_soc = pe.Constraint(con_set)
         for from_bus, to_bus in con_set:
-            m.ineq_soc[(from_bus, to_bus)] = m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 <= m.vmsq[from_bus] * m.vmsq[to_bus]
+            m.ineq_soc[(from_bus, to_bus)] = m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 <= m.vmsq[
+                from_bus] * m.vmsq[to_bus]
     else:
         if not coramin_available:
             raise ImportError('Cannot create SOC relaxation with outer approximation unless coramin is available.')
         """
         in order to use outer approximation, we have to reformulate 
-        
+
         c**2 + s**2 <= vmsq[from_bus] * vmsq[to_bus]
-        
+
         to
-        
+
         (c**2 + s**2 + z1**2) ** 0.5 <= z2
         z1 = 0.5 * (vmsq[from_bus] - vmsq[to_bus])
         z2 = 0.5 * (vmsq[from_bus] + vmsq[to_bus]) 
@@ -469,9 +506,21 @@ def declare_ineq_soc(model, index_set, use_outer_approximation=False):
             fbbt(m._eq_z2[from_bus, to_bus])
             m.ineq_soc_OA[from_bus, to_bus].build(aux_var=m._z2[from_bus, to_bus],
                                                   shape=coramin.utils.FunctionShape.CONVEX,
-                                                  f_x_expr=(m.c[from_bus, to_bus]**2 +
-                                                            m.s[from_bus, to_bus]**2 +
-                                                            m._z1[from_bus, to_bus]**2)**0.5)
+                                                  f_x_expr=(m.c[from_bus, to_bus] ** 2 +
+                                                            m.s[from_bus, to_bus] ** 2 +
+                                                            m._z1[from_bus, to_bus] ** 2) ** 0.5)
+
+
+def declare_ineq_soc_ub(model, index_set):
+    """
+    create the constraint for the second order cone
+    """
+    m = model
+    con_set = decl.declare_set("_con_ineq_soc_ub", model, index_set)
+    m.ineq_soc_ub = pe.Constraint(con_set)
+    for from_bus, to_bus in con_set:
+        m.ineq_soc_ub[(from_bus, to_bus)] = (m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 >=
+                                             m.vmsq[from_bus] * m.vmsq[to_bus])
 
 
 def declare_eq_branch_power_btheta_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):

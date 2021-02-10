@@ -1,4 +1,4 @@
-from .acopf import _create_base_power_ac_model, create_rsv_acopf_model, create_psv_acopf_model
+from .acopf import _create_base_power_ac_model, create_rsv_acopf_model, create_psv_acopf_model, create_atan_acopf_model
 import egret.model_library.transmission.branch as libbranch
 from egret.data.data_utils import map_items, zip_items
 from collections import OrderedDict
@@ -33,6 +33,14 @@ def _relaxation_helper(model, md, include_soc, use_linear_relaxation):
 
 def create_soc_relaxation(model_data, use_linear_relaxation=True, include_feasibility_slack=False):
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+    _relaxation_helper(model=model, md=md, include_soc=True, use_linear_relaxation=use_linear_relaxation)
+    return model, md
+
+
+def create_atan_relaxation(model_data, use_linear_relaxation=True, include_feasibility_slack=False):
+    model, md = create_atan_acopf_model(model_data=model_data, include_feasibility_slack=include_feasibility_slack)
+    del model.ineq_soc
+    del model._con_ineq_soc
     _relaxation_helper(model=model, md=md, include_soc=True, use_linear_relaxation=use_linear_relaxation)
     return model, md
 
