@@ -33,7 +33,14 @@ def _relaxation_helper(model, md, include_soc, use_linear_relaxation):
 
 def create_soc_relaxation(model_data, use_linear_relaxation=True, include_feasibility_slack=False):
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
-    _relaxation_helper(model=model, md=md, include_soc=True, use_linear_relaxation=use_linear_relaxation)
+    if use_linear_relaxation:
+        _relaxation_helper(model=model, md=md, include_soc=True, use_linear_relaxation=use_linear_relaxation)
+    else:
+        branch_attrs = md.attributes(element_type='branch')
+        bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
+        unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
+        libbranch.declare_ineq_soc(model=model, index_set=unique_bus_pairs,
+                                   use_outer_approximation=use_linear_relaxation)
     return model, md
 
 
