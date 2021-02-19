@@ -226,3 +226,18 @@ def test_json_gz_read_write():
     md_read = ModelData.read('testdata.json.gz')
 
     assert md.data == md_read.data
+
+def test_init_read():
+    md = ModelData(testdata)
+    md.write('testdata.json')
+
+    md_read = ModelData('testdata.json')
+
+    assert md.data == md_read.data
+
+def test_init_clone():
+    md = ModelData(testdata)
+    md_clone = ModelData(md)
+
+    assert md.data == md_clone.data
+    assert id(md.data) != id(md_clone.data)
