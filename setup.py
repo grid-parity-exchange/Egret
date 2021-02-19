@@ -27,7 +27,8 @@ setuptools_kwargs = {
     'scripts': [],
     'include_package_data': True,
     'install_requires' : ['pyomo>=5.7.1', 'numpy', 'pytest', 'pandas', \
-                            'matplotlib', 'seaborn', 'scipy', 'networkx']
+                            'matplotlib', 'seaborn', 'scipy', 'networkx'],
+    'python_requires' : '>=3.7, <4',
 }
 
 setup(name=DISTNAME,
