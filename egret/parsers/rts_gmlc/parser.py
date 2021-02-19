@@ -94,12 +94,12 @@ def create_model_data_dict(rts_gmlc_dir:str,
                 gen['initial_status'] = t0_state[name]['initial_status']
                 gen['initial_p_output'] = t0_state[name]['initial_p_output']
                 gen['initial_q_output'] = t0_state[name]['initial_q_output']
-    return model
+    return model.data
 
 
 def parse_to_cache(rts_gmlc_dir:str, 
-                   begin_time:datetime,
-                   end_time:datetime) -> ParsedCache:
+                   begin_time:Union[datetime,str],
+                   end_time:Union[datetime,str]) -> ParsedCache:
     ''' Parse data in RTS-GMLC format, keeping the portions between a start and end time
 
     rts_gmlc_dir : str
@@ -125,7 +125,9 @@ def parse_to_cache(rts_gmlc_dir:str,
 
     data_start, data_end = _get_data_date_range(metadata_df)
 
-    # TODO: Validate begin_time and end_time
+    begin_time, end_time = _parse_datetimes_if_strings(begin_time, end_time)
+    # TODO: Validate begin_time and end_time.
+    #       Do we want to enforce that they fall within the data date range?
 
     timeseries_df = _read_timeseries_data(model_data, rts_gmlc_dir,
                            begin_time, end_time, minutes_per_period)
@@ -645,14 +647,12 @@ def _read_timeseries_data(model_data:dict, rts_gmlc_dir:str,
     =======
     all_timeseries: DataFrame
         A DataFrame with the following columns:
-        [Simulation, Category, Object, Parameter, Scaling Factor, Series]
+        [Simulation, Category, Object, Parameter, Series]
 
     The Series column holds the data as a pandas series, indexed by the datetime
     of the value.
 
     """
-    # Where we'll keep our results
-    timeseries_data = {'DAY_AHEAD':{}, 'REAL_TIME':{}}
 
     # All timeseries data that has already been read (map[filename] -> DataFrame)
     timeseries_file_map = {}
@@ -702,11 +702,13 @@ def _read_timeseries_data(model_data:dict, rts_gmlc_dir:str,
             timeseries_file_map[fname] = data
 
         # Save a reference to the relevant data as a Series
-        scaling_factor = float(row['Scaling Factor'])
-        timeseries_pointer_df.at[idx,'Series'] = timeseries_file_map[fname][row['Object']]*scaling_factor
+        timeseries_pointer_df.at[idx,'Series'] = timeseries_file_map[fname][row['Object']]
 
-    # Remove the file path from the DF
-    timeseries_pointer_df.pop('Data File')
+    # Remove columns that we don't want to preserve
+    keepers= {'Simulation', 'Category', 'Object', 'Parameter', 'Series'}
+    for c in timeseries_pointer_df.columns:
+        if not c in keepers:
+            timeseries_pointer_df.pop(c)
 
     # Remove irrelevant rows
     timeseries_pointer_df.dropna(subset=['Series'], inplace=True)
@@ -716,7 +718,17 @@ def _read_timeseries_data(model_data:dict, rts_gmlc_dir:str,
 
     return timeseries_pointer_df
 
-def _get_datetimes_from_strings(begin_time:str, end_time:str):
+def _parse_datetimes_if_strings(begin_time:Union[datetime,str], end_time:Union[datetime,str]):
+    '''
+    Ensure both dates are datetimes, parsing date strings if necessary.
+
+    Returns
+    -------
+    begin_time:datetime
+        The begin_time as a datetime, parsing it if necessary
+    end_time:datetime
+        The end_time as a datetime, parsing it if necessary
+    '''
 
     datetime_format = "%Y-%m-%d %H:%M:%S"
 
