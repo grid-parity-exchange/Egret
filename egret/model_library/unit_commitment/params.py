@@ -524,6 +524,53 @@ def load_params(model, model_data):
     
     _add_initial_time_periods_on_off_line(model)
     _verify_must_run_t0_state_consistency(model)
+
+    # For future shutdowns/startups beyond the time-horizon
+    model.FutureStatus = Param(model.ThermalGenerators,
+                               within=Reals,
+                               mutable=True,
+                               default=0.
+                               initialize=thermal_gen_attrs.get('future_status', dict()))
+
+    def time_periods_since_last_shutdown_rule(m,g):
+        if value(m.UnitOnT0[g]):
+            # longer than any time-horizon we'd consider
+            return 10000
+        else:
+            return int(math.ceil( value(m.FutureStatus[g]) / value(m.TimePeriodLengthHours) ))
+    model.TimePeriodsSinceShutdown = Param(model.ThermalGenerators, within=PositiveIntegers, mutable=True,
+                                            initialize=time_periods_since_last_shutdown_rule)
+
+    def time_periods_before_startup_rule(m,g):
+        if value(m.FutureStatus[g]) <= 0:
+            # longer than any time-horizon we'd consider
+            return 10000
+        else:
+            return int(math.ceil( value(m.FutureStatus[g]) / value(m.TimePeriodLengthHours) ))
+    model.TimePeriodsBeforeStartup = Param(model.ThermalGenerators, within=PositiveIntegers, mutable=True,
+                                            initialize=time_periods_before_startup_rule)
+
+    def startup_curve_init_rule(m,g):
+        startup_curve = thermal_gens[g].get('startup_curve')
+        ## TODO: check for 'inferred' key or something similar
+        if startup_curve is None:
+            return ()
+        min_down_time = value(m.ScaledMinimumDownTime[g])
+        if len(startup_curve) > min_down_time:
+            logger.warn(f"Truncating startup_curve longer than minimum down time {min_down_time} for generator {g}")
+        return startup_curve[0:min_down_time]
+    model.StartupCurve = Set(model.ThermalGenerators, within=NonNegativeReals, order=True, initialize=startup_curve_init_rule)
+
+    def shutdown_curve_init_rule(m,g):
+        shutdown_curve = thermal_gens[g].get('shutdown_curve')
+        ## TODO: check for 'inferred' key or something similar
+        if shutdown_curve is None:
+            return ()
+        min_down_time = value(m.ScaledMinimumDownTime[g])
+        if len(shutdown_curve) > min_down_time:
+            logger.warn(f"Truncating shutdown_curve longer than minimum down time {min_down_time} for generator {g}")
+        return shutdown_curve[0:min_down_time]
+    model.ShutdownCurve = Set(model.ThermalGenerators, within=NonNegativeReals, order=True, initialize=shutdown_curve_init_rule)
     
     ####################################################################
     # generator power output at t=0 (initial condition). units are MW. #
