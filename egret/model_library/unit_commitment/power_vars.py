@@ -20,6 +20,45 @@ def _add_reactive_power_vars(model):
         return (m.MinimumReactivePowerOutput[g,t], m.MaximumReactivePowerOutput[g,t])
     model.ReactivePowerGenerated = Var(model.ThermalGenerators, model.TimePeriods, within=Reals, bounds=reactive_power_bounds_rule)
 
+def _add_power_generated_grid(model):
+    assert model.InitialTime == 1
+
+    # check the status vars first to print a helpful message
+    if model.status_vars not in ['garver_3bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
+        for s in model.StartupCurve.values():
+            if len(s) > 0:
+                raise RuntimeError(f"Status variable formulation {model.status_vars} is not compatible with startup curves")
+        for s in model.ShutdownCurve.values():
+            if len(s) > 0:
+                raise RuntimeError(f"Status variable formulation {model.status_vars} is not compatible with shutdown curves")
+
+    def power_generated_grid_expr_rule(m, g, t):
+        startup_curve = m.StartupCurve[g]
+        shutdown_curve = m.ShutdownCurve[g]
+        time_periods_before_startup = value(m.TimePeriodsBeforeStartup[g])
+        time_periods_since_shutdown = value(m.TimePeriodsSinceShutdown[g])
+
+        future_past_production = 0.
+        future_startup_power_index = time_periods_before_startup + m.NumTimePeriods - t
+        if future_startup_power_index <= len(startup_curve):
+            future_past_production += startup_curve[future_startup_power_index]
+
+        past_shutdown_power_index = time_periods_since_shutdown + t
+        if past_shutdown_power_index <= len(shutdown_curve):
+            future_past_production += shutdown_curve[past_shutdown_power_index]
+
+        linear_vars, linear_coefs = m._get_power_generated_lists(m,g,t)
+        for startup_idx in range(1, min( len(startup_curve)+1, m.NumTimePeriods+1-t )):
+            linear_vars.append(m.UnitStart[g,t+startup_idx])
+            linear_coefs.append(startup_curve[startup_idx])
+        for shutdown_idx in range(1, min( len(shutdown_curve)+1, t+1 )):
+            linear_vars.append(m.UnitStop[g,t-shutdown_idx+1])
+            linear_coefs.append(shutdown_curve[shutdown_idx])
+
+        return LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs, constant=future_past_production)
+    model.PowerGeneratedStartupShutdown = Expression(model.ThermalGenerators, model.TimePeriods,
+                                                        rule=power_generated_grid_expr_rule)
+
 ## garver/ME power variables (above minimum)
 @add_model_attr(component_name, requires = {'data_loader': None, 'status_vars': None})
 def garver_power_vars(model):
@@ -56,6 +95,8 @@ def garver_power_vars(model):
     model._get_power_generated_lists = lambda m,g,t : ([m.PowerGeneratedAboveMinimum[g,t], m.UnitOn[g,t]], [1., m.MinimumPowerOutput[g,t]])
     model._get_negative_power_generated_lists = lambda m,g,t : ([m.PowerGeneratedAboveMinimum[g,t], m.UnitOn[g,t]], [-1., -m.MinimumPowerOutput[g,t]])
 
+    _add_power_generated_grid(model)
+
     return
 
 ## carrion arroyo power variables (above minimum)
@@ -82,5 +123,7 @@ def basic_power_vars(model):
 
     model._get_power_generated_above_minimum_lists = lambda m,g,t : ([m.PowerGenerated[g,t], m.UnitOn[g,t]], [1., -m.MinimumPowerOutput[g,t]])
     model._get_negative_power_generated_above_minimum_lists = lambda m,g,t : ([m.PowerGenerated[g,t], m.UnitOn[g,t]], [-1., m.MinimumPowerOutput[g,t]])
+
+    _add_power_generated_grid(model)
 
     return
