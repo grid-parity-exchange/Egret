@@ -555,7 +555,6 @@ def load_params(model, model_data):
     ####################################################################
 
     def between_limits_validator(m, v, g):
-        # TODO: this needs to be relaxed
         t = m.TimePeriods.first() 
 
         if value(m.UnitOnT0[g]):
@@ -569,6 +568,14 @@ def load_params(model, model_data):
                 return False
             return True
 
+        elif (len(m.StartupCurve[g]) > 0) or (len(m.ShutdownCurve[g]) > 0):
+            time_periods_before_startup = value(m.TimePeriodsBeforeStartup[g])
+            if time_periods_before_startup <= len(m.StartupCurve[g]):
+                return True
+            time_periods_since_shutdown = value(m.TimePeriodsSinceShutdown[g])
+            if time_periods_since_shutdown <= len(m.ShutdownCurve[g]):
+                return True
+            return v == 0.
         else:
             return v == 0.
 
@@ -696,7 +703,6 @@ def load_params(model, model_data):
 
     def startup_curve_init_rule(m,g):
         startup_curve = thermal_gens[g].get('startup_curve')
-        ## TODO: check for 'inferred' key or something similar
         if startup_curve is None:
             return ()
         min_down_time = value(m.ScaledMinimumDownTime[g])
@@ -707,7 +713,6 @@ def load_params(model, model_data):
 
     def shutdown_curve_init_rule(m,g):
         shutdown_curve = thermal_gens[g].get('shutdown_curve')
-        ## TODO: check for 'inferred' key or something similar
         if shutdown_curve is None:
             return ()
         min_down_time = value(m.ScaledMinimumDownTime[g])
