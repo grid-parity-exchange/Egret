@@ -21,7 +21,7 @@ from collections import namedtuple
 import egret.data.model_data as md
 
 from .parsed_cache import ParsedCache
-from ._reserves import is_valid_reserve_name
+from ._reserves import is_valid_reserve_name, reserve_name_map
 
 def create_ModelData(rts_gmlc_dir:str, 
                      begin_time:Union[datetime,str], end_time:Union[datetime,str], 
@@ -609,6 +609,25 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
         gen_dict["must_run"] = False
 
         elements["generator"][name] = gen_dict
+
+    # Add the reserves
+    reserve_df = pd.read_csv(os.path.join(base_dir,'reserves.csv'))
+    for idx,row in reserve_df.iterrows():
+        res_name = row['Reserve Product']
+        req = float(row['Requirement (MW)'])
+
+        if res_name in reserve_name_map:
+            target_dict = system
+        else:
+            # reserve name must be <type>_R<area>.
+            # split into type and area
+            res_name, area_name = res_name.split("_R", 1)
+            if area_name not in elements['area']:
+                # Skip areas not referenced elsewhere
+                continue
+            target_dict = elements['area'][area_name]
+
+        target_dict[reserve_name_map[res_name]] = req
 
     return model_data
 
