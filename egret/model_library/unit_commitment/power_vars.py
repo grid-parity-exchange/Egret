@@ -24,7 +24,7 @@ def _add_power_generated_grid(model):
     assert model.InitialTime == 1
 
     # check the status vars first to print a helpful message
-    if model.status_vars not in ['garver_3bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
+    if model.status_vars not in ['garver_2bin_vars', 'garver_3bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
         for s in model.StartupCurve.values():
             if len(s) > 0:
                 raise RuntimeError(f"Status variable formulation {model.status_vars} is not compatible with startup curves")
@@ -54,8 +54,8 @@ def _add_power_generated_grid(model):
         for shutdown_idx in range(1, min( len(shutdown_curve)+1, t+1 )):
             linear_vars.append(m.UnitStop[g,t-shutdown_idx+1])
             linear_coefs.append(shutdown_curve[shutdown_idx])
-
-        return LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs, constant=future_past_production)
+        linear_expr = get_linear_expr(m.UnitOn, m.UnitStart, m.UnitStop)
+        return linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs, constant=future_past_production)
     model.PowerGeneratedStartupShutdown = Expression(model.ThermalGenerators, model.TimePeriods,
                                                         rule=power_generated_grid_expr_rule)
 
