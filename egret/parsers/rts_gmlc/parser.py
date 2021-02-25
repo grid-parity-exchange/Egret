@@ -88,12 +88,7 @@ def create_model_data_dict(rts_gmlc_dir:str,
     """
     cache = parse_to_cache(rts_gmlc_dir, begin_time, end_time)
     model = cache.generate_model(simulation, begin_time, end_time)
-    if t0_state is not None:
-        for name, gen in model['elements']['generator']:
-            if gen['generator_type']=='thermal':
-                gen['initial_status'] = t0_state[name]['initial_status']
-                gen['initial_p_output'] = t0_state[name]['initial_p_output']
-                gen['initial_q_output'] = t0_state[name]['initial_q_output']
+    set_t0_data(model.data, rts_gmlc_dir, t0_state)
     return model.data
 
 
@@ -472,7 +467,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
 
     # add the generators
     elements["generator"] = {}
-    RENEWABLE_TYPES = {'WIND', 'HYDRO', 'RTPV', 'PV'}
+    RENEWABLE_TYPES = {'WIND', 'HYDRO', 'RTPV', 'PV', 'ROR'}
     gen_df = pd.read_csv(os.path.join(base_dir,'gen.csv'))
     for idx,row in gen_df.iterrows():
         # if this is storage we need to handle it differently
@@ -506,6 +501,9 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
         UNIT_TYPE = str(row['Unit Type'])
         if UNIT_TYPE in RENEWABLE_TYPES:
             gen_dict["generator_type"] = "renewable"
+            # ROR is treated as HYDRO by Egret
+            if UNIT_TYPE == 'ROR':
+                gen_dict["unit_type"] = "HYDRO"
         elif UNIT_TYPE == 'SYNC_COND':
             ## TODO: should we have a flag for these?
             gen_dict["generator_type"] = "thermal" 
@@ -773,3 +771,62 @@ def _parse_datetimes_if_strings(begin_time:Union[datetime,str], end_time:Union[d
         raise ValueError("Unable to parse end_time")
 
     return begin_time, end_time
+
+def set_t0_data(md:dict, base_dir:str="", t0_state:dict=None):
+    """ Put t0 information into the passed in mode dict
+
+    Only t0 data for thermal generators is populated.
+
+    Data comes from:
+    * t0_state, if provided
+    * otherwise, a file called initial_status.csv, if present
+    * otherwise, t0 data is left blank
+
+    If t0_state is provided, it should be organized as t0_state[name][value],
+    where `name` is the name of a generator, and `value` is 'initial_status',
+    'initial_p_output', and 'initial_q_output'.  For any generator included in
+    to_state, all three values must be present.
+
+    If initial_status.csv is used, it must have a header row and may have 
+    from 1 to 3 data rows.  Row 1 is 'initial_status'.  Row 2 is 
+    'initial_p_output'.  Row 3 is 'initial_q_output'.  Column headers are 
+    the generator names. Default values are used for any missing rows.
+
+    Any generators not mentioned in the data source are left untouched.
+    """
+    if t0_state is not None:
+        for name, gen in md['elements']['generator']:
+            if gen['generator_type']=='thermal' and name in t0_state:
+                gen['initial_status'] = t0_state[name]['initial_status']
+                gen['initial_p_output'] = t0_state[name]['initial_p_output']
+                gen['initial_q_output'] = t0_state[name]['initial_q_output']
+    else:
+        state_fname = os.path.join(base_dir, 'initial_status.csv')
+        if os.path.exists(state_fname):
+            import csv
+            with open(state_fname, 'r') as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            # We now have a list of rows, from 1 to 3 rows long.
+            # Row 1 is 'initial_status', row 2 is 'initial_p_output', and row 3 is 'initial_q_output'.
+            # Any missing row uses defaults
+            row_count = len(rows)
+            for name, gen in md['elements']['generator'].items():
+                if gen['generator_type'] != 'thermal':
+                    continue
+                if name not in reader.fieldnames:
+                    continue
+                gen['initial_status'] = float(rows[0][name])
+                if gen['initial_status'] < 0:
+                    gen['initial_p_output'] = 0.0
+                    gen['initial_q_output'] = 0.0
+                else:
+                    if row_count >= 2:
+                        gen['initial_p_output'] = float(rows[1][name])
+                    else:
+                        gen["initial_p_output"] = gen["p_min"]
+                    if row_count >= 3:
+                        gen['initial_q_output'] = float(rows[2][name])
+                    else:
+                        gen["initial_q_output"] = max(0., gen["q_min"])
