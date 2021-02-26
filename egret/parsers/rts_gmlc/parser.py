@@ -348,6 +348,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
     bus_id_to_name = {}
     bus_areas = set()
     bus_df = pd.read_csv(os.path.join(base_dir,'bus.csv'))
+    has_shunt_cols = 'MW Shunt G' in bus_df and 'MVAR Shunt B' in bus_df
     for idx,row in bus_df.iterrows():
         BUS_TYPE = row['Bus Type']
         if not BUS_TYPE in bus_types:
@@ -382,16 +383,17 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             }
             elements["load"][bus_name] = load_dict
 
-        GS = float(row['MW Shunt G'])
-        BS = float(row['MVAR Shunt B'])        
-        if GS != 0 or BS != 0:
-            shunt_dict = {
-                "shunt_type":"fixed", 
-                "bus": bus_name,
-                "gs": GS,
-                "bs": BS
-            }
-            elements["shunt"][bus_name] = shunt_dict
+        if has_shunt_cols:
+            GS = float(row['MW Shunt G'])
+            BS = float(row['MVAR Shunt B'])        
+            if GS != 0 or BS != 0:
+                shunt_dict = {
+                    "shunt_type":"fixed", 
+                    "bus": bus_name,
+                    "gs": GS,
+                    "bs": BS
+                }
+                elements["shunt"][bus_name] = shunt_dict
 
         if BUS_TYPE == 'Ref':
             va = bus_dict['va']
@@ -519,28 +521,41 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
         # Gen cost
         ## round as in RTS-GMLC Prescient/topysp.py
         pmax = float(row['PMax MW'])
-        x = {i: round(float(row[f'Output_pct_{i}'])*pmax, 1)
-             for i in range(4) 
-        }
+        # There can be any number of 'Output_pct_<i>' columns.
+        # Stop at the first one that doesn't exist or doesn't hold a number
+        def valid_output_pcts():
+            for i in range(50):
+                try:
+                    val = float(row[f'Output_pct_{i}'])
+                    yield (i, val)
+                except:
+                    return
+        x = {i: round(val*pmax, 1)
+             for i,val in valid_output_pcts()
+            }
+        fuel_field_count = len(x)
 
-        ## /1000. from the RTS-GMLC MATPOWER writer -- 
-        ## heat rates are in BTU/kWh, 1BTU == 10^-6 MMBTU, 1kWh == 10^-3 MWh, so MMBTU/MWh == 10^3/10^6 * BTU/kWh
-        f = {}
-        f[0] = (float(row['HR_avg_0'])*1000./ 1000000.)*x[0]
-        for i in range(1,4):
-            f[i] = (((x[i]-x[i-1])*(float(row[f'HR_incr_{i}'])*1000. / 1000000.))) + f[i-1]
+        if fuel_field_count > 0:
+            ## /1000. from the RTS-GMLC MATPOWER writer -- 
+            ## heat rates are in BTU/kWh, 1BTU == 10^-6 MMBTU, 1kWh == 10^-3 MWh, so MMBTU/MWh == 10^3/10^6 * BTU/kWh
+            f = {}
+            f[0] = (float(row['HR_avg_0'])*1000./ 1000000.)*x[0]
+            for i in range(1,fuel_field_count):
+                f[i] = (((x[i]-x[i-1])*(float(row[f'HR_incr_{i}'])*1000. / 1000000.))) + f[i-1]
 
-        fuel_price = float(row['Fuel Price $/MMBTU'])
-        y = {i: fuel_price*f[i] for i in range(4)}
+            fuel_price = float(row['Fuel Price $/MMBTU'])
+            y = {i: fuel_price*f[i] for i in range(fuel_field_count)}
 
-        # only include the cost coeffecients that matter
-        P_COEFF = [ (x[i], round(y[i],2)) for i in range(4) if (((i == 0) or (x[i-1],y[i-1]) != (x[i], y[i])) and (x[i], y[i]) != (0.,0.)) ]
-        if P_COEFF == []:
-            P_COEFF = [(pmax, 0.0)] 
+            # only include the cost coeffecients that matter
+            P_COEFF = [ (x[i], round(y[i],2)) for i in range(fuel_field_count) if (((i == 0) or (x[i-1],y[i-1]) != (x[i], y[i])) and (x[i], y[i]) != (0.,0.)) ]
+            if P_COEFF == []:
+                P_COEFF = [(pmax, 0.0)] 
+            gen_dict["p_cost"] = {"data_type": "cost_curve", "cost_curve_type":"piecewise", "values": P_COEFF }
 
-        F_COEFF = [ (x[i], round(f[i],2)) for i in range(4) if (((i == 0) or (x[i-1],f[i-1]) != (x[i], f[i])) and (x[i], f[i]) != (0.,0.)) ]
-        if F_COEFF == []:
-            F_COEFF = [(pmax, 0.0)]
+            F_COEFF = [ (x[i], round(f[i],2)) for i in range(fuel_field_count) if (((i == 0) or (x[i-1],f[i-1]) != (x[i], f[i])) and (x[i], f[i]) != (0.,0.)) ]
+            if F_COEFF == []:
+                F_COEFF = [(pmax, 0.0)]
+            gen_dict["p_fuel"] = {"data_type": "fuel_curve", "values": F_COEFF }
                 
         # UC Data
         MIN_DN_TIME = float(row['Min Down Time Hr'])
@@ -595,8 +610,6 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
         gen_dict["ramp_down_60min"] = 60.*ramp_q
         
         gen_dict["power_factor"] = 0.0
-        gen_dict["p_cost"] = {"data_type": "cost_curve", "cost_curve_type":"piecewise", "values": P_COEFF }
-        gen_dict["p_fuel"] = {"data_type": "fuel_curve", "values": F_COEFF }
         gen_dict["fuel_cost"] = fuel_price
 
         # these assumptions are the same as prescient-rtsgmlc
