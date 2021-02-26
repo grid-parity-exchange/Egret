@@ -48,10 +48,43 @@ class ParsedCache():
 
 
     def generate_model(self, simulation_type:str, begin_time:datetime, end_time:datetime) -> ModelData:
-        md = copy.deepcopy(self.skeleton)
-        self._process_timeseries_data(md, simulation_type, begin_time, end_time)
-        self._insert_system_data(md, simulation_type, begin_time, end_time)
+        """ Create a new model populated with requested data 
+
+        Parameters
+        ----------
+        simulation_type:str
+            Either 'DAY_AHEAD' or 'REAL_TIME'
+        begin_time:datetime
+            The earliest time to include in the returned data
+        end_time:datetime
+            The earliest time to NOT include in the returned data
+        """
+        md = self.get_new_skeleton()
+        self.populate_skeleton_with_data(md, simulation_type, begin_time, end_time)
         return ModelData(md)
+
+    def get_new_skeleton(self) -> dict:
+        """ Get a new model dict with system elements but no time-specific data
+        """
+        return copy.deepcopy(self.skeleton)
+
+    def populate_skeleton_with_data(self, skeleton_dict:dict, simulation_type:str, 
+                                    begin_time:datetime, end_time:datetime) -> None:
+        """ Update an existing model dict with requested data
+
+        Parameters
+        ----------
+        skeleton_dict:dict
+            The skeleton model dict to populate with data
+        simulation_type:str
+            Either 'DAY_AHEAD' or 'REAL_TIME'
+        begin_time:datetime
+            The earliest time to include in the returned data
+        end_time:datetime
+            The earliest time to NOT include in the returned data
+        """
+        self._process_timeseries_data(skeleton_dict, simulation_type, begin_time, end_time)
+        self._insert_system_data(skeleton_dict, simulation_type, begin_time, end_time)
 
     def _process_timeseries_data(self, md:dict, simulation_type:str, 
                                  begin_time:datetime, end_time:datetime) -> None:
