@@ -40,7 +40,7 @@ jobs:
                       pyutilib-version: 6.0.0
                     - os: ubuntu-latest
                       python-version: 3.7
-                      pyomo-version: master
+                      pyomo-version: main
                       pyutilib-version: master
         steps:
           - uses: actions/checkout@v2
