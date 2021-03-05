@@ -22,8 +22,6 @@ from egret.data.data_utils import zip_items
 from egret.model_library.defn import CoordinateType
 from math import pi, radians
 from collections import OrderedDict
-from egret.models.ac_relaxations import _relaxation_helper
-
 
 def _create_base_acpf_model(model_data):
     md = model_data.clone_in_service()
@@ -204,7 +202,6 @@ def create_psv_acpf_model(model_data):
     # bus, then we fix the pg for all but one
     for i,g in enumerate(gens_by_bus[ref_bus]):
         if i > 0:
-            print('found multiple generators attached to the reference bus. fixing all but one')
             model.pg[g].fixed = True
 
     for bus_name in bus_attrs['names']:
