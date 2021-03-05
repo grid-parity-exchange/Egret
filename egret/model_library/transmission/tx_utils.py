@@ -174,6 +174,38 @@ def gens_by_bus(buses, gens):
 
     return gens_by_bus
 
+def over_gen_limit(load, gens, gen_maxs):
+    '''
+    Calculates the maximum amount of over-generation
+    given a load and set of generators with
+    associated maximum outputs
+    '''
+    max_over_gen = 0.
+    if load < 0.:
+        max_over_gen += -load
+    for g in gens:
+        g_max = gen_maxs[g]
+        if g_max > 0:
+            max_over_gen += g_max
+
+    return max_over_gen
+
+def load_shed_limit(load, gens, gen_mins):
+    '''
+    Calculates the maximum amount of load shedding
+    given a load and set of generators with
+    associated minimum outputs
+    '''
+    max_load_shed = 0.
+    if load > 0.:
+        max_load_shed += load
+    for g in gens:
+        g_min = gen_mins[g]
+        if g_min < 0:
+            max_load_shed += -g_min
+
+    return max_load_shed
+
 ## attributes which are scaled for power flow models
 ancillary_service_stack = [
                             'reserve_requirement',
@@ -205,7 +237,7 @@ ancillary_service_stack = [
 ## TODO?: break apart by data that needed to be scaled down (capacity limits, power),
 ## vs. scaled up (costs, prices, etc)
 scaled_attributes = {
-                         ('element_type','generator'): [
+                         ('element_type','generator', None): [
                                                           'p_min',
                                                           'p_max',
                                                           'p_min_agc',
@@ -251,7 +283,7 @@ scaled_attributes = {
                                                           'supplemental_spinning_capacity',
                                                           'supplemental_non_spinning_capacity',
                                                        ],
-                       ('element_type','storage'): [
+                       ('element_type','storage', None): [
                                                         'energy_capacity',
                                                         'max_discharge_rate',
                                                         'min_discharge_rate',
@@ -266,13 +298,13 @@ scaled_attributes = {
                                                         'charge_cost',
                                                         'discharge_cost',
                                                    ],
-                       ('element_type','load') : [
+                       ('element_type','load', None) : [
                                                       'p_load',
                                                       'q_load',
                                                       'p_load_shed',
                                                       'q_load_shed',
                                                      ],
-                       ('element_type','branch') : [
+                       ('element_type','branch', None) : [
                                                        'rating_long_term',
                                                         'rating_short_term',
                                                         'rating_emergency',
@@ -280,8 +312,21 @@ scaled_attributes = {
                                                         'qf',
                                                         'pt',
                                                         'qt',
+                                                        'violation_penalty',
+                                                        'pf_violation',
                                                         ],
-                       ('element_type', 'shunt') : [
+                       ('element_type','dc_branch', None) : [
+                                                        'rating_long_term',
+                                                        'rating_short_term',
+                                                        'rating_emergency',
+                                                        'pf',
+                                                        'qf',
+                                                        'pt',
+                                                        'qt',
+                                                        'violation_penalty',
+                                                        'pf_violation',
+                                                        ],
+                       ('element_type', 'shunt', None) : [
                                                       'bs',
                                                       'gs',
                                                       'bs_min',
@@ -289,21 +334,23 @@ scaled_attributes = {
                                                       'gs_min',
                                                       'gs_max',
                                                      ],
-                       ('element_type', 'area') : [
+                       ('element_type', 'area', None) : [
                                                       ] + \
                                                   ancillary_service_stack,
-                       ('element_type', 'zone') : [
+                       ('element_type', 'zone', None) : [
                                                       ] + \
                                                   ancillary_service_stack,
-                       ('element_type', 'interface') : [ 
-                                                         'interface_from_limit',
-                                                         'interface_to_limit',
+                       ('element_type', 'interface', None) : [ 
+                                                         'minimum_limit',
+                                                         'maximum_limit',
                                                          'pf',
                                                          'qf',
                                                          'pt',
                                                          'qt',
+                                                         'violation_penalty',
+                                                         'pf_violation',
                                                        ],
-                       ('element_type', 'bus') : [ 
+                       ('element_type', 'bus', None) : [ 
                                                     'p_balance_violation',
                                                     'q_balance_violation',
                                                     'lmp',
@@ -312,8 +359,20 @@ scaled_attributes = {
                                                     'pl',
                                                     'ql',
                                                  ],
-                       ('system_attributes', None ) : [
+                       ('element_type', 'security_constraint', 'pg') : [ 'lower_bound',
+                                                                         'upper_bound',
+                                                                         'violation_penalty',
+                                                                         'pf',
+                                                                         'pf_violation',
+                                                                       ],
+                       ('element_type', 'contingency', None) : [ 
+                                                                 'violation_penalty',
+                                                                 'pf',
+                                                                 'pf_violation',
+                                                               ],
+                       ('system_attributes', None, None ) : [
                                                         'load_mismatch_cost',
+                                                        'q_load_mismatch_cost',
                                                         'reserve_shortfall_cost',
                                                      ] + \
                                                      ancillary_service_stack,
@@ -328,10 +387,10 @@ def unscale_ModelData_to_pu(model_data, inplace=False):
     return _convert_modeldata_pu(model_data, _multiply_by_baseMVA, inplace)
 
 
-def _multiply_by_baseMVA(element, attr_name, attr, baseMVA):
-    _scale_by_baseMVA(_mul, _div, element, attr_name, attr, baseMVA)
-def _divide_by_baseMVA(element, attr_name, attr, baseMVA):
-    _scale_by_baseMVA(_div, _mul, element, attr_name, attr, baseMVA)
+def _multiply_by_baseMVA(element, attr_name, attr, baseMVA, attributes):
+    _scale_by_baseMVA(_mul, _div, element, attr_name, attr, baseMVA, attributes)
+def _divide_by_baseMVA(element, attr_name, attr, baseMVA, attributes):
+    _scale_by_baseMVA(_div, _mul, element, attr_name, attr, baseMVA, attributes)
 
 def _mul(a,b):
     return a*b
@@ -339,19 +398,22 @@ def _div(a,b):
     return a/b
 
 def _get_op(normal_op, inverse_op, attr_name):
-    if ('cost' in attr_name) or ('price' in attr_name) or ('lmp' in attr_name):
+    if ('cost' in attr_name) or ('price' in attr_name) or ('lmp' in attr_name) or ('penalty' in attr_name):
         return inverse_op 
     return normal_op
 
-def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
+def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA, attributes):
     if attr is None:
         return
     if isinstance(attr, dict):
         if 'data_type' in attr and attr['data_type'] == 'time_series':
             op = _get_op(normal_op, inverse_op, attr_name)
-            values_dict = attr['values']
-            for time, value in values_dict.items():
-                values_dict[time] = op( value , baseMVA )
+            values_list = attr['values']
+            for time, value in enumerate(values_list):
+                if isinstance(value, dict):
+                    _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
+                else:
+                    values_list[time] = op( value , baseMVA )
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
             if attr['cost_curve_type'] == 'polynomial':
                 values_dict = attr['values']
@@ -368,10 +430,14 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
             new_values = [ ( normal_op(point,baseMVA), fuel) \
                             for (point, fuel) in values_list_of_tuples ]
             attr['values'] = new_values
-
-    else:
+        else: # recurse deeper
+            for k,v in attr.items():
+                _scale_by_baseMVA(normal_op, inverse_op, attr, k, v, baseMVA, attributes)
+    elif attr_name in attributes:
         op = _get_op(normal_op, inverse_op, attr_name)
         element[attr_name] = op( attr , baseMVA )
+    else:
+        return
 
 
 ## NOTE: ideally this would be done in the definitions of
@@ -386,22 +452,29 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
         md = model_data.clone()
     baseMVA = float(md.data['system']['baseMVA'])
 
-    for (attr_type, element_type), attributes in scaled_attributes.items():
+    for (attr_type, element_type, element_subtype), attributes in scaled_attributes.items():
 
         if attr_type == 'system_attributes':
             system_dict = md.data['system']
+            assert element_type is None
+            assert element_subtype is None
             for name, sys_attr in system_dict.items():
-                if name in attributes:
-                    transform_func(system_dict, name, sys_attr, baseMVA)
+                transform_func(system_dict, name, sys_attr, baseMVA, attributes)
         
         elif attr_type == 'element_type':
             if element_type not in md.data['elements']:
                 continue
             element_dict = md.data['elements'][element_type]
-            for name, element in element_dict.items():
-                for attr_name, attr in element.items():
-                    if attr_name in attributes:
-                        transform_func(element, attr_name, attr, baseMVA)
+            if element_subtype is None:
+                for name, element in element_dict.items():
+                    for attr_name, attr in element.items():
+                        transform_func(element, attr_name, attr, baseMVA, attributes)
+            else: ## allow for different actions depending on the subtype
+                for name, element in element_dict.items():
+                    element_subtype_key = element_type+'_type'
+                    if element_subtype == element[element_subtype_key]:
+                        for attr_name, attr in element.items():
+                            transform_func(element, attr_name, attr, baseMVA, attributes)
 
     if inplace:
         return

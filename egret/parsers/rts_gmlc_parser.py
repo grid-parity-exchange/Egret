@@ -179,6 +179,10 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
                 filtered_timeseries[name] = renewables_timeseries
 
     load_timeseries_spec = timeseries_pointer_dict[("Load",simulation)]
+    ## FIX issue with RTS-GMLC
+    if simulation == "REAL_TIME" and load_timeseries_spec.DataFile == os.path.join(base_dir,'..','timeseries_data_files', 'Load', 'REAL_TIME_regional_Load.csv'):
+        load_timeseries_spec = TimeSeriesPointer(load_timeseries_spec.Object, load_timeseries_spec.Simulation, load_timeseries_spec.Parameter,
+						 os.path.join(base_dir, '..','timeseries_data_files','Load','REAL_TIME_regional_load.csv'))
     load_timeseries_df = _read_rts_gmlc_table(load_timeseries_spec.DataFile, simulation)
     load_timeseries_df = load_timeseries_df.rename(columns = {"Year_Month_Day_Period" : "DateTime"})
     start_mask = load_timeseries_df["DateTime"] >= begin_time
@@ -228,27 +232,30 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
     for load in load_timeseries:
         times.append(str(load.DateTime))
 
-    system["time_indices"] = times
+    system["time_keys"] = times
+
+    _times_to_idx_map = { t : i for i,t in enumerate(times) }
 
     ## load into grid_network object
     ## First, load Pl, Ql
     for name, load in md_obj.elements("load"):
-        pl_dict, ql_dict = dict(), dict()
+        ## preallocate list
+        pl_list, ql_list = _preallocated_list(load_timeseries), _preallocated_list(load_timeseries) 
         bus = elements["bus"][load["bus"]]
-        for load_time in load_timeseries:
+        for i, load_time in enumerate(load_timeseries):
             area_load = getattr(load_time,bus["area"])
-            pl_dict[str(load_time.DateTime)] = round(bus_load_participation_factor_dict[name]*area_load,2)
-            ql_dict[str(load_time.DateTime)] = pl_dict[str(load_time.DateTime)]*bus_Ql_over_Pl_dict[name]
-        load["p_load"] = _make_time_series_dict(pl_dict)
-        load["q_load"] = _make_time_series_dict(ql_dict)
+            pl_list[i] = round(bus_load_participation_factor_dict[name]*area_load,2)
+            ql_list[i] = pl_list[i]*bus_Ql_over_Pl_dict[name]
+        load["p_load"] = _make_time_series_dict(pl_list)
+        load["q_load"] = _make_time_series_dict(ql_list)
 
     ## load in area reserve factors
     area_spin_map = {'Area1':'Spin_Up_R1', 'Area2':'Spin_Up_R2', 'Area3':'Spin_Up_R3'}
     for name, area in md_obj.elements("area"):
-        spin_reserve_dict = dict()
+        spin_reserve_list = _preallocated_list(times)
         for datetimevalue in reserves_dict[area_spin_map[name]]: 
-            spin_reserve_dict[str(datetimevalue.DateTime)] = round(datetimevalue.Value,2)
-        area["spinning_reserve_requirement"] = _make_time_series_dict(spin_reserve_dict)
+            spin_reserve_list[_times_to_idx_map[str(datetimevalue.DateTime)]] = round(datetimevalue.Value,2)
+        area["spinning_reserve_requirement"] = _make_time_series_dict(spin_reserve_list)
 
     ## load in global reserve factors
     rts_to_egret_reserve_map = {
@@ -258,7 +265,8 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
                                 "Reg_Up" : "regulation_up_requirement",
                                }
     for reserve in other_reserve_categories:
-        system[rts_to_egret_reserve_map[reserve]] = _make_time_series_dict(reserves_dict[reserve])
+        reserves_list = [ reserves_dict[reserve][t] for t in times ]
+        system[rts_to_egret_reserve_map[reserve]] = _make_time_series_dict(reserves_list)
 
     ## now load renewable generator stuff
     for name, gen in md_obj.elements("generator", generator_type="renewable"):
@@ -267,20 +275,20 @@ def create_model_data_dict(rts_gmlc_dir, begin_time, end_time, simulation="DAY_A
         renewables_timeseries = filtered_timeseries[name]
         ## for safety, curtailable renewables can go down to 0
         gen["p_min"] = 0.
-        output_dict = dict()
+        output_list = _preallocated_list(times)
         for datetimevalue in renewables_timeseries:
-            output_dict[str(datetimevalue.DateTime)] = round(datetimevalue.Value,2)
+            output_list[_times_to_idx_map[str(datetimevalue.DateTime)]] = round(datetimevalue.Value,2)
 
-        gen["p_max"] = _make_time_series_dict(output_dict)
+        gen["p_max"] = _make_time_series_dict(output_list)
         # set must-take for Hydro and RTPV
         if gen["unit_type"] in ["HYDRO", "RTPV"]:
             ## copy is for safety when overwriting
-            gen["p_min"] = _make_time_series_dict(output_dict.copy())
+            gen["p_min"] = _make_time_series_dict(output_list.copy())
 
 
     ## get this from the same place the prescient reader does
     if t0_state is None:
-        unit_on_time_df = pd.read_csv(os.path.join(base_dir ,"../FormattedData/PLEXOS/PLEXOS_Solution/DAY_AHEAD Solution Files/noTX/on_time_7.12.csv"),
+        unit_on_time_df = pd.read_csv(os.path.join(base_dir ,'..','FormattedData','PLEXOS','PLEXOS_Solution','DAY_AHEAD Solution Files','noTX','on_time_7.12.csv'),
                                         header=0,
                                         sep=",")
         unit_on_time_df_as_dict = unit_on_time_df.to_dict(orient="split")
@@ -322,7 +330,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
         Returns a dict loaded from the RTS-GMLC data
     """
 
-    base_dir = os.path.join(rts_gmlc_dir,'RTS_DATA', 'SourceData')
+    base_dir = os.path.join(rts_gmlc_dir,'RTS_Data', 'SourceData')
 
     case_name = "RTS-GMLC"
 
@@ -697,6 +705,9 @@ def _read_rts_gmlc_reserve_table(file_name, begin_time, end_time, simulation):
 
 def _make_time_series_dict( values ):
     return {"data_type":"time_series", "values": values }
+
+def _preallocated_list( other_iter ):
+    return [None for _ in other_iter]
 
 def _get_datetimes(begin_time, end_time):
 

@@ -23,12 +23,12 @@ import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 
-import egret.data.data_utils as data_utils
+import egret.data.ptdf_utils as ptdf_utils
 import egret.common.lazy_ptdf_utils as lpu
 
 from egret.model_library.defn import CoordinateType, ApproximationType, RelaxationType, BasePointType
-from egret.data.model_data import map_items, zip_items
-from egret.models.copperplate_dispatch import _include_system_feasibility_slack
+from egret.data.data_utils import map_items, zip_items
+from egret.models.copperplate_dispatch import _include_system_feasibility_slack, _validate_and_extract_slack_penalty
 from egret.models.dcopf import _include_feasibility_slack
 from math import pi, radians
 
@@ -79,7 +79,9 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     p_rhs_kwargs = {}
     penalty_expr = None
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)                
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'], bus_p_loads,
+                                                                gens_by_bus, gen_attrs, p_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -186,10 +188,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
 
 
 def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options=None):
-    if ptdf_options is None:
-        ptdf_options = dict()
 
-    lpu.populate_default_ptdf_options(ptdf_options)
+    ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
     baseMVA = model_data.data['system']['baseMVA']
     lpu.check_and_scale_ptdf_options(ptdf_options, baseMVA)
@@ -233,7 +233,8 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
     ### include the feasibility slack for the system balance
     p_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty)
 
     ### declare net withdraw expression for use in PTDF power flows
     libbus.declare_expr_p_net_withdraw_at_bus(model=model,
@@ -253,7 +254,7 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
     ## We'll assume we have a solution to initialize from
     base_point = BasePointType.SOLUTION
 
-    PTDF = data_utils.PTDFLossesMatrix(branches, buses, reference_bus, base_point)
+    PTDF = ptdf_utils.PTDFLossesMatrix(branches, buses, reference_bus, base_point, ptdf_options)
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
 
@@ -365,7 +366,7 @@ def solve_dcopf_losses(model_data,
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+                              symbolic_solver_labels=symbolic_solver_labels,solver_options=options)
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -383,12 +384,17 @@ def solve_dcopf_losses(model_data,
             b_dict.pop('qlmp',None)
             b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
             b_dict['va'] = value(m.va[b])
+            if hasattr(m, 'p_load_shed'):
+                b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
     elif dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:
         PTDF = m._PTDF
         ptdf_r = PTDF.PTDFM
         ldf = PTDF.LDF
         buses_idx = PTDF.buses_keys
         branches_idx = PTDF.branches_keys
+
+        if hasattr(m, 'p_load_shed'):
+            md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
 
         for j, b in enumerate(buses_idx):
             b_dict = buses[b]

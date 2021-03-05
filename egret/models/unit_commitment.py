@@ -17,20 +17,18 @@ unit commitment formulations
 from egret.model_library.unit_commitment.uc_model_generator \
         import UCFormulation, generate_model 
 from egret.common.log import logger
-from egret.model_library.transmission.tx_utils import \
-        scale_ModelData_to_pu, unscale_ModelData_to_pu
+from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+from pyomo.solvers.plugins.solvers.gurobi_persistent import GurobiPersistent 
 
 import egret.common.lazy_ptdf_utils as lpu
-import egret.data.data_utils as data_utils
+import egret.data.ptdf_utils as ptdf_utils
 import pyomo.environ as pe
 import numpy as np
 
 def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
     formulation = UCFormulation(*formulation_list)
-    md = model_data.clone_in_service()
-    scale_ModelData_to_pu(md, inplace=True)
-    return generate_model(md, formulation, relax_binaries, **kwargs)
+    return generate_model(model_data, formulation, relax_binaries, **kwargs)
 
 def create_tight_unit_commitment_model(model_data,
                                        network_constraints='ptdf_power_flow',
@@ -46,10 +44,10 @@ def create_tight_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -89,10 +87,10 @@ def create_compact_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -132,10 +130,10 @@ def create_KOW_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -175,10 +173,10 @@ def create_ALS_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -218,10 +216,10 @@ def create_MLR_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -260,10 +258,10 @@ def create_random1_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -303,10 +301,10 @@ def create_random2_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -346,10 +344,10 @@ def create_OAV_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -392,10 +390,10 @@ def create_OAV_tighter_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -435,10 +433,10 @@ def create_OAV_original_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -478,10 +476,10 @@ def create_OAV_up_downtime_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -521,10 +519,10 @@ def create_CA_unit_commitment_model(model_data,
     ----------
     model_data : egret.data.ModelData
         An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
     network_constraints : str (optional)
-        Set of network constraints to use. The default option uses a B-\\theta
-        "DC" network.
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
     relaxed : bool (optional)
         If True, creates a model with the binary variables relaxed to [0,1].
         Default is False.
@@ -550,7 +548,207 @@ def create_CA_unit_commitment_model(model_data,
                        ]
     return _get_uc_model(model_data, formulation_list, relaxed, **kwargs)
 
-def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, warn_on_max_iter=True, vars_to_load=None):
+def create_CHP_unit_commitment_model(model_data,
+                                     network_constraints='ptdf_power_flow',
+                                     relaxed=False,
+                                     **kwargs):
+    '''
+    Create a new unit commitment model based on the "extensive form" convex hull
+    pricing formulation from Knueven, Ostrowski, Castillo, and Watson (2019) 
+    "A computationally efficient algorithm for computing convex hull prices".
+    pre-print available: http://www.optimization-online.org/DB_FILE/2019/09/7370.pdf
+
+    NOTE: This model asserts that certain products (storage, dual-fuel units, 
+          ancillary services) are not part of the problem, so as to accurately
+          return convex hull prices.
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    network_constraints : str (optional)
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
+    relaxed : bool (optional)
+        If True, creates a model with the binary variables relaxed to [0,1].
+        Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
+
+    Returns
+    -------
+        pyomo.environ.ConcreteModel unit commitment model
+
+    '''
+    from egret.model_library.unit_commitment.thermal_convex_hull import \
+            add_convex_hull_for_all_units
+
+    formulation_list = [
+                         'garver_3bin_vars',
+                         'garver_power_vars',
+                         'MLR_reserve_vars',
+                         'gentile_generation_limits',
+                         'arroyo_conejo_ramping',
+                         'KOW_production_costs_tightened',
+                         'rajan_takriti_UT_DT_2bin',
+                         'pochet_wolsey_startup_costs',
+                         network_constraints,
+                       ]
+
+    model = _get_uc_model(model_data, formulation_list, relaxed)
+
+    add_convex_hull_for_all_units(model)
+
+    return model
+
+def create_super_tight_unit_commitment_model(model_data,
+                                             network_constraints='ptdf_power_flow',
+                                             relaxed=False,
+                                             **kwargs):
+    '''
+    Create a new unit commitment formulation based using the tightest formulation available
+    for each component, subject to avoiding quadratic (or worse) blow up in problem size
+
+    Used as the "master problem" pricing formulation in Knueven, Ostrowski, Castillo, 
+    and Watson (2019) "A computationally efficient algorithm for computing convex hull prices".
+    pre-print available: http://www.optimization-online.org/DB_FILE/2019/09/7370.pdf
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    network_constraints : str (optional)
+        Set of network constraints to use. 
+        The default option uses lazy ptdfs, in this case no network 
+        constraints are added to the model initially.
+    relaxed : bool (optional)
+        If True, creates a model with the binary variables relaxed to [0,1].
+        Default is False.
+    kwargs : dictionary (optional):
+        Additional arguments for egret.model_library.unit_commitment.uc_model_generator.generate_model
+
+    Returns
+    -------
+        pyomo.environ.ConcreteModel unit commitment model
+
+    '''
+    formulation_list = [
+                         'garver_3bin_vars',
+                         'garver_power_vars',
+                         'MLR_reserve_vars',
+                         'pan_guan_gentile_KOW_generation_limits',
+                         'damcikurt_ramping',
+                         'KOW_production_costs_super_tight',
+                         'rajan_takriti_UT_DT_2bin',
+                         'KOW_startup_costs',
+                         network_constraints,
+                       ]
+    return _get_uc_model(model_data, formulation_list, relaxed)
+
+
+def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, prepend_str):
+    if len(t_subset) > 1:
+        raise Exception("_lazy_ptdf_warmstart_copy_violations only handles t_subset with one element -- somebody should fix that!")
+    slacks = None
+    flows = dict()
+    viol_lazy = dict()
+    total_flow_constr_added = 0
+    for t_o in m.TimePeriods:
+        if t_o in t_subset:
+            continue
+
+        if slacks is None:
+            slacks = dict()
+            slacks_I = dict()
+            slacks_C = dict()
+            for t in t_subset:
+                b_ = m.TransmissionBlock[t]
+
+                ## only load the slacks once
+                for bn, constr in b_.ineq_pf_branch_thermal_bounds.items():
+                    slacks[bn] = constr.slack()
+                ## if the interface slack variable is active, we will have 0
+                ## slack in the constraint
+                for i_n, constr in b_.ineq_pf_interface_bounds.items():
+                    slacks_I[i_n] = constr.slack()
+                for cn, constr in b_.ineq_pf_contingency_branch_thermal_bounds.items():
+                    slacks_C[cn] = constr.slack()
+
+        b_other = m.TransmissionBlock[t_o]
+        PTDF_other = b_other._PTDF
+
+        flows[t_o], viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks, slacks_I, slacks_C)
+
+        logger.debug(prepend_str+"adding {0} flow constraints at time {1}".format(len(viol_lazy[t_o]),t_o))
+        lpu.add_violations(viol_lazy[t_o], flows[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str)
+        total_flow_constr_added += len(viol_lazy[t_o])
+    logger.info(prepend_str+"added {0} flow constraint(s)".format(total_flow_constr_added))
+
+def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options=None):
+    if solve_method_options is None:
+        solve_method_options = dict()
+    if persistent_solver:
+        results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False, **solve_method_options)
+        solver.load_vars(vars_to_load)
+    else:
+        results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False, **solve_method_options)
+        m.solutions.load_from(results)
+
+def _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str):
+    if all_viol_in_model:
+        logger.warning(prepend_str+'WARNING: Terminating with monitored violations! Result is not transmission feasible.')
+        return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
+    return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
+
+def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000, vars_to_load=None, 
+        solve_method_options=None, add_all_lazy_violations=False, warmstart_loop=False, t_subset=None, vars_to_load_t_subset=None, prepend_str=""):
+    '''
+    The lazy PTDF unit commitment solver loop. This function iteratively
+    adds violated transmission constraints until either the result is
+    transmission feasible or we're tracking every violated constraint
+    in the model
+
+    Parameters
+    ----------
+    m : pyomo.environ.ConcreteModel
+        An egret unit commitment model
+    md : egret.data.ModelData
+        An egret ModelData object
+    solver : pyomo.opt.solver
+        A pyomo solver object
+    solver_tee : bool (optional)
+        For displaying the solver log (default is True)
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels when writing to the solver (default is False)
+    iteration_limit : int (optional)
+        Number of iterations before a hard termination (default is 100000)
+    vars_to_load : None, list (optional)
+        Applies only to persistent solvers. If None, every primal variable is loaded.
+        If a list, then should be a list of pyomo Vars to be loaded into the pyomo model
+        at termination. Default is None.
+    solve_method_options : None, dict (optional)
+        Additional options passed into the solve method. Default is None
+    add_all_lazy_violations : bool (optional)
+        If True, on the termination iteration, additional violations or near violations
+        will be added to the model before returning (and before re-solving). Used
+        for the last lazy iteration on an LP relaxation of unit commitment
+    warmstart_loop : bool (optional)
+        If True, excutes a warmstart loop based on the time periods in t_subset
+    t_subset : None, list (optional)
+        Subset of TimePeriods to use for the warmstart loop
+    vars_to_load_t_subset : None, list (optional)
+        Subset of vars_to_load which are just from t_subset
+    prepend_str : str (optional)
+        String to prepend to all messages from the solve loop
+
+    Returns
+    -------
+    egret.common.lazy_ptdf_utils.LazyPTDFTerminationCondition : the termination status
+    pyomo.opt.results.SolverResults : The results object from the pyomo solver
+    int : The number of iterations before termination
+
+    '''
 
     persistent_solver = isinstance(solver, PersistentSolver)
     duals = hasattr(m, 'dual')
@@ -559,72 +757,91 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
     ptdf_options = m._ptdf_options
 
-    PVF = dict()
+    flows = dict()
     viol_num = dict()
     mon_viol_num = dict()
-    gt_viol_lazy = dict()
-    lt_viol_lazy = dict()
+    viol_lazy = dict()
+
+    if warmstart_loop:
+        if t_subset is None:
+            t_subset = [max(m.TotalDemand, key=m.TotalDemand.__getitem__)]
+        time_periods = t_subset
+        if vars_to_load_t_subset is None:
+            vars_to_load_t_subset = vars_to_load
+        vars_to_load_time_periods = vars_to_load_t_subset
+        ## it doesn't make sense for both of these to be true
+        assert add_all_lazy_violations is False
+    else:
+        time_periods = m.TimePeriods
+        vars_to_load_time_periods = vars_to_load
+
 
     for i in range(iteration_limit):
-        for t in m.TimePeriods:
+        for t in time_periods:
             b = m.TransmissionBlock[t]
 
             PTDF = b._PTDF
 
-            ## these should only need to be gathered once
-            if PTDF.enforced_branch_limits is None:
-                branch_limits = PTDF.branch_limits_array
-                rel_flow_tol = ptdf_options['rel_flow_tol']
-                abs_flow_tol = ptdf_options['abs_flow_tol']
-
-                ## only enforce the relative and absolute, within tollerance
-                PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
-
-            PVF[t], viol_num[t], mon_viol_num[t], gt_viol_lazy[t], lt_viol_lazy[t] = \
-                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t)
+            flows[t], viol_num[t], mon_viol_num[t], viol_lazy[t] = \
+                    lpu.check_violations(b, md, PTDF, ptdf_options['max_violations_per_iteration'], time=t, prepend_str=prepend_str)
 
         total_viol_num = sum(viol_num.values())
         total_mon_viol_num = sum(mon_viol_num.values())
 
-        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,total_viol_num)
+        ## this flag is for if we found violations **and** every violation is in the model
+        all_viol_in_model = (total_viol_num > 0) and (total_viol_num == total_mon_viol_num)
+
+        ## this flag is for if we're going to terminate this iteration,
+        ## either because there are no violations in this solution
+        ## **or** because every violation is already in the model
+        terminate_this_iter = (total_viol_num == 0) or all_viol_in_model
+
+        iter_status_str = prepend_str+"iteration {0}, found {1} violation(s)".format(i,total_viol_num)
         if total_mon_viol_num:
             iter_status_str += ", {} of which are already monitored".format(total_mon_viol_num)
 
         logger.info(iter_status_str)
 
-        if total_viol_num <= 0:
-            if persistent_solver and duals and results is not None and vars_to_load is None:
+        if terminate_this_iter and not add_all_lazy_violations:
+            if warmstart_loop:
+                if persistent_solver:
+                    lpu._load_pf_slacks(solver, m, t_subset)
+                _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options, prepend_str)
+                results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
+            if persistent_solver and duals and (results is not None) and (vars_to_load is None):
                 solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.NORMAL, results, i
-        elif total_viol_num == total_mon_viol_num:
-            logger.warning('WARNING: Terminating with monitored violations! Result is not transmission feasible.')
-            if persistent_solver and duals:
-                solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION, results, i
+            return _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str)
 
-        all_times_all_viol_in_model = True
-        for t in m.TimePeriods:
+        total_flow_constr_added = 0
+        for t in time_periods:
             b = m.TransmissionBlock[t]
 
             PTDF = b._PTDF
 
-            lpu.add_violations(gt_viol_lazy[t], lt_viol_lazy[t], PVF[t], b, md, solver, ptdf_options, PTDF, time=t)
+            lpu.add_violations(viol_lazy[t], flows[t], b, md, solver, ptdf_options, PTDF, time=t, prepend_str=prepend_str)
+            total_flow_constr_added += len(viol_lazy[t])
 
-        if persistent_solver:
-            results = solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
-            solver.load_vars(vars_to_load)
-        else:
-            results = solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
-            m.solutions.load_from(results)
+        logger.info(prepend_str+"iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
+
+        ## NOTE: Here we should not load additional variables as
+        ##       we've added more constraints to the model
+        if terminate_this_iter and add_all_lazy_violations:
+            return _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str)
+
+        results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load_time_periods, solve_method_options)
 
     else:
-        if warn_on_max_iter:
-            logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
-        if persistent_solver and duals:
+        logger.warning(prepend_str+'WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
+        if warmstart_loop:
+            if persistent_solver:
+                lpu._load_pf_slacks(solver, m, t_subset)
+            _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options)
+            results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
+        if persistent_solver and duals and (results is not None) and (vars_to_load is None):
             solver.load_duals()
         return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT, results, i
 
-def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed):
+def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options, relaxed, set_instance=True):
 
     from egret.common.solver_interface import _solve_model
     import time
@@ -636,28 +853,42 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     ## cache here the variables that need to be 
     ## loaded to check transimission feasbility
     ## for a persistent solver
+    max_demand_time = max(m.TotalDemand, key=m.TotalDemand.__getitem__)
+    t_subset = [max_demand_time, ]
     if isinstance(solver, PersistentSolver) or (isinstance(solver,str) and 'persistent' in solver):
         vars_to_load = list()
+        vars_to_load_t_subset = list()
         for t in m.TimePeriods:
             b = m.TransmissionBlock[t]
             if isinstance(b.p_nw, pe.Var):
                 vars_to_load.extend(b.p_nw.values())
+                if t in t_subset:
+                    vars_to_load_t_subset.extend(b.p_nw.values())
             else:
                 vars_to_load = None
+                vars_to_load_t_subset = None
                 break
     else:
         vars_to_load = None
+        vars_to_load_t_subset = None
 
     lp_iter_limit = m._ptdf_options['lp_iteration_limit']
+    lp_warmstart_iter_limit = m._ptdf_options['pre_lp_iteration_limit']
     model_data = m.model_data
 
     ## if this is a MIP, iterate though a few times with just the LP relaxation
     if not relaxed and lp_iter_limit > 0:
 
         lpu.uc_instance_binary_relaxer(m, None)
-        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load = vars_to_load)
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True, vars_to_load = vars_to_load, set_instance=set_instance)
+        if lp_warmstart_iter_limit > 0:
+            lp_warmstart_termination_cond, results, lp_warmstart_iterations = \
+                    _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_warmstart_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[LP warmstart phase] ")
+            egret_metasolver_status['lp_warmstart_termination_cond'] = lp_warmstart_termination_cond
+            egret_metasolver_status['lp_warmstart_iterations'] = lp_warmstart_iterations
+
         lp_termination_cond, results, lp_iterations = \
-                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, warn_on_max_iter=False, vars_to_load = vars_to_load)
+                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_iter_limit, vars_to_load = vars_to_load, add_all_lazy_violations=True, prepend_str="[LP phase] ")
         ## if the initial solve was transmission feasible, then
         ## we never re-solved the problem
         if results is None:
@@ -665,6 +896,12 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 
         egret_metasolver_status['lp_termination_cond'] = lp_termination_cond
         egret_metasolver_status['lp_iterations'] = lp_iterations
+
+        if m._ptdf_options['lp_cleanup_phase']:
+            tot_removed = 0
+            for t,b in m.TransmissionBlock.items():
+                tot_removed += lpu.remove_inactive(b, solver, t, prepend_str="[LP cleanup phase] ")
+            logger.info("[LP cleanup phase] removed {0} inactive flow constraint(s)".format(tot_removed))
 
         lpu.uc_instance_binary_enforcer(m, solver)
 
@@ -677,10 +914,14 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
 
     ## else if relaxed or lp_iter_limit == 0, do an initial solve
     else:
-        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True, vars_to_load=vars_to_load)
+        m, results_init, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options, solve_method_options, return_solver=True, vars_to_load=vars_to_load, set_instance=set_instance)
 
     iter_limit = m._ptdf_options['iteration_limit']
-    termination_cond, results, iterations = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, warn_on_max_iter=True, vars_to_load=vars_to_load)
+    
+    if relaxed and lp_warmstart_iter_limit > 0:
+        lp_termination_cond, results, lp_iterations = \
+                _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee,iteration_limit=lp_warmstart_iter_limit, vars_to_load_t_subset = vars_to_load_t_subset, vars_to_load=vars_to_load, t_subset=t_subset, warmstart_loop=True, prepend_str="[LP warmstart phase] ")
+    termination_cond, results, iterations = _lazy_ptdf_uc_solve_loop(m, model_data, solver, timelimit, solver_tee=solver_tee, iteration_limit=iter_limit, vars_to_load=vars_to_load, prepend_str=("[LP phase] " if relaxed else "[MIP phase] "))
     ## if the initial solve was transmission feasible, then
     ## we never re-solved the problem
     if results is None:
@@ -699,74 +940,20 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
     egret_metasolver_status['time'] = time.time() - start_time
     results.egret_metasolver = egret_metasolver_status
 
-    ## write the PTDF matrix, if told to
-    data_utils.write_ptdf_potentially_to_file(m._ptdf_options, m._PTDFs)
-
     return m, results, solver
 
 def _time_series_dict(values):
     return {'data_type':'time_series', 'values':values}
 
-def solve_unit_commitment(model_data,
-                          solver,
-                          mipgap = 0.001,
-                          timelimit = None,
-                          solver_tee = True,
-                          symbolic_solver_labels = False,
-                          options = None,
-                          uc_model_generator = create_tight_unit_commitment_model,
-                          relaxed = False,
-                          return_model = False,
-                          return_results = False,
-                          **kwargs):
-    '''
-    Create and solve a new unit commitment model
+def _preallocated_list(other_iter):
+    return [ None for _ in other_iter ]
 
-    Parameters
-    ----------
-    model_data : egret.data.ModelData
-        An egret ModelData object with the appropriate data loaded.
-        # TODO: describe the required and optional attributes
-    solver : str or pyomo.opt.base.solvers.OptSolver
-        Either a string specifying a pyomo solver name, or an instanciated pyomo solver
-    mipgap : float (optional)
-        Mipgap to use for unit commitment solve; default is 0.001
-    timelimit : float (optional)
-        Time limit for unit commitment run. Default of None results in no time
-        limit being set -- runs until mipgap is satisfied
-    solver_tee : bool (optional)
-        Display solver log. Default is True.
-    symbolic_solver_labels : bool (optional)
-        Use symbolic solver labels. Useful for debugging; default is False.
-    options : dict (optional)
-        Other options to pass into the solver. Default is dict().
-    uc_model_generator : function (optional)
-        Function for generating the unit commitment model. Default is 
-        egret.models.unit_commitment.create_tight_unit_commitment_model
-    relaxed : bool (optional)
-        If True, creates a relaxed unit commitment model
-    return_model : bool (optional)
-        If True, returns the pyomo model object
-    return_results : bool (optional)
-        If True, returns the pyomo results object
-    kwargs : dictionary (optional)
-        Additional arguments for building model
-    '''
-
+def _save_uc_results(m, relaxed):
     from pyomo.environ import value
-    from egret.common.solver_interface import _solve_model
 
-    m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
-
-    network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
-
+    # dual suffix is on top-level model
     if relaxed:
-        m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
-
-    if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
-        m, results, solver = _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, options, relaxed )
-    else:
-        m, results, solver = _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,options, return_solver=True)
+        dual = m.model().dual
 
     md = m.model_data
 
@@ -775,92 +962,98 @@ def solve_unit_commitment(model_data,
     renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
+    interfaces = dict(md.elements(element_type='interface'))
+    contingencies = dict(md.elements(element_type='contingency'))
     storage = dict(md.elements(element_type='storage'))
     zones = dict(md.elements(element_type='zone'))
     areas = dict(md.elements(element_type='area'))
+    pg_security_constraints = dict(md.elements(element_type='security_constraint', security_constraint_type='pg'))
+    dc_branches = dict(md.elements(element_type='dc_branch'))
 
-    data_time_periods = md.data['system']['time_indices']
+    data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
 
-    regulation = False
-    spin = False
-    nspin = False
-    supp = False
-    flex = False
-    if hasattr(m, 'regulation_service'):
-        regulation = True
-    if hasattr(m, 'spinning_reserve'):
-        spin = True
-    if hasattr(m, 'non_spinning_reserve'):
-        nspin = True
-    if hasattr(m, 'supplemental_reserve'):
-        supp = True
-    if hasattr(m, 'flexible_ramping'):
-        flex = True
+    regulation = bool(m.regulation_service)
+    spin = bool(m.spinning_reserve)
+    nspin = bool(m.non_spinning_reserve)
+    supp = bool(m.supplemental_reserve)
+    flex = bool(m.flexible_ramping)
 
-    fs = False
-    if hasattr(m, 'fuel_supply'):
-        fs = True
-    fc = False
-    if hasattr(m, 'fuel_consumption'):
-        fc = True
+    fs = bool(m.fuel_supply)
+    fc = bool(m.fuel_consumption)
+
+    ## All prices are in $/(MW*time_period) by construction
+    ## time_period_length_hours == hours/time_period, so
+    ##    $/(MW*time_period)/time_period_length_hours
+    ## == $/(MW*time_period) * (time_period/hours)
+    ## == $/(MW*hours) == $/MWh.
+    ## All dual values are divided by this quantity
+    ## so as to report out $/MWh.
+    time_period_length_hours = value(m.TimePeriodLengthHours)
+
+    ## all of the potential constraints that could limit maximum output
+    ## Not all unit commitment models have these constraints, so first
+    ## we need check if they're on the model object
+    ramp_up_avail_potential_constrs = [
+                                      'EnforceMaxAvailableRampUpRates',
+                                      'AncillaryServiceRampUpLimit',
+                                      'power_limit_from_start',
+                                      'power_limit_from_stop',
+                                      'power_limit_from_start_stop',
+                                      'power_limit_from_start_stops',
+                                      'max_power_limit_from_starts',
+                                      'EnforceMaxAvailableRampDownRates',
+                                      'EnforceMaxCapacity',
+                                      'OAVUpperBound',
+                                      'EnforceGenerationLimits',
+                                     ]
+    ramp_up_avail_constrs = []
+    for constr in ramp_up_avail_potential_constrs:
+        if hasattr(m, constr):
+            ramp_up_avail_constrs.append(getattr(m, constr))
 
     for g,g_dict in thermal_gens.items():
-        pg_dict = {}
+        pg_dict = _preallocated_list(data_time_periods)
         if reserve_requirement:
-            rg_dict = {}
-        commitment_dict = {}
-        commitment_cost_dict = {}
-        production_cost_dict = {}
-        ramp_up_avail_dict = {}
+            rg_dict = _preallocated_list(data_time_periods)
+        commitment_dict = _preallocated_list(data_time_periods)
+        commitment_cost_dict = _preallocated_list(data_time_periods)
+        production_cost_dict = _preallocated_list(data_time_periods)
+        ramp_up_avail_dict = _preallocated_list(data_time_periods)
 
-        ## all of the potential constraints that could limit maximum output
-        ## Not all unit commitment models have these constraints, so first
-        ## we need check if they're on the model object
-        ramp_up_avail_potential_constrs = [
-                                          'EnforceMaxAvailableRampUpRates',
-                                          'AncillaryServiceRampUpLimit',
-                                          'power_limit_from_start',
-                                          'power_limit_from_stop',
-                                          'power_limit_from_start_stop',
-                                          'power_limit_from_start_stops',
-                                          'EnforceMaxAvailableRampDownRates',
-                                          'EnforceMaxCapacity',
-                                         ]
-        ramp_up_avail_constrs = []
-        for constr in ramp_up_avail_potential_constrs:
-            if hasattr(m, constr):
-                ramp_up_avail_constrs.append(getattr(m, constr))
 
         if regulation:
-            reg_prov = {}
-            reg_up_supp = {}
-            reg_dn_supp = {}
+            reg_prov = _preallocated_list(data_time_periods)
+            reg_up_supp = _preallocated_list(data_time_periods)
+            reg_dn_supp = _preallocated_list(data_time_periods)
         if spin:
-            spin_supp = {}
+            spin_supp = _preallocated_list(data_time_periods)
         if nspin:
-            nspin_supp = {}
+            nspin_supp = _preallocated_list(data_time_periods)
         if supp:
-            supp_supp = {}
+            supp_supp = _preallocated_list(data_time_periods)
         if flex:
-            flex_up_supp = {}
-            flex_dn_supp = {}
+            flex_up_supp = _preallocated_list(data_time_periods)
+            flex_dn_supp = _preallocated_list(data_time_periods)
         gfs = (fs and (g in m.FuelSupplyGenerators))
         if gfs:
-            fuel_consumed = {}
+            fuel_consumed = _preallocated_list(data_time_periods)
         gdf = (fc and (g in m.DualFuelGenerators))
         if gdf:
-            aux_fuel_consumed = {}
+            aux_fuel_consumed = _preallocated_list(data_time_periods)
         gdsf = (gdf and (g in m.SingleFireDualFuelGenerators))
         if gdsf:
-            aux_fuel_indicator = {}
+            aux_fuel_indicator = _preallocated_list(data_time_periods)
 
 
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        for dt, mt in enumerate(m.TimePeriods):
             pg_dict[dt] = value(m.PowerGenerated[g,mt])
             if reserve_requirement:
                 rg_dict[dt] = value(m.ReserveProvided[g,mt])
-            commitment_dict[dt] = value(m.UnitOn[g,mt])
+            if relaxed:
+                commitment_dict[dt] = value(m.UnitOn[g,mt])
+            else:
+                commitment_dict[dt] = int(round(value(m.UnitOn[g,mt])))
             commitment_cost_dict[dt] = value(m.ShutdownCost[g,mt])
             if g in m.DualFuelGenerators:
                 commitment_cost_dict[dt] += value(m.DualFuelCommitmentCost[g,mt])
@@ -871,7 +1064,10 @@ def solve_unit_commitment(model_data,
 
             if regulation:
                 if g in m.AGC_Generators:
-                    reg_prov[dt] = value(m.RegulationOn[g,mt])
+                    if relaxed:
+                        reg_prov[dt] = value(m.RegulationOn[g,mt])
+                    else:
+                        reg_prov[dt] = int(round(value(m.RegulationOn[g,mt])))
                     reg_up_supp[dt] = value(m.RegulationReserveUp[g,mt])
                     reg_dn_supp[dt] = value(m.RegulationReserveDn[g,mt])
                     commitment_cost_dict[dt] += value(m.RegulationCostCommitment[g,mt])
@@ -942,41 +1138,63 @@ def solve_unit_commitment(model_data,
         g_dict['headroom'] = _time_series_dict(ramp_up_avail_dict)
 
     for g,g_dict in renewable_gens.items():
-        pg_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        pg_dict = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
             pg_dict[dt] = value(m.NondispatchablePowerUsed[g,mt])
         g_dict['pg'] = _time_series_dict(pg_dict)
 
     for s,s_dict in storage.items():
-        state_of_charge_dict = {}
-        p_discharge_dict = {}
-        p_charge_dict = {}
-        operational_cost_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        state_of_charge_dict = _preallocated_list(data_time_periods)
+        p_discharge_dict = _preallocated_list(data_time_periods)
+        p_charge_dict = _preallocated_list(data_time_periods)
+        operational_cost_dict = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
             p_discharge_dict[dt] = value(m.PowerOutputStorage[s,mt])
             p_charge_dict[dt] = value(m.PowerInputStorage[s,mt])
             operational_cost_dict[dt] = value(m.StorageCost[s,mt])
-            state_of_charge_dict[dt] = value(m.SocStorage[s.mt])
+            state_of_charge_dict[dt] = value(m.SocStorage[s,mt])
 
         s_dict['p_discharge'] = _time_series_dict(p_discharge_dict)
         s_dict['p_charge'] = _time_series_dict(p_charge_dict)
         s_dict['operational_cost'] = _time_series_dict(operational_cost_dict)
         s_dict['state_of_charge'] = _time_series_dict(state_of_charge_dict)
 
+    for sc, sc_dict in pg_security_constraints.items():
+        sc_violation = None
+        sc_flow = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
+            b = m.TransmissionBlock[mt]
+            sc_flow[dt] = value(b.pgSecurityExpression[sc])
+            if sc in b.pgRelaxedSecuritySet:
+                if sc_violation is None:
+                    sc_violation = _preallocated_list(data_time_periods)
+                sc_violation[dt] = value(b.pgSecuritySlackPos[sc] - b.pgSecuritySlackNeg[sc])
+        sc_dict['pf'] = _time_series_dict(sc_flow)
+        if sc_violation is not None:
+            sc_dict['pf_violation'] = _time_series_dict(sc_violation)
+
     ## NOTE: UC model currently has no notion of separate loads
 
     if m.power_balance == 'btheta_power_flow':
         for l,l_dict in branches.items():
-            pf_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 pf_dict[dt] = value(m.TransmissionBlock[mt].pf[l])
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                    if l in b.pf_slack_pos:
+                        pf_violation_dict[dt] = value(b.pf_slack_pos[l] - b.pf_slack_neg[l])
+                    else:
+                        pf_violation_dict[dt] = 0.
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
-            va_dict = {}
-            p_balance_violation_dict = {}
-            pl_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            va_dict = _preallocated_list(data_time_periods)
+            p_balance_violation_dict = _preallocated_list(data_time_periods)
+            pl_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 va_dict[dt] = value(m.TransmissionBlock[mt].va[b])
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
                 pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
@@ -984,93 +1202,181 @@ def solve_unit_commitment(model_data,
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             b_dict['pl'] = _time_series_dict(pl_dict)
             if relaxed:
-                lmp_dict = {}
-                for dt, mt in zip(data_time_periods,m.TimePeriods):
-                    lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
+                lmp_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    lmp_dict[dt] = value(dual[m.TransmissionBlock[mt].eq_p_balance[b]])/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+        for i,i_dict in interfaces.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.TransmissionBlock[mt].pfi[i])
+            i_dict['pf'] = _time_series_dict(pf_dict)
+            if i in m.InterfacesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                    if i in b.pfi_slack_pos:
+                        pf_violation_dict[dt] = value(b.pfi_slack_pos[i] - b.pfi_slack_neg[i])
+                    else:
+                        pf_violation_dict[dt] = 0.
+                i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
+        for k,k_dict in dc_branches.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.HVDCLinePower[k,mt])
+            k_dict['pf'] = _time_series_dict(pf_dict)
 
     elif m.power_balance == 'ptdf_power_flow':
         flows_dict = dict()
+        interface_flows_dict = dict()
+        voltage_angle_dict = dict()
         if relaxed:
             lmps_dict = dict()
         for mt in m.TimePeriods:
             b = m.TransmissionBlock[mt]
-            flows_dict[mt] = dict()
             PTDF = b._PTDF
-            PTDFM = PTDF.PTDFM
+
             branches_idx = PTDF.branches_keys
-            NWV = np.array([value(b.p_nw[bus]) for bus in PTDF.bus_iterator()])
-            PFV = np.dot(PTDFM, NWV)
+            PFV, PFV_I, VA = PTDF.calculate_PFV(b)
+
+            flows_dict[mt] = dict()
             for i,bn in enumerate(branches_idx):
                 flows_dict[mt][bn] = PFV[i]
+
+            interface_idx = PTDF.interface_keys
+            interface_flows_dict[mt] = dict()
+            for i, i_n in enumerate(interface_idx):
+                interface_flows_dict[mt][i_n] = PFV_I[i]
+
+            buses_idx = PTDF.buses_keys
+            voltage_angle_dict[mt] = dict()
+            for i,bn in enumerate(buses_idx):
+                voltage_angle_dict[mt][bn] = VA[i]
+
             if relaxed:
-                PFD = np.zeros(len(branches_idx))
-                for i,bn in enumerate(branches_idx):
-                    if bn in b.ineq_pf_branch_thermal_lb:
-                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_lb[bn]])
-                    if bn in b.ineq_pf_branch_thermal_ub:
-                        PFD[i] += value(m.dual[b.ineq_pf_branch_thermal_ub[bn]])
-                ## TODO: PFD is likely to be sparse, implying we just need a few
-                ##       rows of the PTDF matrix (or columns in its transpose).
-                LMPC = np.dot(-PTDFM.T, PFD)
-                LMPE = value(m.dual[b.eq_p_balance])
-                buses_idx = PTDF.buses_keys
+                LMP = PTDF.calculate_LMP(b, dual, b.eq_p_balance)
                 lmps_dict[mt] = dict()
                 for i,bn in enumerate(buses_idx):
-                    lmps_dict[mt][bn] = LMPE + LMPC[i]
+                    lmps_dict[mt][bn] = LMP[i]
+
+        for i,i_dict in interfaces.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = interface_flows_dict[mt][i]
+            i_dict['pf'] = _time_series_dict(pf_dict)
+            if i in m.InterfacesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                    if i in b.pfi_slack_pos:
+                        pf_violation_dict[dt] = value(b.pfi_slack_pos[i] - b.pfi_slack_neg[i])
+                    else:
+                        pf_violation_dict[dt] = 0.
+                i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
+        if contingencies:
+            for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                contingency_flows = PTDF.calculate_monitored_contingency_flows(b)
+                for (cn,bn), flow in contingency_flows.items():
+                    c_dict = contingencies[cn]
+                    if 'monitored_branches' not in c_dict:
+                        c_dict['monitored_branches'] = _time_series_dict([{} for _ in data_time_periods])
+                    monitored_branches = c_dict['monitored_branches']['values'][dt]
+                    monitored_branches[bn] = {'pf' : flow}
+                    if (cn,bn) in b.pfc_slack_pos:
+                        monitored_branches[bn]['pf_violation'] = value(b.pfc_slack_pos[cn,bn]-b.pfc_slack_neg[cn,bn])
 
         for l,l_dict in branches.items():
-            pf_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 ## if the key doesn't exist, it is because that line was out
                 pf_dict[dt] = flows_dict[mt].get(l, 0.)
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                    if l in b.pf_slack_pos:
+                        pf_violation_dict[dt] = value(b.pf_slack_pos[l] - b.pf_slack_neg[l])
+                    else:
+                        pf_violation_dict[dt] = 0.
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
-            va_dict = {}
-            p_balance_violation_dict = {}
-            pl_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            va_dict = _preallocated_list(data_time_periods)
+            p_balance_violation_dict = _preallocated_list(data_time_periods)
+            pl_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
                 pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
+                va_dict[dt] = voltage_angle_dict[mt][b]
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             b_dict['pl'] = _time_series_dict(pl_dict)
+            b_dict['va'] = _time_series_dict(va_dict)
             if relaxed:
-                lmp_dict = {}
-                for dt, mt in zip(data_time_periods,m.TimePeriods):
-                    lmp_dict[dt] = lmps_dict[mt][b]
+                lmp_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    lmp_dict[dt] = lmps_dict[mt][b]/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+        for k,k_dict in dc_branches.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.HVDCLinePower[k,mt])
+            k_dict['pf'] = _time_series_dict(pf_dict)
 
     elif m.power_balance == 'power_balance_constraints':
         for l,l_dict in branches.items():
-            pf_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 pf_dict[dt] = value(m.LinePower[l,mt])
             l_dict['pf'] = _time_series_dict(pf_dict)
+            if l in m.BranchesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.BranchSlackPos[l,mt] - m.BranchSlackNeg[l,mt])
+                l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
-            va_dict = {}
-            p_balance_violation_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            va_dict = _preallocated_list(data_time_periods)
+            p_balance_violation_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 va_dict[dt] = value(m.Angle[b,mt])
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
             b_dict['va'] = _time_series_dict(va_dict)
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             if relaxed:
-                lmp_dict = {}
-                for dt, mt in zip(data_time_periods,m.TimePeriods):
-                    lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
+                lmp_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    lmp_dict[dt] = value(dual[m.PowerBalance[b,mt]])/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
+
+        for i,i_dict in interfaces.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.InterfaceFlow[i,mt])
+            i_dict['pf'] = _time_series_dict(pf_dict)
+            if i in m.InterfacesWithSlack:
+                pf_violation_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
+                    pf_violation_dict[dt] = value(m.InterfaceSlackPos[i,mt] - m.InterfaceSlackNeg[i,mt])
+                i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
+
+        for k,k_dict in dc_branches.items():
+            pf_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                pf_dict[dt] = value(m.HVDCLinePower[k,mt])
+            k_dict['pf'] = _time_series_dict(pf_dict)
+
     elif m.power_balance in ['copperplate_power_flow', 'copperplate_relaxed_power_flow']:
         sys_dict = md.data['system']
-        p_viol_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        p_viol_dict = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
             p_viol_dict[dt] = sum(value(m.LoadGenerateMismatch[b,mt]) for b in m.Buses)
         sys_dict['p_balance_violation'] = _time_series_dict(p_viol_dict)
         if relaxed:
-            p_price_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
-                p_price_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance])
+            p_price_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                p_price_dict[dt] = value(dual[m.TransmissionBlock[mt].eq_p_balance])/time_period_length_hours
             sys_dict['p_price'] = _time_series_dict(p_price_dict)
     else:
         raise Exception("Unrecongized network type "+m.power_balance)
@@ -1079,16 +1385,16 @@ def solve_unit_commitment(model_data,
     if reserve_requirement:
         ## populate the system attributes
         sys_dict = md.data['system']
-        sr_s_dict = {}
-        for dt, mt in zip(data_time_periods,m.TimePeriods):
+        sr_s_dict = _preallocated_list(data_time_periods)
+        for dt, mt in enumerate(m.TimePeriods):
             sr_s_dict[dt] = value(m.ReserveShortfall[mt])
         sys_dict['reserve_shortfall'] = _time_series_dict(sr_s_dict)
         if relaxed:
-            sr_p_dict = {}
-            for dt, mt in zip(data_time_periods,m.TimePeriods):
+            sr_p_dict = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
                 ## TODO: if the 'relaxed' flag is set, we should automatically
                 ##       pick a formulation which uses the MLR reserve constraints
-                sr_p_dict[dt] = value(m.dual[m.EnforceReserveRequirements[mt]])
+                sr_p_dict[dt] = value(dual[m.EnforceReserveRequirements[mt]])/time_period_length_hours
             sys_dict['reserve_price'] = _time_series_dict(sr_p_dict)
 
 
@@ -1178,27 +1484,27 @@ def solve_unit_commitment(model_data,
             me = string_handle+e
             for req, req_dict in _zonal_reserve_map.items():
                 if req in e_dict:
-                    req_shortfall_dict = {}
-                    for dt, mt in zip(data_time_periods, m.TimePeriods):
+                    req_shortfall_dict = _preallocated_list(data_time_periods)
+                    for dt, mt in enumerate(m.TimePeriods):
                         req_shortfall_dict[dt] = value(req_dict['shortfall_m'][me,mt])
                     e_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                     if relaxed:
-                        req_price_dict = {}
-                        for dt, mt in zip(data_time_periods, m.TimePeriods):
-                            req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])
+                        req_price_dict = _preallocated_list(data_time_periods)
+                        for dt, mt in enumerate(m.TimePeriods):
+                            req_price_dict[dt] = value(dual[req_dict['balance_m'][me,mt]])/time_period_length_hours
                         e_dict[req_dict['price']] = _time_series_dict(req_price_dict)
 
     def _populate_system_reserves(sys_dict):
         for req, req_dict in _system_reserve_map.items():
             if req in sys_dict:
-                req_shortfall_dict = {}
-                for dt, mt in zip(data_time_periods, m.TimePeriods):
+                req_shortfall_dict = _preallocated_list(data_time_periods)
+                for dt, mt in enumerate(m.TimePeriods):
                     req_shortfall_dict[dt] = value(req_dict['shortfall_m'][mt])
                 sys_dict[req_dict['shortfall']] = _time_series_dict(req_shortfall_dict)
                 if relaxed:
-                    req_price_dict = {}
-                    for dt, mt in zip(data_time_periods, m.TimePeriods):
-                        req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])
+                    req_price_dict = _preallocated_list(data_time_periods)
+                    for dt, mt in enumerate(m.TimePeriods):
+                        req_price_dict[dt] = value(dual[req_dict['balance_m'][mt]])/time_period_length_hours
                     sys_dict[req_dict['price']] = _time_series_dict(req_price_dict)
     
     _populate_zonal_reserves(areas, 'area_')
@@ -1209,10 +1515,10 @@ def solve_unit_commitment(model_data,
     if fs:
         fuel_supplies = dict(md.elements(element_type='fuel_supply'))
         for f, f_dict in fuel_supplies.items():
-            fuel_consumed = {}
+            fuel_consumed = _preallocated_list(data_time_periods)
             fuel_supply_type = f_dict['fuel_supply_type']
             if fuel_supply_type == 'instantaneous':
-                for dt, mt in zip(data_time_periods, m.TimePeriods):
+                for dt, mt in enumerate(m.TimePeriods):
                     fuel_consumed[dt] = value(m.TotalFuelConsumedAtInstFuelSupply[f,mt])
             else:
                 logger.warning('WARNING: unrecongized fuel_supply_type {} for fuel_supply {}'.format(fuel_supply_type, f))
@@ -1221,6 +1527,75 @@ def solve_unit_commitment(model_data,
     md.data['system']['total_cost'] = value(m.TotalCostObjective)
 
     unscale_ModelData_to_pu(md, inplace=True)
+
+    return md
+
+def _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed, set_instance=True):
+    from egret.common.solver_interface import _solve_model
+    model_data = m.model_data
+    network = ('branch' in model_data.data['elements']) and bool(len(model_data.data['elements']['branch']))
+    if m.power_balance == 'ptdf_power_flow' and m._ptdf_options['lazy'] and network:
+        return _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed, set_instance=set_instance )
+    else:
+        return _solve_model(m,solver,mipgap,timelimit,solver_tee,symbolic_solver_labels,solver_options,solve_method_options, return_solver=True, set_instance=set_instance)
+
+def solve_unit_commitment(model_data,
+                          solver,
+                          mipgap = 0.001,
+                          timelimit = None,
+                          solver_tee = True,
+                          symbolic_solver_labels = False,
+                          solver_options = None,
+                          solve_method_options = None,
+                          uc_model_generator = create_tight_unit_commitment_model,
+                          relaxed = False,
+                          return_model = False,
+                          return_results = False,
+                          **kwargs):
+    '''
+    Create and solve a new unit commitment model
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+        # TODO: describe the required and optional attributes
+    solver : str or pyomo.opt.base.solvers.OptSolver
+        Either a string specifying a pyomo solver name, or an instanciated pyomo solver
+    mipgap : float (optional)
+        Mipgap to use for unit commitment solve; default is 0.001
+    timelimit : float (optional)
+        Time limit for unit commitment run. Default of None results in no time
+        limit being set -- runs until mipgap is satisfied
+    solver_tee : bool (optional)
+        Display solver log. Default is True.
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels. Useful for debugging; default is False.
+    solver_options : dict (optional)
+        Other options to pass into the solver. Default is dict().
+    solve_method_options : dict (optional)
+        Other options to pass into the pyomo solve method. Default is dict().
+    uc_model_generator : function (optional)
+        Function for generating the unit commitment model. Default is 
+        egret.models.unit_commitment.create_tight_unit_commitment_model
+    relaxed : bool (optional)
+        If True, creates a relaxed unit commitment model
+    return_model : bool (optional)
+        If True, returns the pyomo model object
+    return_results : bool (optional)
+        If True, returns the pyomo results object
+    kwargs : dictionary (optional)
+        Additional arguments for building model
+    '''
+
+    m = uc_model_generator(model_data, relaxed=relaxed, **kwargs)
+
+    if relaxed:
+        m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+
+    m, results, solver = _solve_unit_commitment(m, solver, mipgap, timelimit, solver_tee, symbolic_solver_labels, solver_options, solve_method_options,relaxed )
+
+    md = _save_uc_results(m, relaxed)
     
     if return_model and return_results:
         return md, m, results
@@ -1230,10 +1605,9 @@ def solve_unit_commitment(model_data,
         return md, results
     return md
 
-# if __name__ == '__main__':
-#     from egret.data.model_data import ModelData
-#
-#     file = "tests/uc_test_instances/test_case_1.json"
-#     md = ModelData()
-#     md.read_from_json(file)
-#     solve_unit_commitment(md, "gurobi")
+if __name__ == '__main__':
+    from egret.data.model_data import ModelData
+
+    filen = "tests/uc_test_instances/tiny_uc_tc_2.json"
+    md = ModelData.read(filen)
+    md_results = solve_unit_commitment(md, "cbc")

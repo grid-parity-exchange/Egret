@@ -53,7 +53,7 @@ testdata = {
                         'connected_bus': 'B2',
                         'Pl': {
                             'data_type': 'time_series',
-                            'values': {0.0: 11.0, 1.0: 111.0, 2.0: 111.1}
+                            'values': [11.0, 111.0, 111.1]
                         },
                         'Ql': 11.0
                     }
@@ -62,6 +62,7 @@ testdata = {
     'system': { 
               'reference_bus': 'B1',
               'reference_bus_angle': 0.0,
+              'time_keys' : [0.0, 1.0, 2.0],
               },
 }
 
@@ -109,7 +110,7 @@ testdata = {
                         'connected_bus': 'B2',
                         'Pl': {
                             'data_type': 'time_series',
-                            'values': {0.0: 11.0, 1.0: 111.0, 2.0: 111.1}
+                            'values': [11.0, 111.0, 111.1]
                         },
                         'Ql': 11.0
                     }
@@ -118,6 +119,7 @@ testdata = {
     'system': { 
               'reference_bus': 'B1',
               'reference_bus_angle': 0.0,
+              'time_keys' : [0.0, 1.0, 2.0],
               },
 }
 """
@@ -165,11 +167,77 @@ def test_clone():
 
     assert md.data == cmd.data
 
-def test_clone_at_timestamp():
+def test_clone_at_time():
     md = ModelData(testdata)
-    cloned_md = md.clone_at_timestamp(2.0)
+    cloned_md = md.clone_at_time(2.0)
 
     comparison_md = md.clone()
     comparison_md.data['elements']['load']['L1']['Pl'] = 111.1
+    del comparison_md.data['system']['time_keys']
 
     assert cloned_md.data == comparison_md.data
+
+def test_clone_at_time_index():
+    md = ModelData(testdata)
+    cloned_md = md.clone_at_time_index(2)
+
+    comparison_md = md.clone()
+    comparison_md.data['elements']['load']['L1']['Pl'] = 111.1
+    del comparison_md.data['system']['time_keys']
+
+    assert cloned_md.data == comparison_md.data
+
+def test_clone_at_time_keys():
+    md = ModelData(testdata)
+    cloned_md = md.clone_at_time_keys([1.0,2.0])
+
+    comparison_md = md.clone()
+    comparison_md.data['elements']['load']['L1']['Pl'] = \
+            {'data_type':'time_series', 'values': [111.0, 111.1]}
+
+    comparison_md.data['system']['time_keys'] = [1.0, 2.0]
+
+    assert cloned_md.data == comparison_md.data
+
+def test_clone_at_time_indices():
+    md = ModelData(testdata)
+    cloned_md = md.clone_at_time_keys([1,2])
+
+    comparison_md = md.clone()
+    comparison_md.data['elements']['load']['L1']['Pl'] = \
+            {'data_type':'time_series', 'values': [111.0, 111.1]}
+
+    comparison_md.data['system']['time_keys'] = [1.0, 2.0]
+
+    assert cloned_md.data == comparison_md.data
+
+def test_json_read_write():
+    md = ModelData(testdata)
+    md.write('testdata.json')
+
+    md_read = ModelData.read('testdata.json')
+
+    assert md.data == md_read.data
+
+def test_json_gz_read_write():
+    md = ModelData(testdata)
+    md.write('testdata.json.gz')
+
+    md_read = ModelData.read('testdata.json.gz')
+
+    assert md.data == md_read.data
+
+def test_init_read():
+    md = ModelData(testdata)
+    md.write('testdata.json')
+
+    md_read = ModelData('testdata.json')
+
+    assert md.data == md_read.data
+
+def test_init_clone():
+    md = ModelData(testdata)
+    md_clone = ModelData(md)
+
+    assert md.data == md_clone.data
+    assert id(md.data) != id(md_clone.data)

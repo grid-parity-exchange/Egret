@@ -12,7 +12,6 @@ from pyomo.environ import *
 import os.path
 import egret.data.model_data as md
 
-
 def create_ModelData(dat_file):
     '''
     Create a ModelData object from a prescient dat file
@@ -29,21 +28,24 @@ def create_ModelData(dat_file):
     '''
     return md.ModelData(create_model_data_dict(dat_file))
 
-
 def create_model_data_dict(dat_file):
-    
-    abstract_params = AbstractModel()
+    model = get_uc_model()
+    params = model.create_instance(dat_file)
+    return create_model_data_dict_params(params)
 
-    load_basic_data(abstract_params)
+def get_uc_model():
+    uc_model = AbstractModel()
+    setup_abstract_model(uc_model)
+    return uc_model
 
-    params = abstract_params.create_instance(dat_file)
+def create_model_data_dict_params(params, keep_names=False):
 
     md_dict = md.ModelData.empty_model_data_dict()
 
     elements = md_dict['elements']
     system = md_dict['system']
 
-    system['time_indices'] = list(str(t) for t in params.TimePeriods)
+    system['time_keys'] = list(str(t) for t in params.TimePeriods)
     system['time_period_length_minutes'] = value(params.TimePeriodLengthMinutes)
 
     system['load_mismatch_cost'] = value(params.LoadMismatchPenalty)
@@ -57,12 +59,12 @@ def create_model_data_dict(dat_file):
     gen_bus_dict = dict()
     renewable_gen_bus_dict = dict()
     storage_bus_dict = dict()
-    for b in sorted(params.Buses):
+    for b in params.Buses:
         if set_reference:
             system['reference_bus'] = b
             system['reference_bus_angle'] = 0.0
             set_reference = False
-        bus_dict[b] = {}
+        bus_dict[b] = {'base_kv' : params.BusKV[b]}
         for g in params.ThermalGeneratorsAtBus[b]:
             gen_bus_dict[g] = b
         for n in params.NondispatchableGeneratorsAtBus[b]:
@@ -72,22 +74,22 @@ def create_model_data_dict(dat_file):
     elements['bus'] = bus_dict
 
     load_dict = dict()
-    for b in sorted(params.Buses):
+    for b in params.Buses:
         l_d = { 'bus' : b, 
                 'in_service': True,
                 'p_load':
                         {'data_type':'time_series',
-                            'values': { str(t) : params.Demand[b,t] for t in params.TimePeriods }
+                            'values': [params.Demand[b,t] for t in params.TimePeriods ]
                         }
                }
         load_dict[b] = l_d
     elements['load'] = load_dict
 
-    reserve_dict = { str(t) : value(params.ReserveRequirement[t]) for t in params.TimePeriods }
+    reserve_dict = [ value(params.ReserveRequirement[t]) for t in params.TimePeriods ]
     system['reserve_requirement'] = { 'data_type':'time_series', 'values': reserve_dict }
 
     branch_dict = dict()
-    for l in sorted(params.TransmissionLines):
+    for l in params.TransmissionLines:
         b_d = { 'from_bus' : params.BusFrom[l],
                 'to_bus' : params.BusTo[l],
                 'reactance' : params.Impedence[l],
@@ -103,7 +105,7 @@ def create_model_data_dict(dat_file):
     elements['branch'] = branch_dict
 
     interface_dict = dict()
-    for i in sorted(params.Interfaces):
+    for i in params.Interfaces:
         i_d = { 'interface_lines' : list(params.InterfaceLines[l]),
                 'interface_from_limit': params.InterfaceFromLimit[l],
                 'interface_to_limit': params.InterfaceToLimit[l],
@@ -112,19 +114,19 @@ def create_model_data_dict(dat_file):
     elements['interface'] = interface_dict
 
     zone_dict = dict()
-    for z in sorted(params.ReserveZones):
-        reserve_dict = { t : params.ZonalReserveRequirement[z,t] }
+    for z in params.ReserveZones:
+        reserve_dict = [ params.ZonalReserveRequirement[z,t] for t in params.TimePeriods ]
         z_d = { 'reserve_requirement' : {'data_type': 'time_series', 'values' : reserve_dict } }
         zone_dict[z] = z_d
     elements['zone'] = zone_dict
 
     gen_dict = dict()
 
-    for g in sorted(params.ThermalGenerators):
+    for g in params.ThermalGenerators:
         g_d = { 'generator_type':'thermal', }
         g_d['bus'] = gen_bus_dict[g]
         g_d['fuel'] = params.ThermalGeneratorType[g]
-        g_d['fast_start'] = params.QuickStart[g]
+        g_d['fast_start'] = (g in params.QuickStartGenerators)
         g_d['fixed_commitment'] = (1 if params.MustRun[g] else None)
         g_d['in_service'] = True
         g_d['zone'] = params.ReserveZoneLocation[g]
@@ -144,36 +146,47 @@ def create_model_data_dict(dat_file):
         p_cost = {'data_type' : 'cost_curve' }
         if value(params.PiecewiseType) == "NoPiecewise":
             p_cost['cost_curve_type'] = 'polynomial'
-            p_cost['values'] = { 0 : params.ProductionCostA0[g],
-                                 1 : params.ProductionCostA1[g],
-                                 2 : params.ProductionCostA2[g],
+            p_cost['values'] = { 0 : params.FuelCost[g]*params.ProductionCostA0[g],
+                                 1 : params.FuelCost[g]*params.ProductionCostA1[g],
+                                 2 : params.FuelCost[g]*params.ProductionCostA2[g],
                                }
         else:
             p_cost['cost_curve_type'] = 'piecewise'
-            p_cost['values'] = list(zip(params.CostPiecewisePoints[g], params.CostPiecewiseValues[g]))
+            p_cost['values'] = list(zip(params.CostPiecewisePoints[g], 
+                                        (params.FuelCost[g]*val for val in params.CostPiecewiseValues[g])))
         g_d['p_cost'] =  p_cost
 
         ## NOTE: generators need unique names
-        gen_dict[g+'_t'] = g_d
+        if keep_names:
+            if g in gen_dict:
+                raise RuntimeError("Nonunique generator names")
+            gen_dict[g] = g_d
+        else:
+            gen_dict[g+'_t'] = g_d
         
-    for g in sorted(params.AllNondispatchableGenerators):
+    for g in params.AllNondispatchableGenerators:
         g_d = { 'generator_type':'renewable', }
         g_d['bus'] = renewable_gen_bus_dict[g]
         g_d['in_service'] = True
         g_d['fuel'] = params.NondispatchableGeneratorType[g]
         g_d['p_min'] = { 'data_type':'time_series', 
-                            'values': { str(t) : params.MinNondispatchablePower[g,t] for t in params.TimePeriods }
+                            'values': [ params.MinNondispatchablePower[g,t] for t in params.TimePeriods ]
                        }
         g_d['p_max'] = { 'data_type':'time_series', 
-                            'values': { str(t) : params.MaxNondispatchablePower[g,t] for t in params.TimePeriods }
+                            'values': [ params.MaxNondispatchablePower[g,t] for t in params.TimePeriods ]
                        }
         ## NOTE: generators need unique names
-        gen_dict[g+'_r'] = g_d
+        if keep_names:
+            if g in gen_dict:
+                raise RuntimeError("Nonunique generator names")
+            gen_dict[g] = g_d
+        else:
+            gen_dict[g+'_r'] = g_d
 
     elements['generator'] = gen_dict
 
     storage_dict = {}
-    for s in sorted(params.Storage):
+    for s in params.Storage:
         s_d = dict()
         s_d['bus'] = storage_bus_dict[s]
         s_d['min_discharge_rate'] = params.MinimumPowerOutputStorage[s]
@@ -225,10 +238,10 @@ def _populate_reserve_requirements(model):
     
     model.PopulateReserveRequirements = BuildAction(rule=populate_reserve_requirements_rule)
 
-def load_basic_data(model):
+def setup_abstract_model(model):
     
     '''
-    This loads the model from a dat file
+    This adds an AbstractModel shell for dat file parsing
     '''
     warn_neg_load = False
     #
@@ -257,7 +270,7 @@ def load_basic_data(model):
             print("Multiple buses is not supported by buildBusZone in ReferenceModel.py -- someone should fix that!")
             exit(1)
     
-    model.BusZone = Param(model.Buses, mutable=True)
+    model.BusZone = Param(model.Buses, mutable=True, within=Any)
     model.BuildBusZone = BuildAction(rule=buildBusZone)
     
     model.LoadCoefficient = Param(model.Buses, default=0.0)
@@ -272,6 +285,8 @@ def load_basic_data(model):
         else:
             return 0.0
     model.LoadFactor = Param(model.Buses, initialize=load_factors_per_bus, within=NonNegativeReals)
+
+    model.BusKV = Param(model.Buses, default=1000.)
     
     ################################
     
@@ -328,8 +343,8 @@ def load_basic_data(model):
     
     model.TransmissionLines = Set()
     
-    model.BusFrom = Param(model.TransmissionLines)
-    model.BusTo   = Param(model.TransmissionLines)
+    model.BusFrom = Param(model.TransmissionLines, within=Any)
+    model.BusTo   = Param(model.TransmissionLines, within=Any)
 
     model.Impedence = Param(model.TransmissionLines, within=NonNegativeReals)
 
@@ -368,6 +383,10 @@ def load_basic_data(model):
     model.VerifyThermalGeneratorBuses = BuildAction(model.ThermalGenerators, rule=verify_thermal_generator_buses_rule)
     
     model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False)
+
+    def init_quick_start_generators(m):
+        return [g for g in m.ThermalGenerators if value(m.QuickStart[g]) == 1]
+    model.QuickStartGenerators = Set(within=model.ThermalGenerators, initialize=init_quick_start_generators)
     
     # optionally force a unit to be on.
     model.MustRun = Param(model.ThermalGenerators, within=Boolean, default=False)
@@ -376,13 +395,11 @@ def load_basic_data(model):
         return []
     model.NondispatchableGeneratorsAtBus = Set(model.Buses, initialize=nd_gen_init)
     
-    def NonNoBus_init(m):
-        retval = set()
+    def nondispatchable_generator_init(m):
         for b in m.Buses:
-            retval = retval.union([gen for gen in m.NondispatchableGeneratorsAtBus[b]])
-        return retval
-    
-    model.AllNondispatchableGenerators = Set(initialize=NonNoBus_init)
+            for gen in m.NondispatchableGeneratorsAtBus[b]:
+                yield gen
+    model.AllNondispatchableGenerators = Set(initialize=nondispatchable_generator_init)
 
     model.NondispatchableGeneratorType = Param(model.AllNondispatchableGenerators, within=Any, default='W')
     
@@ -395,7 +412,7 @@ def load_basic_data(model):
     
     model.ReserveZones = Set()
     model.ZonalReserveRequirement = Param(model.ReserveZones, model.TimePeriods, default=0.0, within=NonNegativeReals)
-    model.ReserveZoneLocation = Param(model.ThermalGenerators, default='None')
+    model.ReserveZoneLocation = Param(model.ThermalGenerators, default='None', within=Any)
     
     #################################################################
     # the global system demand, for each time period. units are MW. #
@@ -665,7 +682,7 @@ def load_basic_data(model):
         else:
             return "Absolute"
     
-    model.PiecewiseType = Param(validate=piecewise_type_validator,initialize=piecewise_type_init, )
+    model.PiecewiseType = Param(validate=piecewise_type_validator,initialize=piecewise_type_init, within=Any)
     
     def piecewise_init(m, g):
         return []
@@ -713,11 +730,7 @@ def load_basic_data(model):
     
     model.ValidateCostPiecewisePointsAndValues = BuildCheck(model.ThermalGenerators, rule=validate_cost_piecewise_points_and_values_rule)
     
-    # Sets the cost of fuel to the generator.  Assert that this is 1.0 for this parser, for now
-    model.FuelCost = Param(model.ThermalGenerators, default=1.0) 
-    def unit_fuel_cost(m,g):
-        return (m.FuelCost[g] == 1.0)
-    model.ValidateFuelCost = BuildCheck(model.ThermalGenerators, rule=unit_fuel_cost)
+    model.FuelCost = Param(model.ThermalGenerators, default=1.0, within=Reals) 
     
     # Minimum production cost (needed because Piecewise constraint on ProductionCost 
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
@@ -758,7 +771,7 @@ def load_basic_data(model):
     
     
     model.Storage = Set()
-    model.StorageAtBus = Set(model.Buses, initialize=Set())
+    model.StorageAtBus = Set(model.Buses)
     
     def verify_storage_buses_rule(m, s):
         for b in m.Buses:

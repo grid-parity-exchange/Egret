@@ -32,15 +32,14 @@ class TestBThetaDCOPF(unittest.TestCase):
     def setUpClass(self):
         download_dir = os.path.join(current_dir, 'transmission_test_instances')
         if not os.path.exists(os.path.join(download_dir, 'pglib-opf-master')):
-            from egret.thirdparty.get_pglib import get_pglib
-            get_pglib(download_dir)
+            from egret.thirdparty.get_pglib_opf import get_pglib_opf
+            get_pglib_opf(download_dir)
 
     @parameterized.expand(zip(test_cases, btheta_soln_cases))
     def test_btheta_losses_dcopf_model(self, test_case, soln_case, include_kwargs=False):
         dcopf_losses_model = create_btheta_losses_dcopf_model
 
-        md_soln = ModelData()
-        md_soln.read_from_json(soln_case)
+        md_soln = ModelData.read(soln_case)
 
         md_dict = create_ModelData(test_case)
 
@@ -58,8 +57,7 @@ class TestBThetaDCOPF(unittest.TestCase):
     def test_ptdf_losses_dcopf_model(self, test_case, soln_case, include_kwargs=False):
         dcopf_losses_model = create_ptdf_losses_dcopf_model
 
-        md_soln = ModelData()
-        md_soln.read_from_json(soln_case)
+        md_soln = ModelData.read(soln_case)
 
         md_dict = create_ModelData(test_case)
 

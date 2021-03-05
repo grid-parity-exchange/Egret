@@ -11,7 +11,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, get_linear_expr
 component_name = 'reserve_vars'
 
 def check_reserve_requirement(model):
@@ -23,10 +23,12 @@ def _add_zero_reserve_hooks(model):
     def max_power_available_above_min_rule(m, g, t):
         return m.PowerGeneratedAboveMinimum[g,t]
     model.MaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=max_power_available_above_min_rule)
+    model._get_maximum_power_available_above_minimum_lists = model._get_power_generated_above_minimum_lists
 
     def max_power_available_rule(m,g,t):
         return m.PowerGenerated[g,t]
     model.MaximumPowerAvailable = Expression(model.ThermalGenerators, model.TimePeriods, rule=max_power_available_rule)
+    model._get_maximum_power_available_lists = model._get_power_generated_lists
 
     model.ReserveProvided = Param(model.ThermalGenerators, model.TimePeriods, default=0.0)
 
@@ -50,80 +52,37 @@ def garver_power_avail_vars(model):
 
     # amount of power produced by each generator above minimum, at each time period.
     def garver_power_bounds_rule(m, g, t):
-        return (0, m.MaximumPowerOutput[g]-m.MinimumPowerOutput[g])
+        return (0, m.MaximumPowerOutput[g,t]-m.MinimumPowerOutput[g,t])
 
     # maximum power output above minimum for each generator, at each time period.
     model.MaximumPowerAvailableAboveMinimum = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=garver_power_bounds_rule)
+    model._get_maximum_power_available_above_minimum_lists = lambda m,g,t : ([m.MaximumPowerAvailableAboveMinimum[g,t]], [1.])
     
     ## Note: thes only get used in system balance constraints
+    linear_expr = get_linear_expr(model.UnitOn)
+    model._get_maximum_power_available_lists = lambda m,g,t : ([m.MaximumPowerAvailableAboveMinimum[g,t], m.UnitOn[g,t]], [1., m.MinimumPowerOutput[g,t]])
     def maximum_power_avaiable_expr_rule(m, g, t):
-        return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g]*m.UnitOn[g,t]
+        return linear_expr(*m._get_maximum_power_available_lists(m,g,t))
     model.MaximumPowerAvailable = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_avaiable_expr_rule)
-
 
     # m.MinimumPowerOutput[g] * m.UnitOn[g, t] <= m.PowerGenerated[g,t] <= m.MaximumPowerAvailable[g, t] <= m.MaximumPowerOutput[g] * m.UnitOn[g, t]
     # BK -- first <= now handled by bounds
     
+    linear_expr = get_linear_expr(model.PowerGeneratedAboveMinimum)
     def enforce_generator_output_limits_rule_part_b(m, g, t):
-       return m.PowerGeneratedAboveMinimum[g,t] <= m.MaximumPowerAvailableAboveMinimum[g, t]
-
+        return (None, linear_expr(
+                linear_vars=[m.PowerGeneratedAboveMinimum[g,t], m.MaximumPowerAvailableAboveMinimum[g,t]],
+                linear_coefs=[1,-1]
+                                        ), 0)
     model.EnforceGeneratorOutputLimitsPartB = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_generator_output_limits_rule_part_b)
 
     ## BK -- for reserve pricing
+    _get_reserves_provided_lists = lambda m,g,t : ([m.MaximumPowerAvailableAboveMinimum[g,t], m.PowerGeneratedAboveMinimum[g,t]], [1., -1.])
     def reserve_provided_expr_rule(m, g, t):
-        return m.MaximumPowerAvailableAboveMinimum[g,t] - m.PowerGeneratedAboveMinimum[g,t]
+        #return m.MaximumPowerAvailableAboveMinimum[g,t] - m.PowerGeneratedAboveMinimum[g,t]
+        return linear_expr( *_get_reserves_provided_lists(m,g,t) )
     model.ReserveProvided = Expression(model.ThermalGenerators, model.TimePeriods, rule=reserve_provided_expr_rule) 
 
-    return
-
-@add_model_attr(component_name, requires = {'data_loader': None,
-                                            'status_vars': None,
-                                            'power_vars': ['rescaled_power_vars'],
-                                            })
-def rescaled_power_avail_vars(model):
-
-    '''
-    This is an adaption of the idea of the idea in Yang, Zhang, Jian, Meng, Xu,
-    and Dong (2017) for power available variables, though that paper does not
-    explicitly have reserves.
-    '''
-
-    ## only add reserves if the user specified them
-    if not check_reserve_requirement(model):
-        _add_zero_reserve_hooks(model)
-
-        def unit_max_power_avail_above_min_rule(m,g,t):
-            return model.UnitPowerGeneratedAboveMinimum[g,t]
-        model.UnitMaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods)
-
-        return
-
-    model.UnitMaximumPowerAvailableAboveMinimum = Var(model.ThermalGenerators, model.TimePeriods, within=UnitInterval)
-
-
-    def power_available_above_min_expr_rule(m, g, t):
-        return (m.MaximumPowerOutput[g] - m.MinimumPowerOutput[g])*m.UnitMaximumPowerAvailableAboveMinimum[g,t]
-    # maximum power output above minimum for each generator, at each time period.
-    model.MaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=power_available_above_min_expr_rule)
-    
-    ## Note: thes only get used in system balance constraints
-    def maximum_power_avaiable_expr_rule(m, g, t):
-        return m.MaximumPowerAvailableAboveMinimum[g,t] + m.MinimumPowerOutput[g]*m.UnitOn[g,t]
-    model.MaximumPowerAvailable = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_avaiable_expr_rule)
-
-
-    # m.MinimumPowerOutput[g] * m.UnitOn[g, t] <= m.PowerGenerated[g,t] <= m.MaximumPowerAvailable[g, t] <= m.MaximumPowerOutput[g] * m.UnitOn[g, t]
-    # BK -- first <= now handled by bounds
-    
-    def enforce_generator_output_limits_rule_part_b(m, g, t):
-       return m.UnitPowerGeneratedAboveMinimum[g,t] <= m.UnitMaximumPowerAvailableAboveMinimum[g, t]
-    model.EnforceGeneratorOutputLimitsPartB = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_generator_output_limits_rule_part_b)
-
-    ## BK -- for reserve pricing
-    def reserve_provided_expr_rule(m, g, t):
-        return m.MaximumPowerAvailableAboveMinimum[g,t] - m.PowerGeneratedAboveMinimum[g,t]
-    model.ReserveProvided = Expression(model.ThermalGenerators, model.TimePeriods, rule=reserve_provided_expr_rule) 
-    
     return
 
 @add_model_attr(component_name, requires = {'data_loader': None,
@@ -147,20 +106,39 @@ def MLR_reserve_vars(model):
 
     # amount of power produced by each generator above minimum, at each time period.
     def garver_power_bounds_rule(m, g, t):
-        return (0, m.MaximumPowerOutput[g]-m.MinimumPowerOutput[g])
+        return (0, m.MaximumPowerOutput[g,t]-m.MinimumPowerOutput[g,t])
 
     # variable for reserves offered
     model.ReserveProvided = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=garver_power_bounds_rule)
 
+    linear_expr = get_linear_expr(model.UnitOn)
+
     ## Note: thes only get used in system balance constraints
+    def _get_maximum_power_available_lists(m,g,t):
+        linear_vars, linear_coefs = m._get_power_generated_lists(m,g,t)
+        linear_vars.append(m.ReserveProvided[g,t])
+        linear_coefs.append(1.)
+        return linear_vars, linear_coefs
+
     def maximum_power_avaiable_expr_rule(m, g, t):
-        return m.PowerGenerated[g,t] + m.ReserveProvided[g,t]
+        return linear_expr(*_get_maximum_power_available_lists(m,g,t))
     model.MaximumPowerAvailable = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_avaiable_expr_rule)
+
+    model._get_maximum_power_available_lists = _get_maximum_power_available_lists
+
+    ## Note: thes only get used in system balance constraints
+    def _get_maximum_power_available_above_minimum_lists(m,g,t):
+        linear_vars, linear_coefs = m._get_power_generated_above_minimum_lists(m,g,t)
+        linear_vars.append(m.ReserveProvided[g,t])
+        linear_coefs.append(1.)
+        return linear_vars, linear_coefs
 
     ## make this an expression so it propogates nicely with the term above
     def maximum_power_available_above_minimum_expr_rule(m, g, t):
-        return m.PowerGeneratedAboveMinimum[g,t] + m.ReserveProvided[g,t]
+        return linear_expr(*_get_maximum_power_available_above_minimum_lists(m,g,t))
     model.MaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_available_above_minimum_expr_rule)
+
+    model._get_maximum_power_available_above_minimum_lists = _get_maximum_power_available_above_minimum_lists
 
     return
 
@@ -185,14 +163,18 @@ def CA_power_avail_vars(model):
 
     # amount of power produced by each generator, at each time period.
     def power_bounds_rule(m, g, t):
-        return (0, m.MaximumPowerOutput[g])
+        return (0, m.MaximumPowerOutput[g,t])
     model.MaximumPowerAvailable = Var(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, bounds=power_bounds_rule) 
+    model._get_maximum_power_available_lists = lambda m,g,t : ([m.MaximumPowerAvailable[g,t]], [1.])
 
     # this is useful for the damci_kurt ramping inequality
     # I think this seemlessly handles many cases when this expression is on the LHS,
     # including a variant of the state transition formulation
+    linear_expr = get_linear_expr(model.UnitOn)
+
+    model._get_maximum_power_available_above_minimum_lists = lambda m,g,t : ([m.MaximumPowerAvailable[g,t], m.UnitOn[g,t]], [1., -m.MinimumPowerOutput[g,t]])
     def maximum_power_available_above_minimum_expr_rule(m, g, t):
-        return m.MaximumPowerAvailable[g,t] - m.MinimumPowerOutput[g]*m.UnitOn[g,t]
+        return linear_expr(*m._get_maximum_power_available_above_minimum_lists(m,g,t))
     model.MaximumPowerAvailableAboveMinimum = Expression(model.ThermalGenerators, model.TimePeriods, rule=maximum_power_available_above_minimum_expr_rule)
 
     # m.MinimumPowerOutput[g] * m.UnitOn[g, t] <= m.PowerGenerated[g,t] <= m.MaximumPowerAvailable[g, t] <= m.MaximumPowerOutput[g] * m.UnitOn[g, t]
@@ -205,5 +187,4 @@ def CA_power_avail_vars(model):
     ## BK -- for reserve pricing
     def reserve_provided_expr_rule(m, g, t):
         return m.MaximumPowerAvailable[g,t] - m.PowerGenerated[g,t]
-
     model.ReserveProvided = Expression(model.ThermalGenerators, model.TimePeriods, rule=reserve_provided_expr_rule) 

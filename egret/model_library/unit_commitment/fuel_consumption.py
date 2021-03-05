@@ -10,7 +10,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr, build_uc_time_mapping
+from .uc_utils import add_model_attr
 from .status_vars import _is_relaxed
 
 @add_model_attr('fuel_consumption', requires = {'data_loader': None,
@@ -34,11 +34,6 @@ def fuel_consumption_model(model):
 
     md = model.model_data
 
-    system = md.data['system']
-    time_keys = system['time_indices']
-    TimeMapper = build_uc_time_mapping(time_keys)
-
-
     relaxed = _is_relaxed(model)
     ## generator fuel consumption model
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
@@ -47,15 +42,15 @@ def fuel_consumption_model(model):
     model.FuelConsumedCommitment = Var(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
     model.FuelConsumedProduction = Var(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals)
 
-    def _fuel_consumed_function(m, g, i):
-        return thermal_gen_attrs['p_fuel'][g]['values'][i][1]*m.TimePeriodLengthHours
+    def _fuel_consumed_function(m, g, t, i):
+        return m.PowerGenerationPiecewiseFuelValues[g,t][i] * m.TimePeriodLengthHours
 
     def production_fuel_consumed_rule(m, g, t):
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return sum( (_fuel_consumed_function(m,g,i+1) - _fuel_consumed_function(m,g,i))/(m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i]) * m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1))
+            return sum( (_fuel_consumed_function(m,g,t,i+1) - _fuel_consumed_function(m,g,t,i))/(m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i]) * m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1))
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i=0
-            return (_fuel_consumed_function(m,g,i+1) - _fuel_consumed_function(m,g,i))/(m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
+            return (_fuel_consumed_function(m,g,t,i+1) - _fuel_consumed_function(m,g,t,i))/(m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
         else:
             return 0.
 
@@ -92,7 +87,7 @@ def fuel_consumption_model(model):
     model.StartupFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=startup_fuel_consumed_rule)
 
     def fuel_commitment_consumed_rule(m,g,t):
-        return _fuel_consumed_function(m,g,0)*m.UnitOn[g,t] 
+        return m.MinimumFuelConsumption[g,t]*m.TimePeriodLengthHours*m.UnitOn[g,t] 
     model.CommitmentFuelConsumed = Expression(model.FuelSupplyGenerators, model.TimePeriods, rule=fuel_commitment_consumed_rule)
 
     def commitment_fuel_consumed_constr(m,g,t):
@@ -123,9 +118,9 @@ def fuel_consumption_model(model):
     ## load and verify some parameters
     dual_fuel_attrs = md.attributes(element_type='generator', generator_type='thermal', aux_fuel_capable=True)
 
-    model.UnitSwitchOperating = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('aux_fuel_online_switching'))
+    model.UnitSwitchOperating = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=dual_fuel_attrs.get('aux_fuel_online_switching', dict()))
 
-    model.UnitFuelBlending = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('aux_fuel_blending'))
+    model.UnitFuelBlending = Param(model.DualFuelGenerators, within=Boolean, default=False, initialize=dual_fuel_attrs.get('aux_fuel_blending', dict()))
 
     def verify_dual_fuel_consistency(m, g):
         if value(m.UnitFuelBlending[g]) and not value(m.UnitSwitchOperating[g]):
@@ -136,7 +131,7 @@ def fuel_consumption_model(model):
     
     def verify_initial_fuel_defined(m, g):
         if not value(m.UnitSwitchOperating[g]) and value(m.UnitOnT0[g]):
-            if 'aux_fuel_supply_initial' not in thermal_gen_attrs or g not in thermal_gen_attrs['aux_fuel_supply_initial']:
+            if 'aux_fuel_supply_initial' not in dual_fuel_attrs or g not in dual_fuel_attrs['aux_fuel_supply_initial']:
                 print("DATA ERROR: Couldn't find initial fuel for dual fuel generator "+g)
                 assert(False)
     model.VerifyUnitInitialFuelDefined = BuildAction(model.DualFuelGenerators, rule=verify_initial_fuel_defined)
@@ -162,9 +157,9 @@ def fuel_consumption_model(model):
 
     model.AuxiliaryFuelCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs['aux_fuel_cost'], within=NonNegativeReals)
 
-    model.NonFuelNoLoadCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs.get('non_fuel_no_load_cost'), default=0., within=Reals)
+    model.NonFuelNoLoadCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs.get('non_fuel_no_load_cost', dict()), default=0., within=Reals)
 
-    model.NonFuelStartupCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs.get('non_fuel_startup_cost'), default=0., within=Reals)
+    model.NonFuelStartupCost = Param(model.DualFuelGenerators, initialize=dual_fuel_attrs.get('non_fuel_startup_cost', dict()), default=0., within=Reals)
 
     def dual_fuel_startup_running_cost(m,g,t):
         return m.PrimaryFuelCost[g]*m.PrimaryFuelConsumedCommitment[g,t] \

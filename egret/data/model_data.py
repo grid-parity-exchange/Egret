@@ -122,8 +122,9 @@ nested dictionary structure.
     * Document the data-types for attributes
 
 """
-import copy as cp
 import logging
+import copy as cp
+import egret.data.data_utils as du
 logger = logging.getLogger('egret.model_data')
 
 class ModelData(object):
@@ -139,20 +140,52 @@ class ModelData(object):
         """
         return {"elements": dict(), "system": dict()}
     
-    def __init__(self, data=None):
+    def __init__(self, source=None, file_type=None):
         """
         Create a new ModelData object to wrap a model_data dictionary with some helper methods.
 
         Parameters
         ----------
-        data : dict or None
-           An initial model_data dictionary if it is available, otherwise, a new model_data
-           dictionary is created.
+        source : dict, str, ModelData, or None (optional)
+            If dict, an initial model_data dictionary.
+            If str, a path to a file which is parsable by EGRET.
+            If ModelData, the original is copies into the new ModelData.
+            If None, a blank model_data dictionary is created.
+
+        file_type : str or None (optional)
+            If source is str, this is the specification of the file_type.
+            Valid values are 'json', 'json.gz' for json-ed EGRET ModelData
+            objects, 'm' for MATPOWER files, 'dat' for Prescient data files, and
+            'pglib-uc' for json files from pglib-uc. If None, the file type is
+            inferred from the extension.
         """
-        if data:
-            self.data = data
-        else:
+        if isinstance(source, dict):
+            self.data = source
+        elif isinstance(source, str):
+            self.data = du._read_from_file(source, file_type)
+        elif isinstance(source, ModelData):
+            self.data = source.clone().data
+        elif source is None:
             self.data = ModelData.empty_model_data_dict()
+        else:
+            raise RuntimeError("Unrecognized source for ModelData")
+
+    @classmethod
+    def read(cls, filename, file_type=None):
+        """
+        Reads data from a file into a new ModelData object
+
+        Parameters
+        ----------
+        filename : str
+            The path to the file
+        file_type : None,str (optional)
+            The specification of the file_type. Valid values are 'json', 'json.gz' for json-ed
+            EGRET ModelData objects, 'm' for MATPOWER files, 'dat' for Prescient data files, and
+            'pglib-uc' for json files from pglib-uc. If None, the file type is inferred from the
+            extension.
+        """
+        return cls(source=du._read_from_file(filename, file_type))
 
     def elements(self, element_type, **kwargs):
         """
@@ -262,110 +295,150 @@ class ModelData(object):
         -------
             ModelData
         """
-        return ModelData(_copy_only_in_service(self.data))
+        return ModelData(du._copy_only_in_service(self.data))
 
-
-    def clone_at_timestamp(self, timestamp):
+    def clone_at_time(self, time):
         """
-        Creae a copy of the ModelData object using values from a single timestamp.
+        Create a copy of the ModelData object using values from a single time.
 
         Create a copy of this ModelData object, but with the following change. Whenever
         a time_series is encountered (recognized by "data_type"="time_series"), the
         attribute containing the time series is replaced with a float value corresponding
-        to the specified timestamp.
+        to the specified time, which must be a member of self.data['system']['time_keys'].
 
         .. todo::
            This can actually be made general based on "data_type" and idx instead of specific to time_series
 
         Parameters
         ----------
-        timestamp : str, int, or TimeStamp
-           The desired timestamp to use when collapsing the representation.
-
+        time : str, int,
+           The desired time to use when collapsing the representation.
 
         Returns
         -------
             ModelData
         """
-        # clone the data object, and then replace the time_series as needed
-        gd = self.clone()
+        time_keys = self.data['system']['time_keys']
 
-        # loop over all the elements
-        for e in gd.data['elements'].values():
-            # loop over all the element main-level attributes
-            self._replace_timeseries_with_value(e, timestamp)
+        try:
+            time_index = time_keys.index(time)
+        except ValueError:
+            raise ValueError("time {} not found in time_keys'")
+
+        gd = self.clone_at_time_index(time_index)
 
         return gd
 
-    def read_from_json(self, filename):
+    def clone_at_time_keys(self, time_keys):
         """
-        Reads the json file and overwrites the ModelData object dict.
+        Creae a copy of the ModelData object using values from a subset of times.
+
+        Create a copy of this ModelData object, but with the following change. Whenever
+        a time_series is encountered (recognized by "data_type"="time_series"), the
+        attribute containing the time series is replaced with the values corresponding 
+        to the times only in times_list. The values in times_keys should be a subset
+        of those in self.data['system']['time_keys']
 
         Parameters
         ----------
-        filename : *.json filename
-            The full filename including extension and path.
+        times_list : list of elements from self.data['system']['time_keys']
+           A list of times to slice out
+
+        Returns
+        -------
+            ModelData
         """
-        import json
+        all_times = self.data['system']['time_keys']
+        time_indices = du._get_sub_list_indicies(all_times, time_keys)
 
-        with open(filename) as f:
-            data = json.load(f)
+        gd = self.clone_at_time_indices(time_indices)
 
-        self.data = data
+        return gd
 
-    def write_to_json(self, filename):
+    def clone_at_time_index(self, time_index):
         """
-        Dumps the ModelData object dict to a json file.
+        Creae a copy of the ModelData object using values from a single time index value.
+
+        Create a copy of this ModelData object, but with the following change. Whenever
+        a time_series is encountered (recognized by "data_type"="time_series"), the
+        the attribute containing the time series is replaced by the value found in
+        attribute["values"][time_index].
 
         Parameters
         ----------
-        filename : *.json filename
-            The full filename including extension and path.
+        time_index : int
+            The index into time series data at which to copy
+
+        Returns
+        -------
+            ModelData
         """
-        import json
+        mdclone = ModelData(du._recurse_into_time_index(self.data, time_index))
 
-        with open(filename + '.json','w') as f:
-            json.dump(self.data, f)
+        ## the new model data has no time
+        del mdclone.data['system']['time_keys']
 
-    def _replace_timeseries_with_value(self, node, timestamp):
-        # loop over the attributes on this dict
-        for key, att in node.items():
-            # ignore if the attribute is not a dict
-            # TODO: Should we recurse through lists (are they allowed in the data_dict)?
-            if isinstance(att, dict):
-                if 'data_type' in att and att["data_type"] == "time_series":
-                    # the attribute is itself a dict and is a time_series specification
-                    # so replace the time_series with the appropriate value
-                    node[key] = att["values"][timestamp]
-                else:
-                    # recurse further down the tree
-                    self._replace_timeseries_with_value(att, timestamp)
+        return mdclone
 
+    def clone_at_time_indices(self, time_indices):
+        """
+        Creae a copy of the ModelData object using values from a single time index value.
 
-# TODO: These should be moved to a more general "model utilities" module
-def map_items(func, d):
-    return {k: func(v) for k, v in d.items()}
+        Create a copy of this ModelData object, but with the following change. Whenever
+        a time_series is encountered (recognized by "data_type"="time_series"), the
+        attribute containing the time series data is sliced with time_indices, i.e.,
+        [attribute["values"][i] for i in time_indices]. The list
+        self.data['system']['time_keys'] is updated accordingly.
 
+        Parameters
+        ----------
+        time_keys : list of ints
+            The index into time series data at which to copy
 
-def zip_items(dict_lb, dict_ub):
-    return {k: (dict_lb[k], dict_ub[k]) for k in dict_lb.keys()}
+        Returns
+        -------
+            ModelData
+        """
+        mdclone = ModelData(du._recurse_into_time_indices(self.data, time_indices))
 
-def _copy_only_in_service(data_dict):
-    new_dd = dict()
-    for key, value in data_dict.items():
-        if key == 'elements':
-            ## value is the elements dictionary
-            new_dd[key] = dict()
-            new_elements = new_dd[key]
-            for elements_name, elements in value.items():
-                new_elements[elements_name] = dict()
-                new_element_dict = new_elements[elements_name]
-                for element_name, element in elements.items():
-                    if 'in_service' in element and (not element['in_service']):
-                        continue
-                    else:
-                        new_element_dict[element_name] = cp.deepcopy(element)
-        else:
-            new_dd[key] = cp.deepcopy(value)
-    return new_dd
+        old_times = self.data['system']['time_keys']
 
+        mdclone.data['system']['time_keys'] = [old_times[i] for i in time_indices]
+
+        return mdclone
+
+    def write(self, filename, file_type=None):
+        """
+        Dumps the ModelData object dict to the specified file.
+        Optionally, the file_type can be specified if not inferred.
+
+        Parameters
+        ----------
+        filename : str
+            The full filename including extension and path.
+        file_type : None
+            If specified, the encoding used when writing the file.
+            If None, it will be inferred from the file extension.
+        """
+        valid_file_types = ['json', 'json.gz']
+        if file_type is not None and file_type not in valid_file_types:
+            raise Exception("Unrecognized file_type {}. Valid file types are {}".format(file_type, valid_file_types))
+        elif file_type is None:
+            if filename[-5:] == '.json':
+                file_type = 'json'
+            elif filename[-8:] == '.json.gz':
+                file_type = 'json.gz'
+            else:
+                logger.warning("Unrecognized file_type for file {} in ModelData.write, using 'json'".format(filename))
+                file_type = 'json'
+
+        if file_type == 'json':
+            import json
+            with open(filename,'w') as f:
+                json.dump(self.data, f)
+        elif file_type == 'json.gz':
+            import json
+            import gzip
+            with gzip.open(filename, 'wt') as f:
+                json.dump(self.data, f)
+        logger.debug("ModelData written to {}".format(filename))

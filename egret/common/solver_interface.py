@@ -60,6 +60,11 @@ def _set_options(solver, mipgap=None, timelimit=None, other_options=None):
             solver.options.ratioGap = mipgap
         if timelimit is not None:
             solver.options.sec = timelimit
+    elif 'xpress' in solver_name:
+        if mipgap is not None:
+            solver.options.mipgap = mipgap
+        if timelimit is not None:
+            solver.options.maxtime = timelimit
     # else:
     #     raise Exception('Solver {0} not recognized'.format(solver_name))
 
@@ -69,13 +74,15 @@ def _set_options(solver, mipgap=None, timelimit=None, other_options=None):
 
 def _solve_model(model,
                  solver,
-                 mipgap=0.001,
+                 mipgap=None,
                  timelimit = None,
                  solver_tee = True,
                  symbolic_solver_labels = False,
-                 options = None,
+                 solver_options = None,
+                 solve_method_options = None,
                  return_solver = False,
-                 vars_to_load = None):
+                 vars_to_load = None,
+                 set_instance = True):
     '''
     Create and solve an Egret power system optimization model
 
@@ -94,13 +101,18 @@ def _solve_model(model,
         Display solver log. Default is True.
     symbolic_solver_labels : bool (optional)
         Use symbolic solver labels. Useful for debugging; default is False.
-    options : dict (optional)
+    solver_options : dict (optional)
         Other options to pass into the solver. Default is dict().
+    solve_method_options : dict (optional)
+        Other options to pass into the pyomo solve method. Default is dict().
     return_solver : bool (optional)
         Returns the solver object
     vars_to_load : list (optional)
         When supplied, and the solver is persistent, this will just load
         pyomo variables specificed
+    set_instance : bool
+        When the solver is persistent, this controls whether set_instance
+        is called. Default is True
 
     Returns
     -------
@@ -130,14 +142,19 @@ def _solve_model(model,
     else:
         raise Exception('solver must be string or an instanciated pyomo solver')
 
-    _set_options(solver, mipgap, timelimit, options)
+    _set_options(solver, mipgap, timelimit, solver_options)
+
+    if solve_method_options is None:
+        solve_method_options = dict()
 
     if isinstance(solver, PersistentSolver):
-        solver.set_instance(model, symbolic_solver_labels=symbolic_solver_labels)
-        results = solver.solve(model, tee=solver_tee, load_solutions=False, save_results=False)
+        if set_instance:
+            solver.set_instance(model, symbolic_solver_labels=symbolic_solver_labels)
+        results = solver.solve(model, tee=solver_tee, load_solutions=False, save_results=False, **solve_method_options)
     else:
         results = solver.solve(model, tee=solver_tee, \
-                              symbolic_solver_labels=symbolic_solver_labels, load_solutions=False)
+                              symbolic_solver_labels=symbolic_solver_labels, load_solutions=False,
+                              **solve_method_options)
 
     if results.solver.termination_condition not in safe_termination_conditions:
         raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))

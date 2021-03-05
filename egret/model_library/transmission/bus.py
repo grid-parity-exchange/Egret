@@ -44,6 +44,47 @@ def declare_var_va(model, index_set, **kwargs):
     decl.declare_var('va', model=model, index_set=index_set, **kwargs)
 
 
+def declare_expr_vmsq(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create an expression for the voltage magnitude squared at a bus
+    """
+    m = model
+    expr_set = decl.declare_set('_expr_vmsq', model, index_set)
+    m.vmsq = pe.Expression(expr_set)
+
+    if coordinate_type == CoordinateType.RECTANGULAR:
+        for bus in expr_set:
+            m.vmsq[bus] = m.vr[bus] ** 2 + m.vj[bus] ** 2
+    elif coordinate_type == CoordinateType.POLAR:
+        for bus in expr_set:
+            m.vmsq[bus] = m.vm[bus] ** 2
+
+
+def declare_var_vmsq(model, index_set, **kwargs):
+    """
+    Create auxiliary variable for the voltage magnitude squared at a bus
+    """
+    decl.declare_var('vmsq', model=model, index_set=index_set, **kwargs)
+
+
+def declare_eq_vmsq(model, index_set, coordinate_type=CoordinateType.POLAR):
+    """
+    Create a constraint relating vmsq to the voltages
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_vmsq', model, index_set)
+    m.eq_vmsq = pe.Constraint(con_set)
+
+    if coordinate_type == CoordinateType.POLAR:
+        for bus in con_set:
+            m.eq_vmsq[bus] = m.vmsq[bus] == m.vm[bus] ** 2
+    elif coordinate_type == CoordinateType.RECTANGULAR:
+        for bus in con_set:
+            m.eq_vmsq[bus] = m.vmsq[bus] == m.vr[bus]**2 + m.vj[bus]**2
+    else:
+        raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
+
+
 def declare_var_ir_aggregation_at_bus(model, index_set, **kwargs):
     """
     Create a variable for the aggregated real current at a bus
@@ -102,38 +143,64 @@ def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
                 m.shunt_p[bus_name] = shunt_attrs['gs'][bus_name]*vmsq
                 m.shunt_q[bus_name] = -shunt_attrs['bs'][bus_name]*vmsq
 
-def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+def _get_dc_dicts(dc_inlet_branches_by_bus, dc_outlet_branches_by_bus, con_set):
+    if dc_inlet_branches_by_bus is None:
+        assert dc_outlet_branches_by_bus is None
+        dc_inlet_branches_by_bus = {bn:() for bn in con_set}
+    if dc_outlet_branches_by_bus is None:
+        dc_outlet_branches_by_bus = dc_inlet_branches_by_bus
+    return dc_inlet_branches_by_bus, dc_outlet_branches_by_bus
+
+def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts,
+                                       dc_inlet_branches_by_bus=None, dc_outlet_branches_by_bus=None):
     """
     Create a named pyomo expression for bus net withdraw
     """
     m = model
     decl.declare_expr('p_nw', model, index_set)
 
+    dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = _get_dc_dicts(dc_inlet_branches_by_bus,
+                                                                        dc_outlet_branches_by_bus,
+                                                                        index_set)
+
     for b in index_set:
         m.p_nw[b] = ( bus_gs_fixed_shunts[b] 
                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
-                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+                    - sum( m.pg[g] for g in gens_by_bus[b] ) 
+                    + sum(m.dcpf[branch_name] for branch_name in dc_outlet_branches_by_bus[b])
+                    - sum(m.dcpf[branch_name] for branch_name in dc_inlet_branches_by_bus[b])
+                    )
         
-def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts,
+                                     dc_inlet_branches_by_bus=None, dc_outlet_branches_by_bus=None):
     """
     Create a named pyomo expression for bus net withdraw
     """
     m = model
     con_set = decl.declare_set('_con_eq_p_net_withdraw_at_bus', model, index_set)
 
+    dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = _get_dc_dicts(dc_inlet_branches_by_bus,
+                                                                        dc_outlet_branches_by_bus,
+                                                                        index_set)
+
     m.eq_p_net_withdraw_at_bus = pe.Constraint(con_set)
 
     for b in index_set:
         m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] 
                                                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
-                                                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+                                                    - sum( m.pg[g] for g in gens_by_bus[b] )
+                                                    + sum(m.dcpf[branch_name] for branch_name
+                                                           in dc_outlet_branches_by_bus[b])
+                                                    - sum(m.dcpf[branch_name] for branch_name
+                                                           in dc_inlet_branches_by_bus[b])
+                                                    )
                     
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """
     Create an equality constraint to enforce tan(\theta) = vj/vr at  the reference bus
     """
     m = model
-    m.eq_ref_bus_nonzero = pe.Constraint(expr = tan(radians(ref_angle)) == m.vj[ref_bus]/m.vr[ref_bus])
+    m.eq_ref_bus_nonzero = pe.Constraint(expr = tan(radians(ref_angle)) * m.vr[ref_bus] == m.vj[ref_bus])
 
 def declare_eq_i_aggregation_at_bus(model, index_set,
                                     bus_bs_fixed_shunts, bus_gs_fixed_shunts,
@@ -185,10 +252,10 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
-            if idx == 'include_feasibility_slack_pos':
-                p_expr -= eval("m." + val)
-            if idx == 'include_feasibility_slack_neg':
+            if idx == 'include_feasibility_load_shed':
                 p_expr += eval("m." + val)
+            if idx == 'include_feasibility_over_generation':
+                p_expr -= eval("m." + val)
             if idx == 'include_losses':
                 p_expr -= sum(m.pfl[branch_name] for branch_name in val)
             if idx == 'relax_balance':
@@ -199,13 +266,14 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     else:
         m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
-
 def declare_eq_p_balance_dc_approx(model, index_set,
                                    bus_p_loads,
                                    gens_by_bus,
                                    bus_gs_fixed_shunts,
                                    inlet_branches_by_bus, outlet_branches_by_bus,
                                    approximation_type=ApproximationType.BTHETA,
+                                   dc_inlet_branches_by_bus=None,
+                                   dc_outlet_branches_by_bus=None,
                                    **rhs_kwargs):
     """
     Create the equality constraints for the real power balance
@@ -220,13 +288,17 @@ def declare_eq_p_balance_dc_approx(model, index_set,
 
     for bus_name in con_set:
         if approximation_type == ApproximationType.BTHETA:
-            p_expr = -sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-            p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr = -sum(m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name])
+            p_expr += sum(m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name])
         elif approximation_type == ApproximationType.BTHETA_LOSSES:
-            p_expr = -0.5*sum([m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
-            p_expr -= 0.5*sum([m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-            p_expr -= sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-            p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+            p_expr = -0.5*sum(m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name])
+            p_expr -= 0.5*sum(m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name])
+            p_expr -= sum(m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name])
+            p_expr += sum(m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name])
+
+        if dc_inlet_branches_by_bus is not None:
+            p_expr -= sum(m.dcpf[branch_name] for branch_name in dc_outlet_branches_by_bus[bus_name])
+            p_expr += sum(m.dcpf[branch_name] for branch_name in dc_inlet_branches_by_bus[bus_name])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
             p_expr -= bus_gs_fixed_shunts[bus_name]
@@ -235,11 +307,17 @@ def declare_eq_p_balance_dc_approx(model, index_set,
             p_expr -= m.pl[bus_name]
 
         if rhs_kwargs:
+            k = bus_name
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    p_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
-                    p_expr += eval("m." + val)[bus_name]
+                if isinstance(val, tuple):
+                    val,key = val
+                    k = (key,bus_name)
+                if not k in eval("m." + val).index_set():
+                    continue
+                if idx == 'include_feasibility_load_shed':
+                    p_expr += eval("m." + val)[k]
+                if idx == 'include_feasibility_over_generation':
+                    p_expr -= eval("m." + val)[k]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
@@ -253,7 +331,6 @@ def declare_eq_p_balance(model, index_set,
                          gens_by_bus,
                          bus_gs_fixed_shunts,
                          inlet_branches_by_bus, outlet_branches_by_bus,
-                         coordinate_type=CoordinateType.RECTANGULAR,
                          **rhs_kwargs):
     """
     Create the equality constraints for the real power balance
@@ -272,10 +349,7 @@ def declare_eq_p_balance(model, index_set,
         p_expr -= sum([m.pt[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
-            if coordinate_type == CoordinateType.RECTANGULAR:
-                vmsq = m.vr[bus_name] ** 2 + m.vj[bus_name] ** 2
-            elif coordinate_type == CoordinateType.POLAR:
-                vmsq = m.vm[bus_name] ** 2
+            vmsq = m.vmsq[bus_name]
             p_expr -= bus_gs_fixed_shunts[bus_name] * vmsq
 
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
@@ -283,10 +357,10 @@ def declare_eq_p_balance(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    p_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     p_expr += eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_over_generation':
+                    p_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
@@ -319,10 +393,10 @@ def declare_eq_p_balance_with_i_aggregation(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    p_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     p_expr += eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_over_generation':
+                    p_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             p_expr += m.pg[gen_name]
@@ -336,7 +410,6 @@ def declare_eq_q_balance(model, index_set,
                          gens_by_bus,
                          bus_bs_fixed_shunts,
                          inlet_branches_by_bus, outlet_branches_by_bus,
-                         coordinate_type=CoordinateType.POLAR,
                          **rhs_kwargs):
     """
     Create the equality constraints for the reactive power balance
@@ -354,10 +427,7 @@ def declare_eq_q_balance(model, index_set,
         q_expr -= sum([m.qt[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_bs_fixed_shunts[bus_name] != 0.0:
-            if coordinate_type == CoordinateType.RECTANGULAR:
-                vmsq = m.vr[bus_name] ** 2 + m.vj[bus_name] ** 2
-            elif coordinate_type == CoordinateType.POLAR:
-                vmsq = m.vm[bus_name] ** 2
+            vmsq = m.vmsq[bus_name]
             q_expr += bus_bs_fixed_shunts[bus_name] * vmsq
 
         if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
@@ -365,10 +435,10 @@ def declare_eq_q_balance(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    q_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     q_expr += eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_over_generation':
+                    q_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
@@ -401,10 +471,10 @@ def declare_eq_q_balance_with_i_aggregation(model, index_set,
 
         if rhs_kwargs:
             for idx, val in rhs_kwargs.items():
-                if idx == 'include_feasibility_slack_pos':
-                    q_expr -= eval("m." + val)[bus_name]
-                if idx == 'include_feasibility_slack_neg':
+                if idx == 'include_feasibility_load_shed':
                     q_expr += eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_over_generation':
+                    q_expr -= eval("m." + val)[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
