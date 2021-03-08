@@ -341,16 +341,3 @@ def _buses_with_gens(gens):
             buses_with_gens.append(gen['bus'])
 
     return buses_with_gens
-
-if __name__ == '__main__':
-    import os
-    from egret.parsers.matpower_parser import create_ModelData
-    from egret.models.acopf import create_psv_acopf_model, solve_acopf
-
-    path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case14_ieee.m'
-    matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
-    md = create_ModelData(matpower_file)
-    kwargs = {'include_feasibility_slack':False}
-    md,m,results = solve_acopf(md, "ipopt", acopf_model_generator=create_psv_acopf_model,return_model=True, return_results=True,**kwargs)
-    md = solve_acpf(md, "ipopt")#, acpf_model_generator=create_polar_acpf_relaxation)
