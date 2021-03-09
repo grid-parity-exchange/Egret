@@ -256,7 +256,7 @@ def calculate_vm_from_vj_vr(vj,vr):
     return None
 
 
-def calculate_va_from_vj_vr(vj, vr):
+def calculate_va_degrees_from_vj_vr(vj, vr):
     """
     Compute the value of va from vj and vr
 
