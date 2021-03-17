@@ -190,7 +190,7 @@ def calculate_q(ir, ij, vr, vj):
     return q
 
 
-def calculate_vr_from_vm_va(vm, va):
+def calculate_vr_from_vm_va_degrees(vm, va):
     """
     Compute the value of vr from vm and va
 
@@ -207,12 +207,12 @@ def calculate_vr_from_vm_va(vm, va):
            either vm or va (or both) is None
     """
     if vm is not None and va is not None:
-        vr = vm * math.cos(va*math.pi/180)
+        vr = vm * math.cos(math.radians(va))
         return vr
     return None
 
 
-def calculate_vj_from_vm_va(vm, va):
+def calculate_vj_from_vm_va_degrees(vm, va):
     """
     Compute the value of vj from vm and va
 
@@ -229,7 +229,7 @@ def calculate_vj_from_vm_va(vm, va):
            either vm or va (or both) is None
     """
     if vm is not None and va is not None:
-        vj = vm * math.sin(va*math.pi/180)
+        vj = vm * math.sin(math.radians(va))
         return vj
     return None
 
@@ -316,8 +316,8 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
             val = -b * vn * vm * cos(tn - tm)
 
@@ -357,8 +357,8 @@ def _calculate_Bd(branches,index_set_branch,base_point=BasePointType.FLATSTART,a
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
             val = b * vn * vm * cos(tn - tm)
 
@@ -399,8 +399,8 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         val = 2 * g * vn * vm * sin(tn - tm)
 
@@ -593,8 +593,8 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         pf_constant[idx_row] = 0.5 * g * ((vn/tau) ** 2 - vm ** 2) \
                                - b * vn * vm * (sin(tn - tm + shift) - cos(tn - tm + shift)*(tn - tm))
@@ -636,8 +636,8 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         pfl_constant[idx_row] = g2 * (vn ** 2) + _g * (vm ** 2) \
                               - 2 * g * vn * vm * (sin(tn - tm + shift) * (tn - tm) + cos(tn - tm + shift))

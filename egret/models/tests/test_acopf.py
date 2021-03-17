@@ -66,12 +66,11 @@ class TestPSVACOPF(unittest.TestCase):
             from egret.thirdparty.get_pglib_opf import get_pglib_opf
             get_pglib_opf(download_dir)
 
-    @parameterized.expand(zip(test_cases, soln_cases))
-    def test_acopf_model(self, test_case, soln_case, include_kwargs=False):
+    @parameterized.expand(zip(test_cases, soln_cases, p_and_v_soln_cases))
+    def test_acopf_model(self, test_case, soln_case, p_and_v_soln_case, include_kwargs=False):
         acopf_model = create_psv_acopf_model
 
         md_soln = ModelData.read(soln_case)
-
         md_dict = create_ModelData(test_case)
 
         kwargs = {}
@@ -82,18 +81,7 @@ class TestPSVACOPF(unittest.TestCase):
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
-
-    @parameterized.expand(zip(test_cases, p_and_v_soln_cases))
-    def test_acopf_model_p_and_v(self, test_case, soln_case, include_kwargs=False):
-        acopf_model = create_psv_acopf_model
-        md_dict = create_ModelData(test_case)
-
-        kwargs = {}
-        if include_kwargs:
-            kwargs = {'include_feasibility_slack':True}
-        md, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, solver_tee=False, return_results=True, **kwargs)
-        self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
-        _test_p_and_v(self, soln_case, md)
+        _test_p_and_v(self, p_and_v_soln_case, md)
 
 class TestArctanACOPF(unittest.TestCase):
     show_output = True
@@ -117,7 +105,6 @@ class TestArctanACOPF(unittest.TestCase):
         self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
         self.assertAlmostEqual(pe.value(model.obj)/md_soln.data['system']['total_cost'], 1, 4)
 
-
 class TestRSVACOPF(unittest.TestCase):
     show_output = True
 
@@ -128,8 +115,8 @@ class TestRSVACOPF(unittest.TestCase):
             from egret.thirdparty.get_pglib_opf import get_pglib_opf
             get_pglib_opf(download_dir)
 
-    @parameterized.expand(zip(test_cases, soln_cases))
-    def test_acopf_model(self, test_case, soln_case, include_kwargs=False):
+    @parameterized.expand(zip(test_cases, soln_cases, p_and_v_soln_cases))
+    def test_acopf_model(self, test_case, soln_case, p_and_v_soln_case, include_kwargs=False):
         acopf_model = create_rsv_acopf_model
 
         md_soln = ModelData.read(soln_case)
@@ -144,7 +131,7 @@ class TestRSVACOPF(unittest.TestCase):
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
-
+        _test_p_and_v(self, p_and_v_soln_case, md)
 
 class TestRIVACOPF(unittest.TestCase):
     show_output = True
@@ -156,8 +143,8 @@ class TestRIVACOPF(unittest.TestCase):
             from egret.thirdparty.get_pglib_opf import get_pglib_opf
             get_pglib_opf(download_dir)
 
-    @parameterized.expand(zip(test_cases, soln_cases))
-    def test_acopf_model(self, test_case, soln_case, include_kwargs=False):
+    @parameterized.expand(zip(test_cases, soln_cases, p_and_v_soln_cases))
+    def test_acopf_model(self, test_case, soln_case, p_and_v_soln_case, include_kwargs=False):
         acopf_model = create_riv_acopf_model
 
         md_soln = ModelData.read(soln_case)
@@ -172,6 +159,7 @@ class TestRIVACOPF(unittest.TestCase):
         self.assertTrue(results.solver.termination_condition == TerminationCondition.optimal)
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
+        _test_p_and_v(self, p_and_v_soln_case, md)
 
 
 if __name__ == '__main__':

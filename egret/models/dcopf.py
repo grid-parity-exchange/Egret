@@ -28,7 +28,7 @@ from egret.models.copperplate_dispatch import (_include_system_feasibility_slack
                                                _validate_and_extract_slack_penalty,
                                                create_copperplate_dispatch_approx_model)
 from egret.common.log import logger
-from math import pi, radians
+from math import pi, radians, degrees
 
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_attrs, p_marginal_slack_penalty):
@@ -82,7 +82,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
+    libbus.declare_var_va(model, bus_attrs['names'],
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
                           bounds=va_bounds
                           )
 
@@ -106,8 +107,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
                           )
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
     p_lbub = dict()
     for k in branches.keys():
@@ -527,7 +528,7 @@ def solve_dcopf(model_data,
             b_dict = buses[b]
             b_dict['lmp'] = LMP[i]
             b_dict['pl'] = value(m.pl[b])
-            b_dict['va'] = VA[i]
+            b_dict['va'] = degrees(VA[i])
     else:
         for b,b_dict in buses.items():
             if hasattr(m, 'p_load_shed'):
@@ -535,7 +536,7 @@ def solve_dcopf(model_data,
             b_dict['pl'] = value(m.pl[b])
             if dcopf_model_generator == create_btheta_dcopf_model:
                 b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
-                b_dict['va'] = value(m.va[b])
+                b_dict['va'] = degrees(value(m.va[b]))
             else:
                 raise Exception("Unrecognized dcopf_model_generator {}".format(dcopf_model_generator))
 

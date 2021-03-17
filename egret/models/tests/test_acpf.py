@@ -26,7 +26,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 #case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee',]
 case_names = ['pglib_opf_case14_ieee', 'pglib_opf_case30_ieee', 'pglib_opf_case118_ieee', 'pglib_opf_case3012wp_k']
 test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
-soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'acpf_solution_files', '{}_acpf_solution.json'.format(i)) for i in case_names]
+p_and_v_soln_cases = [os.path.join(current_dir, 'transmission_test_instances', 'acpf_solution_files', '{}_acpf_solution_p_and_v.json'.format(i)) for i in case_names]
 
 class TestPSVACPF(unittest.TestCase):
     show_output = True
@@ -38,7 +38,7 @@ class TestPSVACPF(unittest.TestCase):
             from egret.thirdparty.get_pglib_opf import get_pglib_opf
             get_pglib_opf(download_dir)
 
-    @parameterized.expand(zip(test_cases, soln_cases))
+    @parameterized.expand(zip(test_cases, p_and_v_soln_cases))
     def test_acpf_model(self, test_case, soln_case, include_kwargs=False):
         # md_soln = ModelData.read(soln_case)
         md_dict = create_ModelData(test_case)

@@ -27,9 +27,6 @@ from egret.data.networkx_utils import get_networkx_graph
 import networkx
 from pyomo.common.collections.orderedset import OrderedSet
 
-def _radians_from_degrees_dict(d):
-    return {k:radians(d[k]) for k in d}
-
 def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
                                gens_by_bus, gen_attrs,
                                p_marginal_slack_penalty, q_marginal_slack_penalty):
@@ -312,7 +309,7 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
     libbus.declare_var_va(model,
                           bus_attrs['names'],
-                          initialize=_radians_from_degrees_dict(bus_attrs['va']),
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
                           bounds=va_bounds)
 
     # fix the reference bus
