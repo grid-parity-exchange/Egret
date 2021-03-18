@@ -52,7 +52,8 @@ def create_gdp_subproblem(model, model_data, include_angle_diff_limits=False):
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model.subproblem, bus_attrs['names'], initialize=bus_attrs['va'],
+    libbus.declare_var_va(model.subproblem, bus_attrs['names'],
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
                           bounds=va_bounds
                           )
 
@@ -68,8 +69,8 @@ def create_gdp_subproblem(model, model_data, include_angle_diff_limits=False):
                           )
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
     p_lbub = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
     pf_bounds = p_lbub
