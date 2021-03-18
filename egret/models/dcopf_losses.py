@@ -30,7 +30,7 @@ from egret.model_library.defn import CoordinateType, ApproximationType, Relaxati
 from egret.data.data_utils import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack, _validate_and_extract_slack_penalty
 from egret.models.dcopf import _include_feasibility_slack
-from math import pi, radians
+from math import pi, radians, degrees
 
 
 def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC, include_angle_diff_limits=False, include_feasibility_slack=False):
@@ -66,9 +66,10 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
-                          bounds=va_bounds
-                          )
+    libbus.declare_var_va(model, bus_attrs['names'],
+            initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
+            bounds=va_bounds
+            )
 
     dva_initialize = {k: 0.0 for k in branch_attrs['names']}
     libbranch.declare_var_dva(model, branch_attrs['names'],
@@ -95,8 +96,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
                           )
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
     pf_bounds = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
     pf_init = dict()
@@ -383,7 +384,7 @@ def solve_dcopf_losses(model_data,
             b_dict['pl'] = value(m.pl[b])
             b_dict.pop('qlmp',None)
             b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
-            b_dict['va'] = value(m.va[b])
+            b_dict['va'] = degrees(value(m.va[b]))
             if hasattr(m, 'p_load_shed'):
                 b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
     elif dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:

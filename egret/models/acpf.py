@@ -20,7 +20,7 @@ import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 from egret.data.data_utils import zip_items
 from egret.model_library.defn import CoordinateType
-from math import pi, radians
+from math import pi, radians, degrees
 from collections import OrderedDict
 
 def _create_base_acpf_model(model_data):
@@ -71,8 +71,8 @@ def _create_base_acpf_model(model_data):
     libgen.declare_var_qg(model, gen_attrs['names'], initialize=gen_attrs['qg'])
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     pf_init = dict()
     pt_init = dict()
     qf_init = dict()
@@ -188,7 +188,7 @@ def create_psv_acpf_model(model_data):
 
     libbus.declare_var_va(model,
                           bus_attrs['names'],
-                          initialize=bus_attrs['va']
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va'])
                           )
 
     ### In a system with N buses and G generators, there are then 2(N-1)-(G-1) unknowns.
@@ -300,10 +300,10 @@ def solve_acpf(model_data,
                 b_dict['q_slack_neg'] = value(m.q_slack_neg[b])
             if hasattr(m, 'vj'):
                 b_dict['vm'] = tx_calc.calculate_vm_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
-                b_dict['va'] = tx_calc.calculate_va_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
+                b_dict['va'] = tx_calc.calculate_va_degrees_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
             else:
                 b_dict['vm'] = value(m.vm[b])
-                b_dict['va'] = value(m.va[b])
+                b_dict['va'] = degrees(value(m.va[b]))
 
         for k, k_dict in branches.items():
             if hasattr(m,'pf'):
@@ -319,6 +319,7 @@ def solve_acpf(model_data,
                 k_dict['pt'] = value(tx_calc.calculate_p(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
                 k_dict['qt'] = value(tx_calc.calculate_q(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
 
+        # self._transfer_pyomo_data_to_md(m, md, gen_vars=['pf', 'pt', 'qf', 'qt'], branch_vars=['asdf'])
 
         unscale_ModelData_to_pu(md, inplace=True)
 

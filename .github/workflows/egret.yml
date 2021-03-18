@@ -87,7 +87,7 @@ jobs:
                 if [ ${{ matrix.os }} = ubuntu-latest ]
                 then
                   #  - ipopt needs: libopenblas-dev gfortran liblapack-dev
-                  sudo apt-get install libopenblas-dev gfortran liblapack-dev
+                  sudo apt-get install libopenblas-dev libgfortran4 libgomp1 gfortran liblapack-dev
                   curl --max-time 150 --retry 8 \
                     -L $URL/idaes-solvers-ubuntu1804-64.tar.gz \
                     > $IPOPT_TAR

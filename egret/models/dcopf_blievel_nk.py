@@ -152,8 +152,8 @@ def create_explicit_subproblem(model, model_data, include_angle_diff_limits=Fals
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    va_init = {k: bus_attrs['va'][k]*(pi/180) for k in bus_attrs['va']}
-    libbus.declare_var_va(model.subproblem, bus_attrs['names'], initialize=bus_attrs['va'],
+    libbus.declare_var_va(model.subproblem, bus_attrs['names'],
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
                           bounds=va_bounds
                           )
 
@@ -167,8 +167,8 @@ def create_explicit_subproblem(model, model_data, include_angle_diff_limits=Fals
     libgen.declare_var_pg(model.subproblem, gen_attrs['names'], initialize=pg_init)
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     pf_init = dict()
     for branch_name, branch in branches.items():
         from_bus = branch['from_bus']
@@ -335,7 +335,7 @@ def solve_bilevel_nk(model_data,
 
     for b,b_dict in buses.items():
         b_dict['pl'] = value(m.pl[b])
-        b_dict['va'] = value(m.va[b])
+        b_dict['va'] = degrees(value(m.va[b]))
 
     unscale_ModelData_to_pu(md, inplace=True)
 
