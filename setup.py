@@ -28,6 +28,7 @@ setuptools_kwargs = {
     'install_requires': ['pyomo>=5.7.1', 'numpy', 'pytest', 'pandas',
                          'matplotlib', 'seaborn', 'scipy', 'networkx',
                          'coramin']
+    'python_requires' : '>=3.7, <4',
 }
 
 setup(name=DISTNAME,

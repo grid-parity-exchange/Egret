@@ -153,8 +153,8 @@ def create_explicit_subproblem(model, subproblem, model_data, omega_key, include
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    va_init = {k: bus_attrs['va'][k]*(pi/180) for k in bus_attrs['va']}
-    libbus.declare_var_va(subproblem, bus_attrs['names'], initialize=bus_attrs['va'],
+    libbus.declare_var_va(subproblem, bus_attrs['names'],
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
                           bounds=va_bounds
                           )
 
@@ -168,8 +168,8 @@ def create_explicit_subproblem(model, subproblem, model_data, omega_key, include
     libgen.declare_var_pg(subproblem, gen_attrs['names'], initialize=pg_init)
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     pf_init = dict()
     for branch_name, branch in branches.items():
         from_bus = branch['from_bus']

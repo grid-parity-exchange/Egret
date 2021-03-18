@@ -5,10 +5,10 @@ on:
     # but only for the master branch
     push:
         branches:
-            - master
+            - main
     pull_request:
         branches:
-            - master
+            - main
     # nightly tests at 8:00 UTC
     schedule:
         - cron:  '0 8 * * *'
@@ -26,7 +26,7 @@ jobs:
         strategy:
             matrix:
                 os: [ubuntu-latest]
-                python-version: [3.6, 3.7, 3.8, 3.9]
+                python-version: [3.7, 3.8, 3.9]
                 pyomo-version: [5.7.1]
                 pyutilib-version: [6.0.0]
                 include:
@@ -40,7 +40,7 @@ jobs:
                       pyutilib-version: 6.0.0
                     - os: ubuntu-latest
                       python-version: 3.7
-                      pyomo-version: master
+                      pyomo-version: main
                       pyutilib-version: master
         steps:
           - uses: actions/checkout@v2
@@ -87,7 +87,7 @@ jobs:
                 if [ ${{ matrix.os }} = ubuntu-latest ]
                 then
                   #  - ipopt needs: libopenblas-dev gfortran liblapack-dev
-                  sudo apt-get install libopenblas-dev gfortran liblapack-dev
+                  sudo apt-get install libopenblas-dev libgfortran4 libgomp1 gfortran liblapack-dev
                   curl --max-time 150 --retry 8 \
                     -L $URL/idaes-solvers-ubuntu1804-64.tar.gz \
                     > $IPOPT_TAR
