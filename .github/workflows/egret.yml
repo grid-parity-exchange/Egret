@@ -24,7 +24,7 @@ jobs:
         name: ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
         runs-on: ${{ matrix.os }}
         strategy:
-            # we know ubuntu-latests is failing right now
+            # we know ubuntu-latest is failing right now
             fail-fast: false
             matrix:
                 os: [ubuntu-latest]
