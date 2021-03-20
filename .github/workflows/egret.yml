@@ -72,7 +72,7 @@ jobs:
               fi
           - name: Install IPOPT
             run: |
-              if [ ${{ matrix.os }} = macos-latest ]
+              if [ ${{ matrix.os }} = macos-latest || ${{ matrix.os }} = ubuntu-latest ]
               then
                 # download IPOPT from conda-forge
                 conda install -c conda-forge ipopt
