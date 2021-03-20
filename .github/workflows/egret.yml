@@ -2,7 +2,7 @@ name: EGRET GitHub CI
 
 on:
     # Trigger the workflow on push or pull request,
-    # but only for the master branch
+    # but only for the main branch
     push:
         branches:
             - main
@@ -24,8 +24,10 @@ jobs:
         name: ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
         runs-on: ${{ matrix.os }}
         strategy:
+            # we know ubuntu-latests is failing right now
+            fail-fast: false
             matrix:
-                os: [ubuntu-latest]
+                os: [ubuntu-18.04, ubuntu-latest, macos-latests, windows-latest]
                 python-version: [3.7, 3.8, 3.9]
                 pyomo-version: [5.7.1]
                 pyutilib-version: [6.0.0]
@@ -38,6 +40,10 @@ jobs:
                       python-version: 3.7
                       pyomo-version: 5.7.1
                       pyutilib-version: 6.0.0
+                    - os: ubuntu-18.04
+                      python-version: 3.7
+                      pyomo-version: main
+                      pyutilib-version: master
                     - os: ubuntu-latest
                       python-version: 3.7
                       pyomo-version: main
