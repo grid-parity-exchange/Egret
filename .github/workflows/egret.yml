@@ -27,7 +27,7 @@ jobs:
             # we know ubuntu-latests is failing right now
             fail-fast: false
             matrix:
-                os: [ubuntu-18.04, ubuntu-latest, macos-latests, windows-latest]
+                os: [ubuntu-latest]
                 python-version: [3.7, 3.8, 3.9]
                 pyomo-version: [5.7.1]
                 pyutilib-version: [6.0.0]
