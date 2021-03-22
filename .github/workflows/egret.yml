@@ -72,11 +72,8 @@ jobs:
               fi
           - name: Install IPOPT
             run: |
-              if [ ${{ matrix.os }} = macos-latest ]
+              if [ ${{ matrix.os }} = windows-latest ]
               then
-                # download IPOPT from conda-forge
-                conda install -c conda-forge ipopt
-              else
                 IPOPT_DIR="${GITHUB_WORKSPACE}/cache/ipopt"
                 mkdir -p "$IPOPT_DIR"
                 echo "$IPOPT_DIR" >> $GITHUB_PATH
@@ -108,6 +105,9 @@ jobs:
                 echo ""
                 echo "$IPOPT_DIR"
                 ls -l $IPOPT_DIR
+              else
+                # download IPOPT from conda-forge
+                conda install -c conda-forge ipopt
               fi
           - name: Install Nose/Parameterized/Pytest
             run: |
