@@ -24,7 +24,7 @@ jobs:
         name: ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
         runs-on: ${{ matrix.os }}
         strategy:
-            # we know ubuntu-latest is failing right now
+            # still want the results of other tests even if one fails
             fail-fast: false
             matrix:
                 os: [ubuntu-latest]
@@ -40,10 +40,6 @@ jobs:
                       python-version: 3.7
                       pyomo-version: 5.7.1
                       pyutilib-version: 6.0.0
-                    - os: ubuntu-18.04
-                      python-version: 3.7
-                      pyomo-version: main
-                      pyutilib-version: master
                     - os: ubuntu-latest
                       python-version: 3.7
                       pyomo-version: main
