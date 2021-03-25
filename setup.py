@@ -10,7 +10,7 @@
 from setuptools import setup, find_packages
 from distutils.core import Extension
 
-DISTNAME = 'egret'
+DISTNAME = 'gridx-egret'
 VERSION = '0.1.0'
 PACKAGES = find_packages()
 EXTENSIONS = []
@@ -19,7 +19,7 @@ LONG_DESCRIPTION = open('README.md').read()
 AUTHOR = 'Michael Bynum, Anya Castillo, Carl Laird, Bernard Knueven and Jean-Paul Watson'
 MAINTAINER_EMAIL = 'carldlaird@users.noreply.github.com'
 LICENSE = 'Revised BSD'
-URL = 'no-url-yet'
+URL = 'https://github.com/grid-parity-exchange/Egret'
 
 setuptools_kwargs = {
     'zip_safe': False,

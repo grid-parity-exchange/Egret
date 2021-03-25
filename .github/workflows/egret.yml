@@ -2,7 +2,7 @@ name: EGRET GitHub CI
 
 on:
     # Trigger the workflow on push or pull request,
-    # but only for the master branch
+    # but only for the main branch
     push:
         branches:
             - main
@@ -24,6 +24,8 @@ jobs:
         name: ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
         runs-on: ${{ matrix.os }}
         strategy:
+            # still want the results of other tests even if one fails
+            fail-fast: false
             matrix:
                 os: [ubuntu-latest]
                 python-version: [3.7, 3.8, 3.9]
@@ -66,11 +68,8 @@ jobs:
               fi
           - name: Install IPOPT
             run: |
-              if [ ${{ matrix.os }} = macos-latest ]
+              if [ ${{ matrix.os }} = windows-latest ]
               then
-                # download IPOPT from conda-forge
-                conda install -c conda-forge ipopt
-              else
                 IPOPT_DIR="${GITHUB_WORKSPACE}/cache/ipopt"
                 mkdir -p "$IPOPT_DIR"
                 echo "$IPOPT_DIR" >> $GITHUB_PATH
@@ -102,6 +101,9 @@ jobs:
                 echo ""
                 echo "$IPOPT_DIR"
                 ls -l $IPOPT_DIR
+              else
+                # download IPOPT from conda-forge
+                conda install -c conda-forge ipopt
               fi
           - name: Install Nose/Parameterized/Pytest
             run: |
