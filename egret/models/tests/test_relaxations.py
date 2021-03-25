@@ -24,7 +24,7 @@ from egret.parsers.matpower_parser import create_ModelData
 import numpy as np
 try:
     import coramin
-    from egret.models.ac_relaxations import KocukSOCOverestimator
+    from egret.models.ac_relaxations import SOCEdgeCuts
     coramin_available = True
 except ImportError:
     coramin_available = False
@@ -139,11 +139,11 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
-    def test_atan_relaxation_with_kocuk_overestimators(self, case_name):
+    def test_atan_relaxation_with_soc_edge_cuts(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
         md = create_ModelData(test_case)
-        nlp, scaled_md = create_atan_relaxation(md, use_linear_relaxation=True, use_kocuk_soc_overestimators=True)
+        nlp, scaled_md = create_atan_relaxation(md, use_linear_relaxation=True, use_soc_edge_cuts=True)
         for b in coramin.relaxations.relaxation_data_objects(nlp, descend_into=True, active=True, sort=True):
             b.rebuild(build_nonlinear_constraint=True)
 
@@ -176,14 +176,14 @@ class TestRelaxations(unittest.TestCase):
 
 
 @unittest.skipIf(not coramin_available, "coramin is not available")
-class TestKocukSOCOverestimator(unittest.TestCase):
-    def test_kocuk_soc_overestimator(self):
+class TestSOCEdgeCuts(unittest.TestCase):
+    def test_soc_edge_cuts(self):
         m = pe.ConcreteModel()
         m.c = pe.Var()
         m.s = pe.Var()
         m.w1 = pe.Var()
         m.w2 = pe.Var()
-        m.rel = KocukSOCOverestimator()
+        m.rel = SOCEdgeCuts()
         m.rel.set_input(c=m.c, s=m.s, vmsq_1=m.w1, vmsq_2=m.w2)
 
         c_bounds = [(0.5, 1.5), (0.8, 1.5), (0.5, 1.2), (0.95, 0.95)]

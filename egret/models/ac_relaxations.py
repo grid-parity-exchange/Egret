@@ -57,8 +57,8 @@ def _get_bounds(v):
     return lb, ub
 
 
-@declare_custom_block(name='KocukSOCOverestimator')
-class KocukSOCOverestimatorData(BaseRelaxationData):
+@declare_custom_block(name='SOCEdgeCuts')
+class SOCEdgeCutsData(BaseRelaxationData):
     """
     Relaxation for
 
@@ -210,7 +210,7 @@ class KocukSOCOverestimatorData(BaseRelaxationData):
     @use_linear_relaxation.setter
     def use_linear_relaxation(self, val):
         if val is not True:
-            raise ValueError('The KocukSOCOverestimator class can only produce linear relaxations')
+            raise ValueError('The SOCEdgeCuts class can only produce linear relaxations')
         self._use_linear_relaxation = True
 
 
@@ -228,20 +228,20 @@ def create_soc_relaxation(model_data, use_linear_relaxation=True, include_feasib
 
 
 def create_atan_relaxation(model_data, use_linear_relaxation=True, include_feasibility_slack=False,
-                           use_kocuk_soc_overestimators=False):
+                           use_soc_edge_cuts=False):
     model, md = create_atan_acopf_model(model_data=model_data, include_feasibility_slack=include_feasibility_slack)
     del model.ineq_soc
     del model._con_ineq_soc
-    if use_kocuk_soc_overestimators:
+    if use_soc_edge_cuts:
         del model.ineq_soc_ub
         del model._con_ineq_soc_ub
     _relaxation_helper(model=model, md=md, include_soc=True, use_linear_relaxation=use_linear_relaxation)
-    if use_kocuk_soc_overestimators:
+    if use_soc_edge_cuts:
         branch_attrs = md.attributes(element_type='branch')
         bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
         unique_bus_pairs = OrderedSet(val for val in bus_pairs.values())
         model.ineq_soc_ub_set = pe.Set(initialize=list(unique_bus_pairs))
-        model.ineq_soc_ub = KocukSOCOverestimator(model.ineq_soc_ub_set)
+        model.ineq_soc_ub = SOCEdgeCuts(model.ineq_soc_ub_set)
         for from_bus, to_bus in model.ineq_soc_ub_set:
             model.ineq_soc_ub[from_bus, to_bus].build(c=model.c[from_bus, to_bus],
                                                       s=model.s[from_bus, to_bus],
