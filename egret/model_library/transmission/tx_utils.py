@@ -13,6 +13,7 @@ working with transmission models
 """
 
 import egret.model_library.transmission.tx_calc as tx_calc
+from math import radians
 
 
 def dicts_of_vr_vj(buses):
@@ -23,8 +24,8 @@ def dicts_of_vr_vj(buses):
     vr = dict()
     vj = dict()
     for bus_name, bus in buses.items():
-        vr[bus_name] = tx_calc.calculate_vr_from_vm_va(bus['vm'], bus['va'])
-        vj[bus_name] = tx_calc.calculate_vj_from_vm_va(bus['vm'], bus['va'])
+        vr[bus_name] = tx_calc.calculate_vr_from_vm_va_degrees(bus['vm'], bus['va'])
+        vj[bus_name] = tx_calc.calculate_vj_from_vm_va_degrees(bus['vm'], bus['va'])
 
     return vr, vj
 
@@ -93,10 +94,10 @@ def dict_of_branch_currents(branches, buses):
             and to_bus['vm'] is not None and to_bus['va'] is not None:
             # we have all the information we need
             y_matrix = tx_calc.calculate_y_matrix_from_branch(branch)
-            vfr = tx_calc.calculate_vr_from_vm_va(from_bus['vm'], from_bus['va'])
-            vfj = tx_calc.calculate_vj_from_vm_va(from_bus['vm'], from_bus['va'])
-            vtr = tx_calc.calculate_vr_from_vm_va(to_bus['vm'], to_bus['va'])
-            vtj = tx_calc.calculate_vj_from_vm_va(to_bus['vm'], to_bus['va'])
+            vfr = tx_calc.calculate_vr_from_vm_va_degrees(from_bus['vm'], from_bus['va'])
+            vfj = tx_calc.calculate_vj_from_vm_va_degrees(from_bus['vm'], from_bus['va'])
+            vtr = tx_calc.calculate_vr_from_vm_va_degrees(to_bus['vm'], to_bus['va'])
+            vtj = tx_calc.calculate_vj_from_vm_va_degrees(to_bus['vm'], to_bus['va'])
             ifr = tx_calc.calculate_ifr(vfr, vfj, vtr, vtj, y_matrix)
             ifj = tx_calc.calculate_ifj(vfr, vfj, vtr, vtj, y_matrix)
             itr = tx_calc.calculate_itr(vfr, vfj, vtr, vtj, y_matrix)
@@ -130,10 +131,10 @@ def dict_of_branch_powers(branches, buses):
             and to_bus['vm'] is not None and to_bus['va'] is not None:
             # we have all the information we need
             y_matrix = tx_calc.calculate_y_matrix_from_branch(branch)
-            vfr = tx_calc.calculate_vr_from_vm_va(from_bus['vm'], from_bus['va'])
-            vfj = tx_calc.calculate_vj_from_vm_va(from_bus['vm'], from_bus['va'])
-            vtr = tx_calc.calculate_vr_from_vm_va(to_bus['vm'], to_bus['va'])
-            vtj = tx_calc.calculate_vj_from_vm_va(to_bus['vm'], to_bus['va'])
+            vfr = tx_calc.calculate_vr_from_vm_va_degrees(from_bus['vm'], from_bus['va'])
+            vfj = tx_calc.calculate_vj_from_vm_va_degrees(from_bus['vm'], from_bus['va'])
+            vtr = tx_calc.calculate_vr_from_vm_va_degrees(to_bus['vm'], to_bus['va'])
+            vtj = tx_calc.calculate_vj_from_vm_va_degrees(to_bus['vm'], to_bus['va'])
             ifr = tx_calc.calculate_ifr(vfr, vfj, vtr, vtj, y_matrix)
             ifj = tx_calc.calculate_ifj(vfr, vfj, vtr, vtj, y_matrix)
             itr = tx_calc.calculate_itr(vfr, vfj, vtr, vtj, y_matrix)
@@ -480,3 +481,6 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
         return
     else:
         return md
+
+def radians_from_degrees_dict(d):
+    return {k:radians(d[k]) for k in d}

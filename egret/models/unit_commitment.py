@@ -25,6 +25,7 @@ import egret.common.lazy_ptdf_utils as lpu
 import egret.data.ptdf_utils as ptdf_utils
 import pyomo.environ as pe
 import numpy as np
+from math import degrees
 
 def _get_uc_model(model_data, formulation_list, relax_binaries, **kwargs):
     formulation = UCFormulation(*formulation_list)
@@ -1198,7 +1199,7 @@ def _save_uc_results(m, relaxed):
                 va_dict[dt] = value(m.TransmissionBlock[mt].va[b])
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
                 pl_dict[dt] = value(m.TransmissionBlock[mt].pl[b])
-            b_dict['va'] = _time_series_dict(va_dict)
+            b_dict['va'] = _time_series_dict([degrees(v) for v in va_dict])
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             b_dict['pl'] = _time_series_dict(pl_dict)
             if relaxed:
@@ -1311,7 +1312,7 @@ def _save_uc_results(m, relaxed):
                 va_dict[dt] = voltage_angle_dict[mt][b]
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             b_dict['pl'] = _time_series_dict(pl_dict)
-            b_dict['va'] = _time_series_dict(va_dict)
+            b_dict['va'] = _time_series_dict([degrees(v) for v in va_dict])
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
@@ -1342,7 +1343,7 @@ def _save_uc_results(m, relaxed):
             for dt, mt in enumerate(m.TimePeriods):
                 va_dict[dt] = value(m.Angle[b,mt])
                 p_balance_violation_dict[dt] = value(m.LoadGenerateMismatch[b,mt])
-            b_dict['va'] = _time_series_dict(va_dict)
+            b_dict['va'] = _time_series_dict([degrees(v) for v in va_dict])
             b_dict['p_balance_violation'] = _time_series_dict(p_balance_violation_dict)
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)

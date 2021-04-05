@@ -28,7 +28,7 @@ from egret.models.copperplate_dispatch import (_include_system_feasibility_slack
                                                _validate_and_extract_slack_penalty)
 from egret.models.dcopf import _lazy_ptdf_dcopf_model_solve_loop
 from egret.common.log import logger
-from math import pi, radians
+from math import pi, radians, degrees
 
 
 def create_scopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None):
@@ -270,7 +270,7 @@ def solve_scopf(model_data,
         b_dict = buses[b]
         b_dict['lmp'] = LMP[i]
         b_dict['pl'] = value(m.pl[b])
-        b_dict['va'] = VA[i]
+        b_dict['va'] = degrees(VA[i])
 
     for k, k_dict in dc_branches.items():
         k_dict['pf'] = value(m.dcpf[k])

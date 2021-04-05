@@ -21,12 +21,11 @@ import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 from egret.model_library.defn import FlowType, CoordinateType
 from egret.data.data_utils import map_items, zip_items
-from math import pi, radians
+from math import pi, radians, degrees
 from collections import OrderedDict
 from egret.data.networkx_utils import get_networkx_graph
 import networkx
 from pyomo.common.collections.orderedset import OrderedSet
-
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
                                gens_by_bus, gen_attrs,
@@ -70,7 +69,7 @@ def _validate_and_extract_slack_penalties(model_data):
 
 def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
-    tx_utils.scale_ModelData_to_pu(md, inplace = True)
+    tx_utils.scale_ModelData_to_pu(md, inplace=True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -133,8 +132,8 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
                           )
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
     s_lbub = dict()
     for k in branches.keys():
@@ -310,7 +309,7 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
     libbus.declare_var_va(model,
                           bus_attrs['names'],
-                          initialize=bus_attrs['va'],
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
                           bounds=va_bounds)
 
     # fix the reference bus
@@ -343,12 +342,12 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
 
     # declare the rectangular voltages
     neg_v_max = map_items(op.neg, bus_attrs['v_max'])
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     libbus.declare_var_vr(model, bus_attrs['names'], initialize=vr_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
 
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     libbus.declare_var_vj(model, bus_attrs['names'], initialize=vj_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
@@ -411,12 +410,12 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
 
     ### declare the rectangular voltages
     neg_v_max = map_items(op.neg, bus_attrs['v_max'])
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     libbus.declare_var_vr(model, bus_attrs['names'], initialize=vr_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
 
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     libbus.declare_var_vj(model, bus_attrs['names'], initialize=vj_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
@@ -671,10 +670,10 @@ def solve_acopf(model_data,
         b_dict['pl'] = value(m.pl[b])
         if hasattr(m, 'vj'):
             b_dict['vm'] = tx_calc.calculate_vm_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
-            b_dict['va'] = tx_calc.calculate_va_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
+            b_dict['va'] = tx_calc.calculate_va_degrees_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
         else:
             b_dict['vm'] = value(m.vm[b])
-            b_dict['va'] = value(m.va[b])
+            b_dict['va'] = degrees(value(m.va[b]))
         if hasattr(m, 'p_load_shed'):
             b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
         if hasattr(m, 'q_load_shed'):
