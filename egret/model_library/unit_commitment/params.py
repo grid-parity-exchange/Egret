@@ -581,7 +581,7 @@ def load_params(model, model_data):
     # generator power output at t=0 (initial condition). units are MW. #
     ####################################################################
 
-    def between_limits_validator(m, v, g):
+    def power_generated_t0_validator(m, v, g):
         t = m.TimePeriods.first() 
 
         if value(m.UnitOnT0[g]):
@@ -595,22 +595,17 @@ def load_params(model, model_data):
                 return False
             return True
 
-        elif (len(m.StartupCurve[g]) > 0) or (len(m.ShutdownCurve[g]) > 0):
-            time_periods_before_startup = value(m.TimePeriodsBeforeStartup[g])
-            if time_periods_before_startup <= len(m.StartupCurve[g]):
-                return True
-            time_periods_since_shutdown = value(m.TimePeriodsSinceShutdown[g])
-            if time_periods_since_shutdown <= len(m.ShutdownCurve[g]):
-                return True
-            return v == 0.
         else:
-            return v == 0.
+            # Generator was off, but could have residual power due to
+            # start-up/shut-down curve. Therefore, do not be too picky
+            # as the value doesn't affect any constraints directly
+            return True
 
     model.PowerGeneratedT0 = Param(model.ThermalGenerators, 
-                                    within=NonNegativeReals, 
-                                    #validate=between_limits_validator, 
-                                    mutable=True,
-                                    initialize=thermal_gen_attrs['initial_p_output'])
+                                   within=NonNegativeReals,
+                                   validate=power_generated_t0_validator,
+                                   mutable=True,
+                                   initialize=thermal_gen_attrs['initial_p_output'])
     
     # limits for time periods in which generators are brought on or off-line.
     # must be no less than the generator minimum output.
