@@ -269,9 +269,9 @@ scaled_attributes = {
                                                           'headroom',
                                                           'reg_up_supplied',
                                                           'reg_down_supplied',
-                                                          'spin_supplied',
                                                           'flex_up_supplied',
                                                           'flex_down_supplied',
+                                                          'spinning_supplied',
                                                           'non_spinning_supplied',
                                                           'supplemental_supplied',
                                                           'p_cost',
@@ -409,7 +409,7 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA, 
     if attr is None:
         return
     if isinstance(attr, dict):
-        if 'data_type' in attr and attr['data_type'] == 'time_series':
+        if 'data_type' in attr and attr['data_type'] == 'time_series' and attr_name in attributes:
             op = _get_op(normal_op, inverse_op, attr_name)
             values_list = attr['values']
             for time, value in enumerate(values_list):
