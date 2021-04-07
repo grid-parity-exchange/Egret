@@ -23,22 +23,24 @@ def _add_reactive_power_vars(model):
 def _add_power_generated_startup_shutdown(model):
     assert model.InitialTime == 1
 
-    # check the status vars first to print a helpful message
-    if model.status_vars not in ['garver_2bin_vars', 'garver_3bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
-        for s in model.StartupCurve.values():
-            if len(s) > 0:
-                raise RuntimeError(f"Status variable formulation {model.status_vars} is not compatible with startup curves")
+    # first, discover if we have startup/shutdown
+    # curves in the model
+    model_has_startup_shutdown_curves = False
+    for s in model.StartupCurve.values():
+        if len(s) > 0:
+            model_has_startup_shutdown_curves = True
+            break
+    if not model_has_startup_shutdown_curves:
         for s in model.ShutdownCurve.values():
             if len(s) > 0:
-                raise RuntimeError(f"Status variable formulation {model.status_vars} is not compatible with shutdown curves")
+                model_has_startup_shutdown_curves = True
+                break
 
-        ## if we're here, then we can use these 1-bin models
-        def power_generated_startup_shutdown_expr_rule(m, g, t):
-            linear_vars, linear_coefs = m._get_power_generated_lists(m,g,t)
-            linear_expr = get_linear_expr(m.UnitOn)
-            return linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs)
-
-    else:
+    if model_has_startup_shutdown_curves:
+        # check the status vars to see if we're compatible
+        # with startup/shutdown curves
+        if model.status_vars not in ['garver_2bin_vars', 'garver_3bin_vars', 'garver_3bin_relaxed_stop_vars', 'ALS_state_transition_vars']:
+            raise RuntimeError(f"Status variable formulation {model.status_vars} is not compatible with startup or shutdown curves")
 
         def power_generated_startup_shutdown_expr_rule(m, g, t):
             startup_curve = m.StartupCurve[g]
@@ -65,8 +67,18 @@ def _add_power_generated_startup_shutdown(model):
             linear_expr = get_linear_expr(m.UnitOn, m.UnitStart, m.UnitStop)
             return linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs, constant=future_startup_past_shutdown_production)
 
-    model.PowerGeneratedStartupShutdown = Expression(model.ThermalGenerators, model.TimePeriods,
-                                                     rule=power_generated_startup_shutdown_expr_rule)
+        model.PowerGeneratedStartupShutdown = Expression(model.ThermalGenerators, model.TimePeriods,
+                                                         rule=power_generated_startup_shutdown_expr_rule)
+
+    else:
+        ## if we're here, then we can use 1-bin models
+        ## and no need to do the additional work
+        def power_generated_expr_rule(m, g, t):
+            linear_vars, linear_coefs = m._get_power_generated_lists(m,g,t)
+            linear_expr = get_linear_expr(m.UnitOn)
+            return linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs)
+        model.PowerGeneratedStartupShutdown = Expression(model.ThermalGenerators, model.TimePeriods,
+                                                         rule=power_generated_expr_rule)
 
 ## garver/ME power variables (above minimum)
 @add_model_attr(component_name, requires = {'data_loader': None, 'status_vars': None})
