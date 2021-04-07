@@ -405,16 +405,23 @@ def _get_op(normal_op, inverse_op, attr_name):
         return inverse_op 
     return normal_op
 
+def _no_op(a,b):
+    return a
+
 def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA, attributes):
     if attr is None:
         return
     if isinstance(attr, dict):
-        if 'data_type' in attr and attr['data_type'] == 'time_series' and attr_name in attributes:
-            op = _get_op(normal_op, inverse_op, attr_name)
+        if 'data_type' in attr and attr['data_type'] == 'time_series':
+            if attr_name in attributes:
+                op = _get_op(normal_op, inverse_op, attr_name)
+            else:
+                op = _no_op
             values_list = attr['values']
             for time, value in enumerate(values_list):
-                if isinstance(value, dict):
-                    _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
+                if isinstance(value, dict): # recurse deeper
+                    for k,v in value.items():
+                        _scale_by_baseMVA(normal_op, inverse_op, value, k, v, baseMVA, attributes)
                 else:
                     values_list[time] = op( value , baseMVA )
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
