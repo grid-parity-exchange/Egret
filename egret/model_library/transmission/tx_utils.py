@@ -419,9 +419,16 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA, 
                 op = _no_op
             values_list = attr['values']
             for time, value in enumerate(values_list):
-                if isinstance(value, dict): # recurse deeper
-                    for k,v in value.items():
-                        _scale_by_baseMVA(normal_op, inverse_op, value, k, v, baseMVA, attributes)
+                if isinstance(value, dict):
+                    if 'data_type' in value:
+                        _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
+                    else: # recurse deeper
+                        for k,v in value.items():
+                            _scale_by_baseMVA(normal_op, inverse_op, value, k, v, baseMVA, attributes)
+                elif isinstance(value, list):
+                    values_list[time] = [ op(v, baseMVA) for v in value ]
+                elif isinstance(value, tuple):
+                    values_list[time] = tuple( op(v, baseMVA) for v in value )
                 else:
                     values_list[time] = op( value , baseMVA )
         elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
