@@ -433,6 +433,7 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
     branches = model.model_data.data['elements']['branch']
     interfaces = model.model_data.data['elements']['interface']
 
+    # list of tuples -- each tuple is ( key, indexed_constraint, constraint_data )
     constr_to_remove = list()
 
     for bn, constr in mb.ineq_pf_branch_thermal_bounds.items():
@@ -442,7 +443,7 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
         slack = constr.slack()
         if slack_tol <= abs(slack):
             logger.debug(prepend_str+_generate_flow_monitor_remove_message('branch', bn, abs(slack), baseMVA, time))
-            constr_to_remove.append(constr)
+            constr_to_remove.append((bn, mb.ineq_pf_branch_thermal_bounds, constr))
             ## remove the index from the lines we're monitoring
             idx_monitored.remove(branchname_index_map[bn])
 
@@ -453,7 +454,7 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
         slack = constr.slack()
         if slack_tol <= abs(slack):
             logger.debug(prepend_str+_generate_flow_monitor_remove_message('interface', i_n, abs(slack), baseMVA, time))
-            constr_to_remove.append(constr)
+            constr_to_remove.append((i_n, mb.ineq_pf_interface_bounds, constr))
             ## remove the index from the lines we're monitoring
             interfaces_monitored.remove(interfacename_index_map[i_n])
 
@@ -461,7 +462,7 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
         slack = constr.slack()
         if slack_tol <= abs(slack):
             logger.debug(prepend_str+_generate_flow_monitor_remove_message('contingeny', name, abs(slack), baseMVA, time))
-            constr_to_remove.append(constr)
+            constr_to_remove.append((name, mb.ineq_pf_contingency_branch_thermal_bounds, constr))
             ## remove the index from the lines we're monitoring
             contingencies_monitored.remove((name[0], branchname_index_map[name[1]])) ## TODO: name?
 
@@ -470,10 +471,10 @@ def remove_inactive(mb, solver, time=None, prepend_str=""):
         msg += " at time {}".format(time)
     logger.debug(msg)
 
-    for constr in constr_to_remove:
+    for key, indexed_constraint, constr_data in constr_to_remove:
         if persistent_solver:
-            solver.remove_constraint(constr)
-        del constr
+            solver.remove_constraint(constr_data)
+        del indexed_constraint[key]
     return len(constr_to_remove)
 
 def _generate_flow_viol_warning(expr, e_type, bn, flow, limit, baseMVA, time):
