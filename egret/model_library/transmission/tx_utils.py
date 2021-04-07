@@ -247,6 +247,8 @@ scaled_attributes = {
                                                           'q_max',
                                                           'startup_capacity',
                                                           'shutdown_capacity',
+                                                          'startup_curve',
+                                                          'shutdown_curve',
                                                           'ramp_up_60min',
                                                           'ramp_down_60min',
                                                           'initial_p_output',
@@ -436,7 +438,12 @@ def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA, 
                 _scale_by_baseMVA(normal_op, inverse_op, attr, k, v, baseMVA, attributes)
     elif attr_name in attributes:
         op = _get_op(normal_op, inverse_op, attr_name)
-        element[attr_name] = op( attr , baseMVA )
+        if isinstance(attr, list):
+            element[attr_name] = [ op(a, baseMVA) for a in attr ]
+        elif isinstance(attr, tuple):
+            element[attr_name] = tuple( op(a, baseMVA) for a in attr )
+        else:
+            element[attr_name] = op( attr , baseMVA )
     else:
         return
 
