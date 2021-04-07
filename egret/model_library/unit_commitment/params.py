@@ -540,9 +540,6 @@ def load_params(model, model_data):
             return int(math.ceil( -value(m.UnitOnT0State[g]) / value(m.TimePeriodLengthHours) ))
     model.TimePeriodsSinceShutdown = Param(model.ThermalGenerators, within=PositiveIntegers, mutable=True,
                                             initialize=time_periods_since_last_shutdown_rule)
-    #for g in model.ThermalGenerators:
-    #    print(f"{g}: time periods since shutdown: {model.TimePeriodsSinceShutdown[g].value}")
-    #    print(f"{g}: UnitOnT0State: {model.UnitOnT0State[g].value}")
 
     def time_periods_before_startup_rule(m,g):
         if value(m.FutureStatus[g]) <= 0:
