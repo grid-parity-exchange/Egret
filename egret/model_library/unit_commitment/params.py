@@ -526,6 +526,10 @@ def load_params(model, model_data):
     _verify_must_run_t0_state_consistency(model)
 
     # For future shutdowns/startups beyond the time-horizon
+    # Like UnitOnT0State, a postive quantity means the generator
+    # *will start* in 'future_status' hours, and a negative quantity
+    # means the generator *will stop* in -('future_status') hours.
+    # The default of 0 means we have no information
     model.FutureStatus = Param(model.ThermalGenerators,
                                within=Reals,
                                mutable=True,
@@ -552,6 +556,9 @@ def load_params(model, model_data):
 
     ###############################################
     # startup/shutdown curves for each generator. #
+    # These are specified in the same time scales #
+    # as 'time_period_length_minutes' and other   #
+    # time-vary quantities.                       #
     ###############################################
 
     def startup_curve_init_rule(m,g):
