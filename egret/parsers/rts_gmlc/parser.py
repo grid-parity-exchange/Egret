@@ -324,6 +324,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
     data : dict
         Returns a dict loaded from the RTS-GMLC data
     """
+    from math import isnan
 
     base_dir = rts_gmlc_dir
 
@@ -364,7 +365,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             "v_min": 0.95,
             "v_max": 1.05,
             "area": str(row['Area']),
-            "zone": str(int(row['Zone'])),
+            "zone": str(row['Zone']),
         }
 
         if bus_dict["base_kv"] <= 0:
@@ -448,6 +449,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
 
         name = str(row['UID'])
         elements["branch"][name] = branch_dict
+    branch_df = None
 
     # add the DC branches
     if os.path.exists(os.path.join(base_dir,'dc_branch.csv')):
@@ -466,6 +468,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
 
             name = str(row['UID'])
             elements["branch"][name] = branch_dict
+        branch_df = None
 
     # add the generators
     elements["generator"] = {}
@@ -500,6 +503,11 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             "zone": elements['bus'][bus_name]['zone']
         }
 
+        # Remove optional values if not present
+        for key in ('p_min', 'p_max', 'q_min', 'q_max', 'ramp_q'):
+            if isnan(gen_dict[key]):
+                del gen_dict[key]
+
         UNIT_TYPE = str(row['Unit Type'])
         if UNIT_TYPE in RENEWABLE_TYPES:
             gen_dict["generator_type"] = "renewable"
@@ -527,6 +535,8 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             for i in range(50):
                 try:
                     val = float(row[f'Output_pct_{i}'])
+                    if isnan(val):
+                        return
                     yield (i, val)
                 except:
                     return
@@ -543,15 +553,6 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             for i in range(1,fuel_field_count):
                 f[i] = (((x[i]-x[i-1])*(float(row[f'HR_incr_{i}'])*1000. / 1000000.))) + f[i-1]
 
-            fuel_price = float(row['Fuel Price $/MMBTU'])
-            y = {i: fuel_price*f[i] for i in range(fuel_field_count)}
-
-            # only include the cost coeffecients that matter
-            P_COEFF = [ (x[i], round(y[i],2)) for i in range(fuel_field_count) if (((i == 0) or (x[i-1],y[i-1]) != (x[i], y[i])) and (x[i], y[i]) != (0.,0.)) ]
-            if P_COEFF == []:
-                P_COEFF = [(pmax, 0.0)] 
-            gen_dict["p_cost"] = {"data_type": "cost_curve", "cost_curve_type":"piecewise", "values": P_COEFF }
-
             F_COEFF = [ (x[i], round(f[i],2)) for i in range(fuel_field_count) if (((i == 0) or (x[i-1],f[i-1]) != (x[i], f[i])) and (x[i], f[i]) != (0.,0.)) ]
             if F_COEFF == []:
                 F_COEFF = [(pmax, 0.0)]
@@ -560,66 +561,55 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
         # UC Data
         MIN_DN_TIME = float(row['Min Down Time Hr'])
 
-        # Startup types and costs 
-        COLD_HEAT = float(row['Start Heat Cold MBTU'])
-        WARM_HEAT = float(row['Start Heat Warm MBTU'])
-        HOT_HEAT = float(row['Start Heat Hot MBTU'])
+        # Startup types and costs, from hot to cold
+        startup_heat = (float(row['Start Heat Hot MBTU']),
+                        float(row['Start Heat Warm MBTU']),
+                        float(row['Start Heat Cold MBTU']))
+        startup_time = (float(row['Start Time Hot Hr']),
+                        float(row['Start Time Warm Hr']),
+                        float(row['Start Time Cold Hr']))
 
-        COLD_TIME = float(row['Start Time Cold Hr'])
-        WARM_TIME = float(row['Start Time Warm Hr'])
-        HOT_TIME = float(row['Start Time Hot Hr'])
+        # Arrange fuel requirements from hottest to coldest, ignoring missing values.
+        startup_fuel = []
+        for i in range(3):
+            # Skip blank values
+            if isnan(startup_time[i]) or isnan(startup_heat[i]):
+                continue
 
-        FIXED_START_COST = float(row['Non Fuel Start Cost $'])
+            t = max(startup_time[i], MIN_DN_TIME)
+            f = startup_heat[i]
 
-        if (COLD_TIME <= MIN_DN_TIME) or (COLD_TIME == WARM_TIME == HOT_TIME):
-            STARTUP_COSTS = [(MIN_DN_TIME, round(COLD_HEAT*fuel_price + FIXED_START_COST, 2))]
-            STARTUP_FUEL = [(MIN_DN_TIME, COLD_HEAT)]
+            # For entries with matching times, use to the colder data
+            if len(startup_fuel) > 0 and startup_fuel[-1][0] == t:
+                startup_fuel[-1] = (t,f)
+            else:
+                startup_fuel.append((t,f))
 
-        elif WARM_TIME <= MIN_DN_TIME:
-            STARTUP_COSTS = [(MIN_DN_TIME, round(WARM_HEAT*fuel_price + FIXED_START_COST, 2)),\
-                                (COLD_TIME, round(COLD_HEAT*fuel_price + FIXED_START_COST, 2))]
-            STARTUP_FUEL = [(MIN_DN_TIME, WARM_HEAT),\
-                                (COLD_TIME, COLD_HEAT)]
-
-        else:
-            STARTUP_COSTS = [(MIN_DN_TIME, round(HOT_HEAT*fuel_price+FIXED_START_COST,2)),\
-                                (WARM_TIME, round(WARM_HEAT*fuel_price+FIXED_START_COST,2)),\
-                                (COLD_TIME, round(COLD_HEAT*fuel_price+FIXED_START_COST,2))]
-            STARTUP_FUEL = [(MIN_DN_TIME, HOT_HEAT),\
-                                (WARM_TIME, WARM_HEAT),\
-                                (COLD_TIME, COLD_HEAT)]
-        gen_dict["startup_cost"] = STARTUP_COSTS
-        gen_dict["startup_fuel"] = STARTUP_FUEL
+        gen_dict["startup_fuel"] = startup_fuel
+        fixed_startup_cost = float(row['Non Fuel Start Cost $'])
+        if not isnan(fixed_startup_cost):
+            gen_dict["non_fuel_startup_cost"] = fixed_startup_cost
         gen_dict["shutdown_cost"] = 0.0
 
-        gen_dict["pc1"] = 0.0
-        gen_dict["pc2"] = 0.0
-        gen_dict["qc1_min"] = 0.0
-        gen_dict["qc1_max"] = 0.0
-        gen_dict["qc2_min"] = 0.0
-        gen_dict["qc2_max"] = 0.0
         gen_dict["agc_capable"] = True
         gen_dict["p_min_agc"] = gen_dict["p_min"]
         gen_dict["p_max_agc"] = gen_dict["p_max"]
 
         ramp_q = gen_dict['ramp_q']
         gen_dict["ramp_agc"] = ramp_q
-        gen_dict["ramp_10"] = 10.*ramp_q
-        gen_dict["ramp_30"] = 30.*ramp_q
         gen_dict["ramp_up_60min"] = 60.*ramp_q
         gen_dict["ramp_down_60min"] = 60.*ramp_q
         
-        gen_dict["power_factor"] = 0.0
-        gen_dict["fuel_cost"] = fuel_price
+        gen_dict["fuel_cost"] = float(row['Fuel Price $/MMBTU'])
 
         # these assumptions are the same as prescient-rtsgmlc
         gen_dict["startup_capacity"] = gen_dict['p_min']
         gen_dict["shutdown_capacity"]  = gen_dict['p_min']
         gen_dict["min_up_time"] = float(row['Min Up Time Hr'])
         gen_dict["min_down_time"] = MIN_DN_TIME
-        gen_dict["must_run"] = False
 
         elements["generator"][name] = gen_dict
+    gen_df = None
 
     # Add the reserves
     reserve_df = pd.read_csv(os.path.join(base_dir,'reserves.csv'))
