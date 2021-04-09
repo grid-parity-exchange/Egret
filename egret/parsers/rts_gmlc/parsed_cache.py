@@ -16,6 +16,7 @@ if TYPE_CHECKING:
   from datetime import datetime
 
 import copy
+from datetime import timedelta
 
 from egret.data.model_data import ModelData
 
@@ -83,6 +84,9 @@ class ParsedCache():
         end_time:datetime
             The earliest time to NOT include in the returned data
         """
+
+        #Because pandas includes the end of a range, reduce our end time by one second
+        end_time = end_time - timedelta(seconds=1)
         self._process_timeseries_data(skeleton_dict, simulation_type, begin_time, end_time)
         self._insert_system_data(skeleton_dict, simulation_type, begin_time, end_time)
 
