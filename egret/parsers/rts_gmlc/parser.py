@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-  from typing import Dict, Union
+  from typing import Dict, Union, Optional
 
 import os.path
 import pandas as pd
@@ -25,7 +25,7 @@ from ._reserves import is_valid_reserve_name, reserve_name_map
 
 def create_ModelData(rts_gmlc_dir:str, 
                      begin_time:Union[datetime,str], end_time:Union[datetime,str], 
-                     simulation:str="DAY_AHEAD", t0_state:dict = None):
+                     simulation:str="DAY_AHEAD", t0_state:Optional[dict] = None):
 
     """
     Create a ModelData object from the RTS-GMLC data.
@@ -43,11 +43,12 @@ def create_ModelData(rts_gmlc_dir:str,
     simulation : str
         Either "DAY_AHEAD" or "REAL_TIME", which specifies which time series the data is taken from, 
         default is "DAY_AHEAD".
-    t0_state : dict or Nonetype
+    t0_state : dict or None
         Keys of this dict are thermal generator names, each element of which is another dictionary with
         keys "initial_status", "initial_p_output", and "initial_q_output", which specify whether the
         generator is on at t0, the real power output at t0, and the reactive power output at t0. 
-        If this is None, default values are loaded.
+        If t0_state is None, values are read from initial_status.csv in the rts_gmlc_dir.
+        If that file does not exist, default values are loaded.
     
     Returns
     -------
@@ -58,7 +59,7 @@ def create_ModelData(rts_gmlc_dir:str,
 
 def create_model_data_dict(rts_gmlc_dir:str, 
                            begin_time:Union[datetime,str], end_time:Union[datetime,str],
-                           simulation:str="DAY_AHEAD", t0_state:dict = None):
+                           simulation:str="DAY_AHEAD", t0_state:Optional[dict]=None):
 
     """
     Create a model_data dictionary from the RTS-GMLC data.
@@ -86,15 +87,15 @@ def create_model_data_dict(rts_gmlc_dir:str,
     -------
         dict : A dictionary in the format required for the ModelData object.
     """
-    cache = parse_to_cache(rts_gmlc_dir, begin_time, end_time)
+    cache = parse_to_cache(rts_gmlc_dir, begin_time, end_time, t0_state)
     model = cache.generate_model(simulation, begin_time, end_time)
-    set_t0_data(model.data, rts_gmlc_dir, t0_state)
     return model.data
 
 
 def parse_to_cache(rts_gmlc_dir:str, 
                    begin_time:Union[datetime,str],
-                   end_time:Union[datetime,str]) -> ParsedCache:
+                   end_time:Union[datetime,str],
+                   t0_state:Optional[dict]=None) -> ParsedCache:
     ''' Parse data in RTS-GMLC format, keeping the portions between a start and end time
 
     rts_gmlc_dir : str
@@ -128,6 +129,8 @@ def parse_to_cache(rts_gmlc_dir:str,
                            begin_time, end_time, minutes_per_period)
 
     load_participation_factors = _compute_bus_load_participation_factors(model_data)
+
+    set_t0_data(model_data, rts_gmlc_dir, None)
 
     return ParsedCache(model_data, begin_time, end_time,
                        minutes_per_period['DAY_AHEAD'], minutes_per_period['REAL_TIME'], 
@@ -775,7 +778,7 @@ def _parse_datetimes_if_strings(begin_time:Union[datetime,str], end_time:Union[d
 
     return begin_time, end_time
 
-def set_t0_data(md:dict, base_dir:str="", t0_state:dict=None):
+def set_t0_data(md:dict, base_dir:str="", t0_state:Optional[dict]=None):
     """ Put t0 information into the passed in mode dict
 
     Only t0 data for thermal generators is populated.
@@ -788,7 +791,7 @@ def set_t0_data(md:dict, base_dir:str="", t0_state:dict=None):
     If t0_state is provided, it should be organized as t0_state[name][value],
     where `name` is the name of a generator, and `value` is 'initial_status',
     'initial_p_output', and 'initial_q_output'.  For any generator included in
-    to_state, all three values must be present.
+    t0_state, all three values must be present.
 
     If initial_status.csv is used, it must have a header row and may have 
     from 1 to 3 data rows.  Row 1 is 'initial_status'.  Row 2 is 

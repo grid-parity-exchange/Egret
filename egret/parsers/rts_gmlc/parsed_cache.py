@@ -136,6 +136,7 @@ class ParsedCache():
         assert(param == "MW Load")
         data = df.iat[i, df.columns.get_loc('Series')][begin_time:end_time]
 
+        skeleton_loads = self.skeleton['elements']['load']
         for bus, load_dict in md['elements']['load'].items():
             # Skip loads from other areas
             if load_dict['area'] != area_name:
@@ -146,8 +147,8 @@ class ParsedCache():
             # Also replace q_load, if present, with timeseries
             p_factor = self.load_participation_factors[bus]
             # save skeleton's scalar p_load
-            p_load = load_dict['p_load'] if 'p_load' in load_dict else None
-            # overwrite skeleton's p_load with timeseries
+            p_load = skeleton_loads[bus]['p_load'] if 'p_load' in skeleton_loads[bus] else None
+            # overwrite p_load with timeseries
             load_dict['p_load'] = { 'data_type': 'time_series',
                                     'values' : [v*p_factor for v in data] }
             if p_load is not None and 'q_load' in load_dict:
