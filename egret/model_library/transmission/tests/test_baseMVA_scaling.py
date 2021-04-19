@@ -7,8 +7,9 @@
 #  This software is distributed under the Revised BSD License.
 #  ___________________________________________________________________________
 
-import pytest
+import os
 import math
+import pytest
 
 from egret.data.model_data import ModelData
 from egret.model_library.transmission.tx_utils import \
@@ -16,20 +17,26 @@ from egret.model_library.transmission.tx_utils import \
 from egret.models.unit_commitment import solve_unit_commitment
 from egret.models.tests.test_unit_commitment import test_solver
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+uc_test_dir = os.path.join(current_dir, '..','..','..','models',
+                             'tests', 'uc_test_instances')
+scuc_fn = os.path.join(uc_test_dir, 'test_scuc_full_enforce_relaxed_sol.json')
+tiny_uc_7_fn = os.path.join(uc_test_dir, 'tiny_uc_7.json')
+
 def test_scale_unscale():
-    md = ModelData.read(
-            '../../../models/tests/uc_test_instances/'
-            'test_scuc_full_enforce_relaxed_sol.json')
+    md = ModelData.read(scuc_fn)
 
     ## do type conversions
     original_base_MVA = md.data['system']['baseMVA']
     md.data['system']['baseMVA'] = 1.
 
     scale_ModelData_to_pu(md, inplace=True)
-
     md.data['system']['baseMVA'] = original_base_MVA
 
     md_transformed = scale_ModelData_to_pu(md, inplace=False)
+
+    # test inplace flag
+    assert id(md.data) != id(md_transformed.data)
 
     unscale_ModelData_to_pu(md_transformed, inplace=True)
 
@@ -43,9 +50,7 @@ def test_scale_unscale():
             assert ed == md.data['elements'][esn][en]
 
 def test_scaling_spot_check():
-    md = ModelData.read(
-            '../../../models/tests/uc_test_instances/'
-            'test_scuc_full_enforce_relaxed_sol.json')
+    md = ModelData.read(scuc_fn)
 
     baseMVA = md.data['system']['baseMVA']
 
@@ -109,8 +114,7 @@ def test_scaling_spot_check():
         md_scaled_unscaled.data['system']['reserve_shortfall_cost']
 
 def test_scaling_solve():
-    md = ModelData.read(
-            '../../../models/tests/uc_test_instances/tiny_uc_7.json')
+    md = ModelData.read(tiny_uc_7_fn)
 
     assert md.data['system']['baseMVA'] == 1.
     mdo_unscaled = solve_unit_commitment(md, test_solver, relaxed=True)
