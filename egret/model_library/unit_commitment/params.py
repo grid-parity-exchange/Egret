@@ -387,12 +387,12 @@ def load_params(model, model_data):
     ## Assert that MUT and MDT are at least 1 in the time units of the model.
     ## Otherwise, turn on/offs may not be enforced correctly.
     def scale_min_uptime(m, g):
-        scaled_up_time = int(round(m.MinimumUpTime[g] / m.TimePeriodLengthHours))
+        scaled_up_time = int(math.ceil(m.MinimumUpTime[g] / m.TimePeriodLengthHours))
         return min(max(scaled_up_time,1), value(m.NumTimePeriods))
     model.ScaledMinimumUpTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_uptime)
     
     def scale_min_downtime(m, g):
-        scaled_down_time = int(round(m.MinimumDownTime[g] / m.TimePeriodLengthHours))
+        scaled_down_time = int(math.ceil(m.MinimumDownTime[g] / m.TimePeriodLengthHours))
         return min(max(scaled_down_time,1), value(m.NumTimePeriods))
     model.ScaledMinimumDownTime = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=scale_min_downtime)
     
@@ -524,12 +524,68 @@ def load_params(model, model_data):
     
     _add_initial_time_periods_on_off_line(model)
     _verify_must_run_t0_state_consistency(model)
+
+    # For future shutdowns/startups beyond the time-horizon
+    # Like UnitOnT0State, a postive quantity means the generator
+    # *will start* in 'future_status' hours, and a negative quantity
+    # means the generator *will stop* in -('future_status') hours.
+    # The default of 0 means we have no information
+    model.FutureStatus = Param(model.ThermalGenerators,
+                               within=Reals,
+                               mutable=True,
+                               default=0.,
+                               initialize=thermal_gen_attrs.get('future_status', dict()))
+
+    def time_periods_since_last_shutdown_rule(m,g):
+        if value(m.UnitOnT0[g]):
+            # longer than any time-horizon we'd consider
+            return 10000
+        else:
+            return int(math.ceil( -value(m.UnitOnT0State[g]) / value(m.TimePeriodLengthHours) ))
+    model.TimePeriodsSinceShutdown = Param(model.ThermalGenerators, within=PositiveIntegers, mutable=True,
+                                            initialize=time_periods_since_last_shutdown_rule)
+
+    def time_periods_before_startup_rule(m,g):
+        if value(m.FutureStatus[g]) <= 0:
+            # longer than any time-horizon we'd consider
+            return 10000
+        else:
+            return int(math.ceil( value(m.FutureStatus[g]) / value(m.TimePeriodLengthHours) ))
+    model.TimePeriodsBeforeStartup = Param(model.ThermalGenerators, within=PositiveIntegers, mutable=True,
+                                            initialize=time_periods_before_startup_rule)
+
+    ###############################################
+    # startup/shutdown curves for each generator. #
+    # These are specified in the same time scales #
+    # as 'time_period_length_minutes' and other   #
+    # time-vary quantities.                       #
+    ###############################################
+
+    def startup_curve_init_rule(m,g):
+        startup_curve = thermal_gens[g].get('startup_curve')
+        if startup_curve is None:
+            return ()
+        min_down_time = int(math.ceil(m.MinimumDownTime[g] / m.TimePeriodLengthHours))
+        if len(startup_curve) > min_down_time:
+            logger.warn(f"Truncating startup_curve longer than scaled minimum down time {min_down_time} for generator {g}")
+        return startup_curve[0:min_down_time]
+    model.StartupCurve = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_curve_init_rule)
+
+    def shutdown_curve_init_rule(m,g):
+        shutdown_curve = thermal_gens[g].get('shutdown_curve')
+        if shutdown_curve is None:
+            return ()
+        min_down_time = int(math.ceil(m.MinimumDownTime[g] / m.TimePeriodLengthHours))
+        if len(shutdown_curve) > min_down_time:
+            logger.warn(f"Truncating shutdown_curve longer than scaled minimum down time {min_down_time} for generator {g}")
+        return shutdown_curve[0:min_down_time]
+    model.ShutdownCurve = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=shutdown_curve_init_rule)
     
     ####################################################################
     # generator power output at t=0 (initial condition). units are MW. #
     ####################################################################
 
-    def between_limits_validator(m, v, g):
+    def power_generated_t0_validator(m, v, g):
         t = m.TimePeriods.first() 
 
         if value(m.UnitOnT0[g]):
@@ -544,13 +600,16 @@ def load_params(model, model_data):
             return True
 
         else:
-            return v == 0.
+            # Generator was off, but could have residual power due to
+            # start-up/shut-down curve. Therefore, do not be too picky
+            # as the value doesn't affect any constraints directly
+            return True
 
     model.PowerGeneratedT0 = Param(model.ThermalGenerators, 
-                                    within=NonNegativeReals, 
-                                    validate=between_limits_validator, 
-                                    mutable=True,
-                                    initialize=thermal_gen_attrs['initial_p_output'])
+                                   within=NonNegativeReals,
+                                   validate=power_generated_t0_validator,
+                                   mutable=True,
+                                   initialize=thermal_gen_attrs['initial_p_output'])
     
     # limits for time periods in which generators are brought on or off-line.
     # must be no less than the generator minimum output.
@@ -663,7 +722,7 @@ def load_params(model, model_data):
         else:
             return temp + m.MinimumPowerOutputT0[g]
     model.ScaledShutdownRampLimitT0 = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=scale_shutdown_limit_t0, mutable=True)
-    
+
     ###############################################
     # startup cost parameters for each generator. #
     ###############################################

@@ -1048,7 +1048,7 @@ def _save_uc_results(m, relaxed):
 
 
         for dt, mt in enumerate(m.TimePeriods):
-            pg_dict[dt] = value(m.PowerGenerated[g,mt])
+            pg_dict[dt] = value(m.PowerGeneratedStartupShutdown[g,mt])
             if reserve_requirement:
                 rg_dict[dt] = value(m.ReserveProvided[g,mt])
             if relaxed:

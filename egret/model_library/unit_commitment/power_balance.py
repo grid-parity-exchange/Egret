@@ -572,7 +572,7 @@ def _get_pg_expr_rule(t):
     def pg_expr_rule(block,b):
         m = block.parent_block()
         # bus b, time t (S)
-        return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
+        return sum(m.PowerGeneratedStartupShutdown[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
                 + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
                 - sum(m.PowerInputStorage[s, t] for s in m.StorageAtBus[b])\
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
@@ -776,7 +776,7 @@ def power_balance_constraints(model, slacks=True):
     # Power balance at each node (S)
     def power_balance(m, b, t):
         # bus b, time t (S)
-        return sum(m.PowerGenerated[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
+        return sum(m.PowerGeneratedStartupShutdown[g, t] for g in m.ThermalGeneratorsAtBus[b]) \
                 + sum(m.PowerOutputStorage[s, t] for s in m.StorageAtBus[b])\
                 - sum(m.PowerInputStorage[s, t] for s in m.StorageAtBus[b])\
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \

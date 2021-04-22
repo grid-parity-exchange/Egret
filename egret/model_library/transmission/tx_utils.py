@@ -247,6 +247,8 @@ scaled_attributes = {
                                                           'q_max',
                                                           'startup_capacity',
                                                           'shutdown_capacity',
+                                                          'startup_curve',
+                                                          'shutdown_curve',
                                                           'ramp_up_60min',
                                                           'ramp_down_60min',
                                                           'initial_p_output',
@@ -267,9 +269,9 @@ scaled_attributes = {
                                                           'headroom',
                                                           'reg_up_supplied',
                                                           'reg_down_supplied',
-                                                          'spin_supplied',
                                                           'flex_up_supplied',
                                                           'flex_down_supplied',
+                                                          'spinning_supplied',
                                                           'non_spinning_supplied',
                                                           'supplemental_supplied',
                                                           'p_cost',
@@ -403,40 +405,93 @@ def _get_op(normal_op, inverse_op, attr_name):
         return inverse_op 
     return normal_op
 
+def _no_op(a,b):
+    return a
+
+def _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes):
+    if 'data_type' in value:
+        _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
+    else: # recurse deeper
+        for k,v in value.items():
+            _scale_by_baseMVA(normal_op, inverse_op, value, k, v, baseMVA, attributes)
+
 def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA, attributes):
     if attr is None:
         return
     if isinstance(attr, dict):
-        if 'data_type' in attr and attr['data_type'] == 'time_series':
-            op = _get_op(normal_op, inverse_op, attr_name)
-            values_list = attr['values']
-            for time, value in enumerate(values_list):
-                if isinstance(value, dict):
-                    _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
+        if 'data_type' in attr:
+            if attr['data_type'] == 'time_series':
+                if attr_name in attributes:
+                    op = _get_op(normal_op, inverse_op, attr_name)
                 else:
-                    values_list[time] = op( value , baseMVA )
-        elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
-            if attr['cost_curve_type'] == 'polynomial':
-                values_dict = attr['values']
-                new_values = { int(power): coeff*(inverse_op(1.,baseMVA)**int(power)) \
-                                for (power, coeff) in values_dict.items() }
-                attr['values'] = new_values
-            elif attr['cost_curve_type'] == 'piecewise':
-                values_list_of_tuples = attr['values']
-                new_values = [ ( normal_op(point,baseMVA), cost) \
-                                for (point, cost) in values_list_of_tuples ]
-                attr['values'] = new_values
-        elif 'data_type' in attr and attr['data_type'] == 'fuel_curve':
-            values_list_of_tuples = attr['values']
-            new_values = [ ( normal_op(point,baseMVA), fuel) \
-                            for (point, fuel) in values_list_of_tuples ]
-            attr['values'] = new_values
-        else: # recurse deeper
+                    op = _no_op
+                values_list = attr['values']
+                for time, value in enumerate(values_list):
+                    if isinstance(value, dict):
+                        _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
+                    elif isinstance(value, list):
+                        values_list[time] = [ op(v, baseMVA) for v in value ]
+                    elif isinstance(value, tuple):
+                        values_list[time] = tuple( op(v, baseMVA) for v in value )
+                    else:
+                        values_list[time] = op( value , baseMVA )
+            elif attr['data_type'] == 'cost_curve':
+                if attr['cost_curve_type'] == 'polynomial':
+                    values_dict = attr['values']
+                    if 'data_type' in values_dict:
+                        _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, values_dict, baseMVA, attributes)
+                    else:
+                        attr['values'] = { int(power): coeff*(inverse_op(1.,baseMVA)**int(power)) \
+                                        for (power, coeff) in values_dict.items() }
+                elif attr['cost_curve_type'] == 'piecewise':
+                    values = attr['values']
+                    if isinstance(values, list):
+                        attr['values'] = [ (normal_op(point,baseMVA), cost) \
+                                        for (point, cost) in values ]
+                    elif isinstance(values, tuple):
+                        attr['values'] = tuple( (normal_op(point,baseMVA), cost) \
+                                            for (point, cost) in values )
+                    elif isinstance(values, dict):
+                        _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, values, baseMVA, attributes)
+                    else:
+                        raise RuntimeError("Unexpected case converting piecewise cost curve")
+            elif attr['data_type'] == 'fuel_curve':
+                values = attr['values']
+                if isinstance(values, list):
+                    attr['values'] = [ (normal_op(point,baseMVA), fuel) \
+                                    for (point, fuel) in values ]
+                elif isinstance(values, tuple):
+                    attr['values'] = tuple( (normal_op(point,baseMVA), fuel) \
+                                        for (point, fuel) in values )
+                elif isinstance(values, dict):
+                    _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, values, baseMVA, attributes)
+                else:
+                    raise RuntimeError("Unexpected case converting piecewise fuel curve")
+            else: # potentially recurse deeper on the "values"
+                if attr_name in attributes:
+                    op = _get_op(normal_op, inverse_op, attr_name)
+                else:
+                    op = _no_op
+                values = attr['values']
+                if isinstance(values, dict):
+                    _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, values, baseMVA, attributes)
+                elif isinstance(values, list):
+                    attr['values'] = [ op(v, baseMVA) for v in values ]
+                elif isinstance(value, tuple):
+                    attr['values'] = tuple( op(v, baseMVA) for v in values )
+                else:
+                    attr['values'] = op( values , baseMVA )
+        else: # recurse deeper AND we've already checked for data_type
             for k,v in attr.items():
                 _scale_by_baseMVA(normal_op, inverse_op, attr, k, v, baseMVA, attributes)
     elif attr_name in attributes:
         op = _get_op(normal_op, inverse_op, attr_name)
-        element[attr_name] = op( attr , baseMVA )
+        if isinstance(attr, list):
+            element[attr_name] = [ op(a, baseMVA) for a in attr ]
+        elif isinstance(attr, tuple):
+            element[attr_name] = tuple( op(a, baseMVA) for a in attr )
+        else:
+            element[attr_name] = op( attr , baseMVA )
     else:
         return
 
