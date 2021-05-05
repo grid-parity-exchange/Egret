@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def _relaxation_helper(model, md, include_soc, use_linear_relaxation):
     coramin.relaxations.relax(model,
                               in_place=True,
-                              use_fbbt=True,
+                              use_fbbt=False,
                               fbbt_options={'deactivate_satisfied_constraints': True,
                                             'max_iter': 2})
     if not use_linear_relaxation:
