@@ -93,12 +93,7 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
     ### declare (and fix) the loads at the buses
     bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
 
-    def _pl_bounds_rule(m, bus):
-        load = bus_p_loads[bus]
-        if load < 0.0:
-            return load, 0.0
-        return 0.0, load
-    libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads, bounds=_pl_bounds_rule)
+    libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
     libbus.declare_var_ql(model, bus_attrs['names'], initialize=bus_q_loads)
     model.pl.fix()
     model.ql.fix()
@@ -111,11 +106,11 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
                             initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
                             bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
                                              {k: v**2 for k, v in bus_attrs['v_max'].items()}))
+
     branch_w_index = {(v['from_bus'], v['to_bus']): v for v in branches.values()}
+
     def _c_bounds_rule(m, from_bus, to_bus):
         bdat = branch_w_index[(from_bus, to_bus)]
-        busf = buses[from_bus]
-        bust = buses[to_bus]
         if bdat['angle_diff_max'] < 0:
             the_mid = bdat['angle_diff_max']
         elif bdat['angle_diff_min'] > 0:
@@ -134,10 +129,9 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
                             index_set=unique_bus_pairs,
                             initialize=1,
                             bounds=_c_bounds_rule)
+
     def _s_bounds_rule(m, from_bus, to_bus):
         bdat = branch_w_index[(from_bus, to_bus)]
-        busf = buses[from_bus]
-        bust = buses[to_bus]
 
         if bdat['angle_diff_min'] >= 0:
             lb = (bus_attrs['v_min'][from_bus]
@@ -331,7 +325,7 @@ def create_atan_acopf_model(model_data, include_feasibility_slack=False):
     branch_w_index = {(v['from_bus'], v['to_bus']): v for v in branches.values()}
     def _dva_bounds_rule(m, from_bus, to_bus):
         bdat = branch_w_index[(from_bus, to_bus)]
-        return bdat['angle_diff_min'] * pi / 180, bdat['angle_diff_max'] * pi / 180
+        return max(-pi/2, bdat['angle_diff_min'] * pi / 180), min(pi/2, bdat['angle_diff_max'] * pi / 180)
     libbranch.declare_var_dva(model=model,
                               index_set=list(cycle_basis_bus_pairs),
                               initialize=0,
