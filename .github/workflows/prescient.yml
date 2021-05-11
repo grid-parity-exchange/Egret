@@ -56,8 +56,9 @@ jobs:
           - name: Install Prescient
             run: |
               cd ..
-              git clone https://github.com/grid-parity-exchange/Prescient.git
+              git clone --depth=1 https://github.com/grid-parity-exchange/Prescient.git
               cd Prescient
+              conda env update --name test_env --file environment.yml
               python setup.py develop
           - name: Run Prescient Tests
             run: |
