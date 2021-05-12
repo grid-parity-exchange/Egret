@@ -1,4 +1,4 @@
-![EGRET GitHub CI](https://github.com/grid-parity-exchange/Egret/workflows/EGRET%20GitHub%20CI/badge.svg)
+[![EGRET GitHub CI](https://github.com/grid-parity-exchange/Egret/workflows/EGRET%20GitHub%20CI/badge.svg)](https://github.com/grid-parity-exchange/Egret/actions/workflows/egret.yml)
 
 ## EGRET Overview
 
