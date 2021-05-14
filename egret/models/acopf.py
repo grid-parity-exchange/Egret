@@ -228,18 +228,31 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
                                                       branches=branches
                                                       )
 
-    ### declare the generator cost objective
+    # declare the generator cost objective
+    pw_cost_gens = list()
+    p_cost = gen_attrs['p_cost']
+    if 'q_cost' in gen_attrs:
+        q_cost = gen_attrs['q_cost']
+    else:
+        q_cost = dict()
+    for gen_name in gen_attrs['names']:
+        if p_cost[gen_name]['cost_curve_type'] == 'piecewise' or (gen_name in q_cost and q_cost[gen_name]['cost_curve_type'] == 'piecewise'):
+            pw_cost_gens.append(gen_name)
+
+    if len(pw_cost_gens) > 0:
+        libgen.declare_var_pg_cost(model=model, index_set=pw_cost_gens)
+        libgen.declare_var_qg_cost(model=model, index_set=pw_cost_gens)
+        libgen.declare_piecewise_cost_cons(model=model, index_set=pw_cost_gens, p_costs=p_cost, q_costs=q_cost)
+
     libgen.declare_expression_pgqg_operating_cost(model=model,
                                                   index_set=gen_attrs['names'],
                                                   p_costs=gen_attrs['p_cost'],
-                                                  q_costs=gen_attrs.get('q_cost', None)
-                                                  )
+                                                  q_costs=gen_attrs.get('q_cost', None))
 
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
     if include_feasibility_slack:
         obj_expr += penalty_expr
-    if hasattr(model, 'qg_operating_cost'):
-        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
 
     model.obj = pe.Objective(expr=obj_expr)
 
