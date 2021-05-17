@@ -49,7 +49,7 @@ def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_a
                     for bus_name in bus_names)
     return p_rhs_kwargs, penalty_expr
 
-def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False):
+def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -191,13 +191,19 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
                                                       coordinate_type=CoordinateType.POLAR
                                                       )
 
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
-
+    # declare the generator cost objective
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
@@ -205,7 +211,7 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
 
     return model, md
 
-def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None):
+def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None, pw_cost_model='delta'):
 
     ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
@@ -342,13 +348,19 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                                      approximation_type=ApproximationType.PTDF,
                                                      )
 
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
-
+    # declare the generator cost objective
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 

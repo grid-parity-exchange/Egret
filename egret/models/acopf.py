@@ -67,7 +67,7 @@ def _validate_and_extract_slack_penalties(model_data):
     return model_data.data['system']['load_mismatch_cost'], model_data.data['system']['q_load_mismatch_cost']
 
 
-def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
+def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace=True)
 
@@ -229,28 +229,30 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False):
                                                       )
 
     # declare the generator cost objective
-    pw_cost_gens = list()
-    p_cost = gen_attrs['p_cost']
-    if 'q_cost' in gen_attrs:
-        q_cost = gen_attrs['q_cost']
-    else:
-        q_cost = dict()
-    for gen_name in gen_attrs['names']:
-        if p_cost[gen_name]['cost_curve_type'] == 'piecewise' or (gen_name in q_cost and q_cost[gen_name]['cost_curve_type'] == 'piecewise'):
-            pw_cost_gens.append(gen_name)
-
-    if len(pw_cost_gens) > 0:
-        libgen.declare_var_pg_cost(model=model, index_set=pw_cost_gens)
-        libgen.declare_var_qg_cost(model=model, index_set=pw_cost_gens)
-        libgen.declare_piecewise_cost_cons(model=model, index_set=pw_cost_gens, p_costs=p_cost, q_costs=q_cost)
-
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost'],
-                                                  q_costs=gen_attrs.get('q_cost', None))
-
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
-    obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
+    q_costs = gen_attrs.get('q_cost', None)
+    if q_costs is not None:
+        pw_qg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=q_costs))
+        if len(pw_qg_cost_gens) > 0:
+            if pw_cost_model == 'delta':
+                libgen.declare_var_delta_qg(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+                libgen.declare_qg_delta_qg_con(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+            else:
+                libgen.declare_var_qg_cost(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+                libgen.declare_piecewise_qg_cost_cons(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+        libgen.declare_expression_qg_operating_cost(model=model, index_set=gen_attrs['names'], q_costs=q_costs, pw_formulation=pw_cost_model)
+        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 

@@ -889,68 +889,25 @@ def load_params(model, model_data):
             ## first, get a cost_curve out of time series
             if curve['data_type'] == 'time_series':
                 curve_t = curve['values'][i]
+                _t = t
             else:
-                curve_t = curve 
+                curve_t = curve
+                _t = None
 
-            ## validate that what we have is a cost_curve
-            if curve_t['data_type'] != curve_type:
-                raise Exception("p_cost must be of data_type cost_curve.")
+            tx_utils.validate_and_clean_cost_curve(curve_t,
+                                                   curve_type=curve_type,
+                                                   p_min=value(m.MinimumPowerOutput[g, t]),
+                                                   p_max=value(m.MaximumPowerOutput[g, t]),
+                                                   gen_name=g,
+                                                   t=_t)
 
-            ## get the values, check against something empty
-            values = curve_t['values']
-            if len(values) == 0:
-                if curve_t == curve:
-                    logger.warning("WARNING: Generator {} has no cost information associated with it".format(g))
-                    return True
-                else:
-                    logger.warning("WARNING: Generator {} has no cost information associated with it at time {}".format(g,t))
-
-            ## if we have a piecewise cost curve, ensure its convexity past p_min
-            ## if no curve_type+'_type' is specified, we assume piecewise (for backwards 
-            ## compatibility with no 'fuel_curve_type')
-            if curve_type+'_type' not in curve_t or \
-                    curve_t[curve_type+'_type'] == 'piecewise':
-                p_min = value(m.MinimumPowerOutput[g,t])
-                last_slope = None
-                for (o1, c1), (o2, c2) in zip(values, values[1:]):
-                    if o2 <= p_min or math.isclose(p_min, o2):
-                        continue
-                    if math.isclose(o2,o1):
-                        if math.isclose(c2,c1):
-                            continue
-                        raise Exception("Piecewise {} must be convex above p_min. ".format(curve_type) + \
-                                        "Found non-convex piecewise {} for generator {} at time {}".format(curve_type,g,t))
-                    ## else p_min > o2
-                    if last_slope is None:
-                        last_slope = (c2-c1)/(o2-o1)
-                        continue
-                    this_slope = (c2-c1)/(o2-o1)
-                    if this_slope < last_slope and not math.isclose(this_slope, last_slope):
-                        raise Exception("Piecewise {} must be convex above p_min. ".format(curve_type) + \
-                                        "Found non-convex piecewise {} for generator {} at time {}".format(curve_type,g,t))
-                ## verify the last output value is at least p_max
-                o_last = values[-1][0]
-                if value(m.MaximumPowerOutput[g,t]) > o_last and \
-                        not math.isclose(value(m.MaximumPowerOutput[g,t]), o_last):
-                    raise Exception("{} does not contain p_max for generator {} at time {}".format(curve_type,g,t))
-
-            ## if we have a quadratic cost curve, ensure its convexity
-            elif curve_t[curve_type+'_type'] == 'polynomial':
+            if curve_t[curve_type + '_type'] == 'polynomial':
                 if not _check_curve.warn_piecewise_approx:
                     logger.warning("WARNING: Polynomial cost curves will be approximated using piecewise segments")
                     _check_curve.warn_piecewise_approx = True
-                values = curve_t['values']
-                if set(values.keys()) <= {0,1,2}:
-                    if 2 in values and values[2] < 0:
-                        raise Exception("Polynomial {}s must be convex. ".format(curve_type) + \
-                                        "Found non-convex {} for generator {} at time {}.".format(curve_type,g,t))
-                    if curve_t == curve: ## in this case, no need to check the other time periods
-                        return
-                else:
-                    raise Exception("Polynomial {}s must be quatric. ".format(curve_type) + \
-                                    "Found non-quatric {} for generator {} at time {}.".format(curve_type,g,t))
-            else:
-                raise Exception("Unexpected {}_type".format(curve_type))
+
+            if curve['data_type'] != 'time_series':
+                break
 
     ## set "static" variable for this function
     _check_curve.warn_piecewise_approx = False
