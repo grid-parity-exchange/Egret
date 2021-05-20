@@ -11,11 +11,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-  from typing import Dict, Union, Optional
+  from typing import Dict, Union, Optional, Tuple
 
+import sys
 import os.path
 import pandas as pd
 from datetime import datetime, timedelta
+import dateutil.parser
 from collections import namedtuple
 
 import egret.data.model_data as md
@@ -25,7 +27,7 @@ from ._reserves import is_valid_reserve_name, reserve_name_map
 
 def create_ModelData(rts_gmlc_dir:str, 
                      begin_time:Union[datetime,str], end_time:Union[datetime,str], 
-                     simulation:str="DAY_AHEAD", t0_state:Optional[dict] = None):
+                     simulation:str="DAY_AHEAD", t0_state:Optional[dict] = None) -> md.ModelData:
 
     """
     Create a ModelData object from the RTS-GMLC data.
@@ -33,7 +35,7 @@ def create_ModelData(rts_gmlc_dir:str,
     Parameters
     ----------
     rts_gmlc_dir : str
-        Path to RTS-GMLC directory
+        Path to directory holding csv files in RTS-GMLC format (bus.csv, gen.csv, etc).
     begin_time : datetime.datetime or str
         Beginning of time horizon. If str, date/time in "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD" format,
         the later of which assumes a midnight start.
@@ -48,7 +50,7 @@ def create_ModelData(rts_gmlc_dir:str,
         keys "initial_status", "initial_p_output", and "initial_q_output", which specify whether the
         generator is on at t0, the real power output at t0, and the reactive power output at t0. 
         If t0_state is None, values are read from initial_status.csv in the rts_gmlc_dir.
-        If that file does not exist, default values are loaded.
+        If that file does not exist, no initial state data is set in the model.
     
     Returns
     -------
@@ -59,7 +61,7 @@ def create_ModelData(rts_gmlc_dir:str,
 
 def create_model_data_dict(rts_gmlc_dir:str, 
                            begin_time:Union[datetime,str], end_time:Union[datetime,str],
-                           simulation:str="DAY_AHEAD", t0_state:Optional[dict]=None):
+                           simulation:str="DAY_AHEAD", t0_state:Optional[dict]=None) -> dict:
 
     """
     Create a model_data dictionary from the RTS-GMLC data.
@@ -67,7 +69,7 @@ def create_model_data_dict(rts_gmlc_dir:str,
     Parameters
     ----------
     rts_gmlc_dir : str
-        Path to RTS-GMLC directory
+        Path to directory holding csv files in RTS-GMLC format (bus.csv, gen.csv, etc).
     begin_time : datetime.datetime or str
         Beginning of time horizon. If str, date/time in "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD" format,
         the later of which assumes a midnight start.
@@ -77,16 +79,20 @@ def create_model_data_dict(rts_gmlc_dir:str,
     simulation : str
         Either "DAY_AHEAD" or "REAL_TIME", which specifies which time series the data is taken from, 
         default is "DAY_AHEAD".
-    t0_state : dict or Nonetype
+    t0_state : dict or None
         Keys of this dict are thermal generator names, each element of which is another dictionary with
         keys "initial_status", "initial_p_output", and "initial_q_output", which specify whether the
         generator is on at t0, the real power output at t0, and the reactive power output at t0. 
-        If this is None, default values are loaded.
+        If this is None, no initial state data is included in the dict.
     
     Returns
     -------
         dict : A dictionary in the format required for the ModelData object.
     """
+
+    # Convert date string to datetimes, if necessary
+    begin_time, end_time = _parse_datetimes_if_strings(begin_time, end_time)
+
     cache = parse_to_cache(rts_gmlc_dir, begin_time, end_time, t0_state)
     model = cache.generate_model(simulation, begin_time, end_time)
     return model.data
@@ -99,7 +105,7 @@ def parse_to_cache(rts_gmlc_dir:str,
     ''' Parse data in RTS-GMLC format, keeping the portions between a start and end time
 
     rts_gmlc_dir : str
-        Path to RTS-GMLC directory
+        Path to directory holding csv files in RTS-GMLC format (bus.csv, gen.csv, etc).
     begin_time : datetime.datetime or str
         Beginning of time horizon. 
     end_time : datetime.datetime or str
@@ -107,6 +113,11 @@ def parse_to_cache(rts_gmlc_dir:str,
     simulation : str
         Either "DAY_AHEAD" or "REAL_TIME", which specifies which time series the data is taken from, 
         default is "DAY_AHEAD".
+    t0_state : dict or None
+        Keys of this dict are thermal generator names, each element of which is another dictionary with
+        keys "initial_status", "initial_p_output", and "initial_q_output", which specify whether the
+        generator is on at t0, the real power output at t0, and the reactive power output at t0. 
+        If this is None, initial state data is not included in the cache.
     '''
     if not os.path.exists(rts_gmlc_dir):
         raise ValueError(f'RTS-GMLC directory "{rts_gmlc_dir}" does not exist')
@@ -130,7 +141,7 @@ def parse_to_cache(rts_gmlc_dir:str,
 
     load_participation_factors = _compute_bus_load_participation_factors(model_data)
 
-    set_t0_data(model_data, rts_gmlc_dir, None)
+    set_t0_data(model_data, rts_gmlc_dir, t0_state)
 
     return ParsedCache(model_data, begin_time, end_time,
                        minutes_per_period['DAY_AHEAD'], minutes_per_period['REAL_TIME'], 
@@ -147,10 +158,9 @@ def _read_metadata(base_dir:str) -> pd.DataFrame:
 
     return metadata_df
 
-def _get_data_date_range(metadata_df):
+def _get_data_date_range(metadata_df) -> Tuple[datetime, datetime]:
     ''' Get the range of dates for which there is data available
     '''
-    import dateutil.parser
 
     # Data start time
     row = metadata_df.loc['Date_From']
@@ -313,14 +323,14 @@ def _read_2D_timeseries_file(file_name:str, minutes_per_period:int,
     # Create and return a new 1-column DataFrame
     return pd.DataFrame({column_name: s})
 
-def _create_rtsgmlc_skeleton(rts_gmlc_dir):
+def _create_rtsgmlc_skeleton(rts_gmlc_dir:str):
     """
     Creates a data dictionary from the RTS-GMLC data files, without loading hourly data
 
     Parameters
     ----------
     rts_gmlc_dir : str
-        Path to RTS-GMLC directory
+        Path to directory holding csv files in RTS-GMLC format (bus.csv, gen.csv, etc).
     
     Returns
     -------
@@ -588,6 +598,11 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir):
             else:
                 startup_fuel.append((t,f))
 
+        # If the warmest fuel requirement has a time longer than the minimum
+        # down time, extend that warmest requirement down to minimum down time.
+        if len(startup_fuel) > 0 and startup_fuel[0][0] > MIN_DN_TIME:
+            startup_fuel[0] = (MIN_DN_TIME, startup_fuel[0][1])
+
         gen_dict["startup_fuel"] = startup_fuel
         fixed_startup_cost = float(row['Non Fuel Start Cost $'])
         if not isnan(fixed_startup_cost):
@@ -741,6 +756,32 @@ def _read_timeseries_data(model_data:dict, rts_gmlc_dir:str,
 
     return timeseries_pointer_df
 
+def _convert_to_datetime(when:Union[datetime,str]):
+    '''
+    Convert an object to a datetime, if it is not already one.
+
+    Parameters
+    ----------
+    when: datetime or str
+        The date and time to be returned or parsed
+    
+    Returns
+    -------
+    datetime
+        The passed in object as a datetime, parsing it if necessary
+
+    If `when` is a datetime it is simply returned. 
+    If `when` is a string it is parsed, inferring the format
+    If `when` is any other type, a TypeError is raised
+
+    '''
+    if isinstance(when, datetime):
+        return when
+    elif isinstance(when, str):
+        return dateutil.parser.parse(when)
+    else:
+        raise TypeError(f'Invalid argument, expected a datetime or str, got a {type(when)}')
+
 def _parse_datetimes_if_strings(begin_time:Union[datetime,str], end_time:Union[datetime,str]):
     '''
     Ensure both dates are datetimes, parsing date strings if necessary.
@@ -752,34 +793,14 @@ def _parse_datetimes_if_strings(begin_time:Union[datetime,str], end_time:Union[d
     end_time:datetime
         The end_time as a datetime, parsing it if necessary
     '''
-
-    datetime_format = "%Y-%m-%d %H:%M:%S"
-
-    datestr = "YYYY-DD-MM"
-    midnight = " 00:00:00"
-
-    if isinstance(begin_time,datetime):
-        pass
-    elif isinstance(begin_time,str):
-        if len(begin_time) == len(datestr):
-            begin_time += midnight
-        begin_time = datetime.strptime(begin_time,datetime_format)
-    else:
-        raise ValueError("Unable to parse begin_time")
-
-    if isinstance(end_time,datetime):
-        pass
-    elif isinstance(end_time,str):
-        if len(end_time) == len(datestr):
-            end_time += midnight
-        end_time = datetime.strptime(end_time,datetime_format)
-    else:
-        raise ValueError("Unable to parse end_time")
+                
+    begin_time = _convert_to_datetime(begin_time)
+    end_time = _convert_to_datetime(end_time)
 
     return begin_time, end_time
 
 def set_t0_data(md:dict, base_dir:str="", t0_state:Optional[dict]=None):
-    """ Put t0 information into the passed in mode dict
+    """ Put t0 information into the passed in model dict
 
     Only t0 data for thermal generators is populated.
 
