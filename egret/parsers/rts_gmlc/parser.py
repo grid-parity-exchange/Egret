@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 import dateutil.parser
 from collections import namedtuple
 
+from egret.common.log import logger
 import egret.data.model_data as md
 
 from .parsed_cache import ParsedCache
@@ -465,23 +466,25 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str):
     branch_df = None
 
     # add the DC branches
-    if os.path.exists(os.path.join(base_dir,'dc_branch.csv')):
-        branch_df = pd.read_csv(os.path.join(base_dir,'dc_branch.csv'))
-        for idx,row in branch_df.iterrows():
+    # TODO: see issue #229
+    #if os.path.exists(os.path.join(base_dir,'dc_branch.csv')):
+    #    elements["dc_branch"] = {}
+    #    branch_df = pd.read_csv(os.path.join(base_dir,'dc_branch.csv'))
+    #    for idx,row in branch_df.iterrows():
 
-            # TODO: I have no idea what field names Egrets expects or supports for DC branches.
-            #       The code below is just a placeholder.
-            branch_dict = {
-                "from_bus": bus_id_to_name[str(row['From Bus'])], 
-                "to_bus": bus_id_to_name[str(row['To Bus'])],
-                "in_service": True,
-                "branch_type": "dc",
-                "resistance": float(row['R Line'])
-            }
+    #        # TODO: I have no idea what field names Egrets expects or supports for DC branches.
+    #        #       The code below is just a placeholder.
+    #        branch_dict = {
+    #            "from_bus": bus_id_to_name[str(row['From Bus'])], 
+    #            "to_bus": bus_id_to_name[str(row['To Bus'])],
+    #            "in_service": True,
+    #            "branch_type": "dc",
+    #            "resistance": float(row['R Line'])
+    #        }
 
-            name = str(row['UID'])
-            elements["branch"][name] = branch_dict
-        branch_df = None
+    #        name = str(row['UID'])
+    #        elements["dc_branch"][name] = branch_dict
+    #    branch_df = None
 
     # add the generators
     elements["generator"] = {}
@@ -822,38 +825,46 @@ def set_t0_data(md:dict, base_dir:str="", t0_state:Optional[dict]=None):
     Any generators not mentioned in the data source are left untouched.
     """
     if t0_state is not None:
-        for name, gen in md['elements']['generator']:
+        for name, gen in md['elements']['generator'].items():
             if gen['generator_type']=='thermal' and name in t0_state:
                 gen['initial_status'] = t0_state[name]['initial_status']
                 gen['initial_p_output'] = t0_state[name]['initial_p_output']
                 gen['initial_q_output'] = t0_state[name]['initial_q_output']
-    else:
-        state_fname = os.path.join(base_dir, 'initial_status.csv')
-        if os.path.exists(state_fname):
-            import csv
-            with open(state_fname, 'r') as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
+        return
 
-            # We now have a list of rows, from 1 to 3 rows long.
-            # Row 1 is 'initial_status', row 2 is 'initial_p_output', and row 3 is 'initial_q_output'.
-            # Any missing row uses defaults
-            row_count = len(rows)
-            for name, gen in md['elements']['generator'].items():
-                if gen['generator_type'] != 'thermal':
-                    continue
-                if name not in reader.fieldnames:
-                    continue
-                gen['initial_status'] = float(rows[0][name])
-                if gen['initial_status'] < 0:
-                    gen['initial_p_output'] = 0.0
-                    gen['initial_q_output'] = 0.0
+    state_fname = os.path.join(base_dir, 'initial_status.csv')
+    if os.path.exists(state_fname):
+        import csv
+        with open(state_fname, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # We now have a list of rows, from 1 to 3 rows long.
+        # Row 1 is 'initial_status', row 2 is 'initial_p_output', and row 3 is 'initial_q_output'.
+        # Any missing row uses defaults
+        row_count = len(rows)
+        for name, gen in md['elements']['generator'].items():
+            if gen['generator_type'] != 'thermal':
+                continue
+            if name not in reader.fieldnames:
+                continue
+            gen['initial_status'] = float(rows[0][name])
+            if gen['initial_status'] < 0:
+                gen['initial_p_output'] = 0.0
+                gen['initial_q_output'] = 0.0
+            else:
+                if row_count >= 2:
+                    gen['initial_p_output'] = float(rows[1][name])
                 else:
-                    if row_count >= 2:
-                        gen['initial_p_output'] = float(rows[1][name])
-                    else:
-                        gen["initial_p_output"] = gen["p_min"]
-                    if row_count >= 3:
-                        gen['initial_q_output'] = float(rows[2][name])
-                    else:
-                        gen["initial_q_output"] = max(0., gen["q_min"])
+                    gen["initial_p_output"] = gen["p_min"]
+                if row_count >= 3:
+                    gen['initial_q_output'] = float(rows[2][name])
+                else:
+                    gen["initial_q_output"] = max(0., gen["q_min"])
+    else:
+        logger.warning("Setting default t0 state in RTS-GMLC parser")
+        for name, gen in md['elements']['generator'].items():
+            if gen['generator_type']=='thermal':
+                gen['initial_status'] = gen['min_up_time']+1
+                gen['initial_p_output'] = gen['p_min']
+                gen['initial_q_output'] = 0.
