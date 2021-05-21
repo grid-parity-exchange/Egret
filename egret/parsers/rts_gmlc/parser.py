@@ -472,7 +472,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str):
     #    branch_df = pd.read_csv(os.path.join(base_dir,'dc_branch.csv'))
     #    for idx,row in branch_df.iterrows():
 
-    #        # TODO: I have no idea what field names Egrets expects or supports for DC branches.
+    #        # TODO: The fields below don't match what Egrets expects or supports for DC branches.
     #        #       The code below is just a placeholder.
     #        branch_dict = {
     #            "from_bus": bus_id_to_name[str(row['From Bus'])], 
