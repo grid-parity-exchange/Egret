@@ -20,7 +20,7 @@ from datetime import timedelta
 
 from egret.data.model_data import ModelData
 
-from ._reserves import reserve_name_map
+from ._reserves import reserve_name_map, ScalarReserveData
 
 class ParsedCache():
 
@@ -28,7 +28,8 @@ class ParsedCache():
                  begin_time:datetime, end_time:datetime,
                  minutes_per_day_ahead_period:int, minutes_per_real_time_period:int,
                  timeseries_data:DataFrame,
-                 load_participation_factors:Dict[str,float]):
+                 load_participation_factors:Dict[str,float],
+                 scalar_reserve_data:ScalarReserveData):
         self.skeleton = model_skeleton
         self.begin_time = begin_time
         self.end_time = end_time
@@ -46,6 +47,8 @@ class ParsedCache():
             if self.timeseries_df['Simulation'].iat[i] != cur_sim:
                 cur_sim = self.timeseries_df['Simulation'].iat[i]
                 self._first_indices[cur_sim] = i
+
+        self.scalar_reserve_data = scalar_reserve_data
 
 
     def generate_model(self, simulation_type:str, begin_time:datetime, end_time:datetime) -> ModelData:
@@ -87,6 +90,7 @@ class ParsedCache():
 
         #Because pandas includes the end of a range, reduce our end time by one second
         end_time = end_time - timedelta(seconds=1)
+        self._insert_scalar_reserve_data(skeleton_dict, simulation_type)
         self._process_timeseries_data(skeleton_dict, simulation_type, begin_time, end_time)
         self._insert_system_data(skeleton_dict, simulation_type, begin_time, end_time)
 
@@ -183,3 +187,17 @@ class ParsedCache():
         sample_df = df.iat[self._first_indices[simulation_type], df.columns.get_loc('Series')]
         dates = sample_df[begin_time:end_time].index
         md['system']['time_keys'] = [dt.strftime('%Y-%m-%d %H:%M') for dt in dates]
+        
+    def _insert_scalar_reserve_data(self, md:dict, simulation_type:str):
+        ''' Insert scalar reserve values into the model dict
+        '''
+        system = md['system']
+        areas = md['elements']['area']
+
+        reserve_list = self.scalar_reserve_data.get_simulation_reserves(simulation_type)
+        for res in reserve_list:
+            if res.area_name is None:
+                target_dict = system
+            else:
+                target_dict = areas[res.area_name]
+            target_dict[reserve_name_map[res.reserve_type]] = res.value

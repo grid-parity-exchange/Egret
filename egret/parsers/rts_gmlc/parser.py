@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-  from typing import Dict, Union, Optional, Tuple
+  from typing import Dict, Union, Optional, Tuple, Set
 
 import sys
 import os.path
@@ -24,7 +24,7 @@ from egret.common.log import logger
 import egret.data.model_data as md
 
 from .parsed_cache import ParsedCache
-from ._reserves import is_valid_reserve_name, reserve_name_map
+from ._reserves import is_valid_reserve_name, reserve_name_map, ScalarReserveData, ScalarReserveValue
 
 def create_ModelData(rts_gmlc_dir:str, 
                      begin_time:Union[datetime,str], end_time:Union[datetime,str], 
@@ -133,6 +133,8 @@ def parse_to_cache(rts_gmlc_dir:str,
 
     data_start, data_end = _get_data_date_range(metadata_df)
 
+    constant_reserve_data = _get_scalar_reserve_data(rts_gmlc_dir, metadata_df, model_data)
+
     begin_time, end_time = _parse_datetimes_if_strings(begin_time, end_time)
     # TODO: Validate begin_time and end_time.
     #       Do we want to enforce that they fall within the data date range?
@@ -146,7 +148,7 @@ def parse_to_cache(rts_gmlc_dir:str,
 
     return ParsedCache(model_data, begin_time, end_time,
                        minutes_per_period['DAY_AHEAD'], minutes_per_period['REAL_TIME'], 
-                       timeseries_df, load_participation_factors)
+                       timeseries_df, load_participation_factors, constant_reserve_data)
     
     
 def _read_metadata(base_dir:str) -> pd.DataFrame:
@@ -324,7 +326,7 @@ def _read_2D_timeseries_file(file_name:str, minutes_per_period:int,
     # Create and return a new 1-column DataFrame
     return pd.DataFrame({column_name: s})
 
-def _create_rtsgmlc_skeleton(rts_gmlc_dir:str):
+def _create_rtsgmlc_skeleton(rts_gmlc_dir:str) -> dict:
     """
     Creates a data dictionary from the RTS-GMLC data files, without loading hourly data
 
@@ -632,26 +634,92 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str):
         elements["generator"][name] = gen_dict
     gen_df = None
 
-    # Add the reserves
+    return model_data
+
+def _get_scalar_reserve_data(base_dir:str, metadata_df:df, model_dict:dict) -> ScalarReserveData:
+    # Store scalar reserve values as stored in the input
+    # 
+    # Scalar reserve values that apply to both simulation types are stored in the
+    # passed in model dict. Scalar values that vary depending on model type are stored
+    # in the returned ScalarReserveData.
+
+    da_scalar_reserves, rt_scalar_reserves = _identify_allowed_scalar_reserve_types(metadata_df)
+    shared_reserves = da_scalar_reserves.intersection(rt_scalar_reserves)
+
+    # Collect constant scalar reserves
+    da_scalars = []
+    rt_scalars = []
     reserve_df = pd.read_csv(os.path.join(base_dir,'reserves.csv'))
+    system = model_dict['system']
+    areas = model_dict['elements']['area']
     for idx,row in reserve_df.iterrows():
         res_name = row['Reserve Product']
         req = float(row['Requirement (MW)'])
 
         if res_name in reserve_name_map:
             target_dict = system
+            area_name = None
         else:
             # reserve name must be <type>_R<area>.
             # split into type and area
             res_name, area_name = res_name.split("_R", 1)
-            if area_name not in elements['area']:
-                # Skip areas not referenced elsewhere
+            if res_name not in reserve_name_map:
+                logger.warning(f"Skipping reserve for unrecognized reserve type '{res_name}'")
                 continue
-            target_dict = elements['area'][area_name]
+            if area_name not in areas:
+                logger.warning(f"Skipping reserve for unrecognized area '{area_name}'")
+                continue
+            target_dict = areas[area_name]
 
-        target_dict[reserve_name_map[res_name]] = req
+        if res_name in shared_reserves:
+            # If it applies to both types, save it in the skeleton
+            target_dict[reserve_name_map[res_name]] = req
+        elif res_name in da_scalar_reserves:
+            # If it applies to just day-ahead, save to DA cache
+            da_scalars.append(ScalarReserveValue(res_name, area_name, req))
+        elif res_name in rt_scalar_reserves:
+            # If it applies to just real-time, save to RT cache
+            rt_scalars.append(ScalarReserveValue(res_name, area_name, req))
 
-    return model_data
+    return ScalarReserveData(da_scalars, rt_scalars)
+
+def _identify_allowed_scalar_reserve_types(metadata_df:df) -> Tuple[Set[str], Set[str]]:
+    ''' Return a list of reserve types that apply to each type of model (DA and RT).
+
+    Arguments
+    ---------
+    metadata_df:df
+        The contents of simulation_objects.csv in a DataFrame
+
+    Returns
+    -------
+    Returns a tuple with two lists of strings, one list for day-ahead models, 
+    and another list for real-time models. Each list holds the names of reserve 
+    categories whose scalar reserve values (if specified in reserves.csv) should
+    be applied to that type of model.
+
+    (day_ahead_reserves, rt_reserves)
+        day_ahead_reserves: Sequence[str]
+            The names of reserve categories whose scalar values apply to day-ahead models
+        rt_reserves: Sequence[str]
+            The names of reserve categories whose scalar values apply to real-time models
+    '''
+    if not 'Reserve_Products' in metadata_df.index:
+        # By default, accept all reserve types in both types of model
+        all_reserves = set(reserve_name_map.keys())
+        return (all_reserves, all_reserves)
+
+    row = metadata_df.loc['Reserve_Products']
+    def parse_reserves(which:str) -> Sequence[str]:
+        all = row[which]
+        if type(all) is not str:
+            return {}
+        # strip off parentheses, if present
+        all = all.strip('()')
+        return set(s.strip() for s in all.split(','))
+
+    return (parse_reserves('DAY_AHEAD'), parse_reserves('REAL_TIME'))
+    
 
 def _compute_bus_load_participation_factors(model_data):
     '''
