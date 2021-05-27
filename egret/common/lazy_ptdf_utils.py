@@ -818,16 +818,16 @@ def uc_instance_binary_relaxer(model, solver):
     for ivar in _binary_var_generator(model):
         ivar.domain = pyo.UnitInterval
         if persistent_solver:
-            for var in ivar.itervalues():
-                solver.update_var(var)
+            for k in ivar:
+                solver.update_var(ivar[k])
 
 def uc_instance_binary_enforcer(model, solver):
     persistent_solver = isinstance(solver, PersistentSolver)
     for ivar in _binary_var_generator(model):
         ivar.domain = pyo.Binary
         if persistent_solver:
-            for var in ivar.itervalues():
-                solver.update_var(var)
+            for k in ivar:
+                solver.update_var(ivar[k])
 
 def _load_pf_slacks(solver, m, t_subset):
     ## ensure the slack variables are loaded
