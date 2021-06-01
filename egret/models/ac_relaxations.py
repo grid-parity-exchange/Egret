@@ -16,10 +16,10 @@ from pyomo.common.collections.orderedset import OrderedSet
 logger = logging.getLogger(__name__)
 
 
-def _relaxation_helper(model, md, include_soc, use_linear_relaxation):
+def _relaxation_helper(model, md, include_soc, use_linear_relaxation, use_fbbt=True):
     coramin.relaxations.relax(model,
                               in_place=True,
-                              use_fbbt=True,
+                              use_fbbt=use_fbbt,
                               fbbt_options={'deactivate_satisfied_constraints': True,
                                             'max_iter': 2})
     if not use_linear_relaxation:
@@ -214,10 +214,17 @@ class SOCEdgeCutsData(BaseRelaxationData):
         self._use_linear_relaxation = True
 
 
-def create_soc_relaxation(model_data, use_linear_relaxation=True, include_feasibility_slack=False):
+def create_soc_relaxation(model_data,
+                          use_linear_relaxation=True,
+                          include_feasibility_slack=False,
+                          use_fbbt=True):
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
     if use_linear_relaxation:
-        _relaxation_helper(model=model, md=md, include_soc=True, use_linear_relaxation=use_linear_relaxation)
+        _relaxation_helper(model=model,
+                           md=md,
+                           include_soc=True,
+                           use_linear_relaxation=use_linear_relaxation,
+                           use_fbbt=use_fbbt)
     else:
         branch_attrs = md.attributes(element_type='branch')
         bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -227,15 +234,22 @@ def create_soc_relaxation(model_data, use_linear_relaxation=True, include_feasib
     return model, md
 
 
-def create_atan_relaxation(model_data, use_linear_relaxation=True, include_feasibility_slack=False,
-                           use_soc_edge_cuts=False):
+def create_atan_relaxation(model_data,
+                           use_linear_relaxation=True,
+                           include_feasibility_slack=False,
+                           use_soc_edge_cuts=False,
+                           use_fbbt=True):
     model, md = create_atan_acopf_model(model_data=model_data, include_feasibility_slack=include_feasibility_slack)
     del model.ineq_soc
     del model._con_ineq_soc
     if use_soc_edge_cuts:
         del model.ineq_soc_ub
         del model._con_ineq_soc_ub
-    _relaxation_helper(model=model, md=md, include_soc=True, use_linear_relaxation=use_linear_relaxation)
+    _relaxation_helper(model=model,
+                       md=md,
+                       include_soc=True,
+                       use_linear_relaxation=use_linear_relaxation,
+                       use_fbbt=use_fbbt)
     if use_soc_edge_cuts:
         branch_attrs = md.attributes(element_type='branch')
         bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -250,13 +264,29 @@ def create_atan_relaxation(model_data, use_linear_relaxation=True, include_feasi
     return model, md
 
 
-def create_polar_acopf_relaxation(model_data, include_soc=True, use_linear_relaxation=True, include_feasibility_slack=False):
+def create_polar_acopf_relaxation(model_data,
+                                  include_soc=True,
+                                  use_linear_relaxation=True,
+                                  include_feasibility_slack=False,
+                                  use_fbbt=True):
     model, md = create_psv_acopf_model(model_data, include_feasibility_slack=include_feasibility_slack)
-    _relaxation_helper(model=model, md=md, include_soc=include_soc, use_linear_relaxation=use_linear_relaxation)
+    _relaxation_helper(model=model,
+                       md=md,
+                       include_soc=include_soc,
+                       use_linear_relaxation=use_linear_relaxation,
+                       use_fbbt=use_fbbt)
     return model, md
 
 
-def create_rectangular_acopf_relaxation(model_data, include_soc=True, use_linear_relaxation=True, include_feasibility_slack=False):
+def create_rectangular_acopf_relaxation(model_data,
+                                        include_soc=True,
+                                        use_linear_relaxation=True,
+                                        include_feasibility_slack=False,
+                                        use_fbbt=True):
     model, md = create_rsv_acopf_model(model_data, include_feasibility_slack=include_feasibility_slack)
-    _relaxation_helper(model=model, md=md, include_soc=include_soc, use_linear_relaxation=use_linear_relaxation)
+    _relaxation_helper(model=model,
+                       md=md,
+                       include_soc=include_soc,
+                       use_linear_relaxation=use_linear_relaxation,
+                       use_fbbt=use_fbbt)
     return model, md
