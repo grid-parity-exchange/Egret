@@ -699,6 +699,7 @@ def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solve
     else:
         results = solver.solve(main_model, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False, **solve_method_options)
         m.solutions.load_from(results)
+    return results
 
 def _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str):
     if all_viol_in_model:
@@ -763,6 +764,7 @@ def _lazy_ptdf_termination_cleanup(m, md, time_periods, solver, ptdf_options, pr
         results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
     if persistent_solver and duals and (results is not None) and (vars_to_load is None):
         solver.load_duals()
+    return results
 
 def _lazy_ptdf_violation_adder(m, md, flows, viol_lazy, time_periods, solver, ptdf_options, prepend_str,i):
     total_flow_constr_added = 0
