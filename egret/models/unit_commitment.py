@@ -648,7 +648,9 @@ def create_super_tight_unit_commitment_model(model_data,
     return _get_uc_model(model_data, formulation_list, relaxed)
 
 
-def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, prepend_str):
+def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, prepend_str, obj_multi=None):
+    # obj_multi is for models where this
+    # UC instance is part of a larger model
     if len(t_subset) > 1:
         raise Exception("_lazy_ptdf_warmstart_copy_violations only handles t_subset with one element -- somebody should fix that!")
     slacks = None
@@ -682,7 +684,7 @@ def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, 
         flows[t_o], viol_lazy[t_o] = lpu.copy_active_to_next_time(m,  b_other, PTDF_other, slacks, slacks_I, slacks_C)
 
         logger.debug(prepend_str+"adding {0} flow constraints at time {1}".format(len(viol_lazy[t_o]),t_o))
-        lpu.add_violations(viol_lazy[t_o], flows[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str)
+        lpu.add_violations(viol_lazy[t_o], flows[t_o], b_other, md, solver, ptdf_options, PTDF_other, time=t_o, prepend_str=prepend_str, obj_multi=obj_multi)
         total_flow_constr_added += len(viol_lazy[t_o])
     logger.info(prepend_str+"added {0} flow constraint(s)".format(total_flow_constr_added))
 
@@ -699,6 +701,7 @@ def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solve
     else:
         results = solver.solve(main_model, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False, **solve_method_options)
         m.solutions.load_from(results)
+    return results
 
 def _lazy_ptdf_normal_terminatation(all_viol_in_model, results, i, prepend_str):
     if all_viol_in_model:
@@ -763,13 +766,16 @@ def _lazy_ptdf_termination_cleanup(m, md, time_periods, solver, ptdf_options, pr
         results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
     if persistent_solver and duals and (results is not None) and (vars_to_load is None):
         solver.load_duals()
+    return results
 
-def _lazy_ptdf_violation_adder(m, md, flows, viol_lazy, time_periods, solver, ptdf_options, prepend_str,i):
+def _lazy_ptdf_violation_adder(m, md, flows, viol_lazy, time_periods, solver, ptdf_options, prepend_str, i, obj_multi=None):
+    # obj_multi is for models where this
+    # UC instance is part of a larger model
     total_flow_constr_added = 0
     for t in time_periods:
         b = m.TransmissionBlock[t]
         PTDF = b._PTDF
-        lpu.add_violations(viol_lazy[t], flows[t], b, md, solver, ptdf_options, PTDF, time=t, prepend_str=prepend_str)
+        lpu.add_violations(viol_lazy[t], flows[t], b, md, solver, ptdf_options, PTDF, time=t, prepend_str=prepend_str,obj_multi=obj_multi)
         total_flow_constr_added += len(viol_lazy[t])
     logger.info(prepend_str+"iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
