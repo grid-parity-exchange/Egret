@@ -588,8 +588,9 @@ def _generate_contingency_bounds(mb, cn, minimum_limit, maximum_limit):
 
 ## violation adder
 def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
-                    PTDF, time=None, prepend_str=""):
-
+                    PTDF, time=None, prepend_str="", obj_multi=None):
+    # obj_multi is for models where this
+    # UC instance is part of a larger model
     if time is None:
         model = mb
     else:
@@ -619,11 +620,14 @@ def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
             obj_coef = m.TimePeriodLengthHours*m.BranchLimitPenalty[bn]
 
             if persistent_solver:
-                if m is not m.model():
+                m_model = m.model()
+                if m is not m_model and obj_multi is None:
                     raise RuntimeError("Cannot add lazy var for branch slacks if part of a larger model")
+                if obj_multi is not None:
+                    obj_coef = obj_multi*obj_coef
                 ## update the objective through the add_column method
-                solver.add_column(m, mb.pf_slack_pos[bn], obj_coef, [], [])
-                solver.add_column(m, mb.pf_slack_neg[bn], obj_coef, [], [])
+                solver.add_column(m_model, mb.pf_slack_pos[bn], obj_coef, [], [])
+                solver.add_column(m_model, mb.pf_slack_neg[bn], obj_coef, [], [])
             else:
                 m.BranchViolationCost[time].expr += ( obj_coef*mb.pf_slack_pos[bn] + \
                                                       obj_coef*mb.pf_slack_neg[bn] )
@@ -632,14 +636,14 @@ def add_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
 
     _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                 PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
-                                time, prepend_str)
+                                time, prepend_str, obj_multi)
     _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                 PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
-                                time, prepend_str)
+                                time, prepend_str, obj_multi)
 
 def _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                               PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
-                              time, prepend_str):
+                              time, prepend_str, obj_multi):
     ## in case there's no interfaces
     if not hasattr(mb, 'ineq_pf_interface_bounds'):
         return
@@ -659,11 +663,14 @@ def _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_optio
             obj_coef = m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i_n]
 
             if persistent_solver:
-                if m is not m.model():
-                    raise RuntimeError("Cannot add lazy var for branch slacks if part of a larger model")
+                m_model = m.model()
+                if m is not m_model and obj_multi is None:
+                    raise RuntimeError("Cannot add lazy var for interface slacks if part of a larger model")
+                if obj_multi is not None:
+                    obj_coef = obj_multi*obj_coef
                 ## update the objective through the add_column method
-                solver.add_column(m, mb.pfi_slack_pos[i_n], obj_coef, [], [])
-                solver.add_column(m, mb.pfi_slack_neg[i_n], obj_coef, [], [])
+                solver.add_column(m_model, mb.pfi_slack_pos[i_n], obj_coef, [], [])
+                solver.add_column(m_model, mb.pfi_slack_neg[i_n], obj_coef, [], [])
             else:
                 m.InterfaceViolationCost[time].expr += (obj_coef*mb.pfi_slack_pos[i_n] + \
                                                         obj_coef*mb.pfi_slack_neg[i_n] )
@@ -673,7 +680,7 @@ def _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_optio
 
 def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                 PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
-                                time, prepend_str):
+                                time, prepend_str, obj_multi):
     ## in case there's no contingencies
     if not hasattr(mb, 'ineq_pf_contingency_branch_thermal_bounds'):
         return
@@ -689,11 +696,14 @@ def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_opt
             obj_coef = pyo.value(m.TimePeriodLengthHours*m.ContingencyLimitPenalty)
 
             if persistent_solver:
-                if m is not m.model():
-                    raise RuntimeError("Cannot add lazy var for branch slacks if part of a larger model")
+                m_model = m.model()
+                if m is not m_model and obj_multi is None:
+                    raise RuntimeError("Cannot add lazy var for branch contingency slacks if part of a larger model")
+                if obj_multi is not None:
+                    obj_coef = obj_multi*obj_coef
                 ## update the objective through the add_column method
-                solver.add_column(m, mb.pfc_slack_pos[cn,bn], obj_coef, [], [])
-                solver.add_column(m, mb.pfc_slack_neg[cn,bn], obj_coef, [], [])
+                solver.add_column(m_model, mb.pfc_slack_pos[cn,bn], obj_coef, [], [])
+                solver.add_column(m_model, mb.pfc_slack_neg[cn,bn], obj_coef, [], [])
             else:
                 m.ContingencyViolationCost[time].expr += (obj_coef*mb.pfc_slack_pos[cn,bn] + \
                                                           obj_coef*mb.pfc_slack_neg[cn,bn] )
