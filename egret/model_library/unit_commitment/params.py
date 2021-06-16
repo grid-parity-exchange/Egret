@@ -901,7 +901,10 @@ def load_params(model, model_data):
                                                    gen_name=g,
                                                    t=_t)
 
-            if curve_t[curve_type + '_type'] == 'polynomial':
+            # if no curve_type+'_type' is specified, we assume piecewise (for backwards
+            # compatibility with no 'fuel_curve_type')
+            if curve_type + '_type' in curve and \
+                    curve_t[curve_type + '_type'] == 'polynomial':
                 if not _check_curve.warn_piecewise_approx:
                     logger.warning("WARNING: Polynomial cost curves will be approximated using piecewise segments")
                     _check_curve.warn_piecewise_approx = True
