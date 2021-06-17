@@ -261,8 +261,9 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
     return model, md
 
 
-def create_atan_acopf_model(model_data, include_feasibility_slack=False):
-    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+def create_atan_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                            pw_cost_model=pw_cost_model)
 
     branch_attrs = md.attributes(element_type='branch')
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -304,8 +305,9 @@ def create_atan_acopf_model(model_data, include_feasibility_slack=False):
     return model, md
 
 
-def create_psv_acopf_model(model_data, include_feasibility_slack=False):
-    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+def create_psv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                            pw_cost_model=pw_cost_model)
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -348,8 +350,9 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     return model, md
 
 
-def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
-    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+def create_rsv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                            pw_cost_model=pw_cost_model)
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -390,7 +393,7 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
     return model, md
 
 
-def create_riv_acopf_model(model_data, include_feasibility_slack=False):
+def create_riv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 

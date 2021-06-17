@@ -44,7 +44,7 @@ def _validate_and_extract_slack_penalty(model_data):
     assert('load_mismatch_cost' in model_data.data['system'])
     return model_data.data['system']['load_mismatch_cost']
 
-def create_copperplate_dispatch_approx_model(model_data, include_feasibility_slack=False):
+def create_copperplate_dispatch_approx_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 

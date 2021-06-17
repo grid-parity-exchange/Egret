@@ -33,7 +33,8 @@ from egret.models.dcopf import _include_feasibility_slack
 from math import pi, radians, degrees
 
 
-def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC, include_angle_diff_limits=False, include_feasibility_slack=False):
+def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC,
+        include_angle_diff_limits=False, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -194,7 +195,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     return model, md
 
 
-def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options=None):
+def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False,
+        ptdf_options=None, pw_cost_model='delta'):
 
     ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
