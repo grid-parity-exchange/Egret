@@ -20,6 +20,7 @@ from parameterized import parameterized
 from egret.parsers.matpower_parser import create_ModelData
 import numpy.testing as npt
 import json
+import numpy as np
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 case_names = ['pglib_opf_case3_lmbd','pglib_opf_case30_ieee','pglib_opf_case300_ieee','pglib_opf_case3012wp_k']
@@ -160,6 +161,54 @@ class TestRIVACOPF(unittest.TestCase):
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
         _test_p_and_v(self, p_and_v_soln_case, md)
+
+
+def poly_cost_to_pw_cost(md: ModelData, num_points=10):
+    gen_attrs = md.attributes(element_type='generator')
+    p_cost = gen_attrs['p_cost']
+    for gen_name, cost_dict in p_cost.items():
+        assert cost_dict['cost_curve_type'] == 'polynomial'
+        cost_dict['cost_curve_type'] = 'piecewise'
+        poly_coefs = cost_dict['values']
+        pw_values = list()
+        p_min = gen_attrs['p_min'][gen_name]
+        p_max = gen_attrs['p_max'][gen_name]
+        for pt in np.linspace(p_min, p_max, num_points):
+            cost = sum(coef*pt**exponent for exponent, coef in poly_coefs.items())
+            pw_values.append((pt, cost))
+        cost_dict['values'] = pw_values
+
+
+class TestPWCost(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        download_dir = os.path.join(current_dir, 'transmission_test_instances')
+        if not os.path.exists(os.path.join(download_dir, 'pglib-opf-master')):
+            from egret.thirdparty.get_pglib_opf import get_pglib_opf
+            get_pglib_opf(download_dir)
+
+    def test_case30_pw_cost(self):
+        original_md = ModelData.read(os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', 'pglib_opf_case30_as.m'))
+
+        md = original_md.clone()
+        m_poly, scaled_md = create_atan_acopf_model(md)
+        opt = pe.SolverFactory('ipopt')
+        res = opt.solve(m_poly)
+        poly_obj = pe.value(m_poly.obj.expr)
+        self.assertAlmostEqual(poly_obj, 803.12692652061719, places=2)
+
+        poly_cost_to_pw_cost(md, num_points=2)
+        m_pw, scaled_md = create_atan_acopf_model(md)
+        res = opt.solve(m_pw)
+        pw_obj = pe.value(m_pw.obj.expr)
+        self.assertAlmostEqual(pw_obj, 827.62708294193681, places=2)
+
+        md = original_md.clone()
+        poly_cost_to_pw_cost(md, num_points=10)
+        m_pw, scaled_md = create_atan_acopf_model(md)
+        res = opt.solve(m_pw)
+        pw_obj = pe.value(m_pw.obj.expr)
+        self.assertAlmostEqual(pw_obj, 803.56080829371604, places=2)
 
 
 if __name__ == '__main__':

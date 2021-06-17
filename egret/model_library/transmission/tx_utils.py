@@ -13,7 +13,13 @@ working with transmission models
 """
 
 import egret.model_library.transmission.tx_calc as tx_calc
+import math
 from math import radians
+import logging
+import copy
+
+
+logger = logging.getLogger(__name__)
 
 
 def dicts_of_vr_vj(buses):
@@ -539,3 +545,100 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
 
 def radians_from_degrees_dict(d):
     return {k:radians(d[k]) for k in d}
+
+
+def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=None):
+    """
+    Parameters
+    ----------
+    curve: dict
+    curve_type: str
+    p_min: float
+    p_max: float
+    gen_name: str
+    t: None or int
+
+    Returns
+    -------
+    cleaned_values: list or dict
+        If the curve is piecewise, this function will return a list. If the curve is
+        a polynomial, this function will return a dict.
+    """
+    # validate that what we have is a cost_curve
+    if curve['data_type'] != curve_type:
+        raise ValueError(f"cost curve must be of data_type {curve_type}.")
+
+    # get the values, check against something empty
+    values = curve['values']
+    if len(values) == 0:
+        if t is None:
+            logger.warning(f"WARNING: Generator {gen_name} has no cost information associated with it")
+        else:
+            logger.warning(f"WARNING: Generator {gen_name} has no cost information associated with it at time {t}")
+        return copy.copy(values)
+
+    # if we have a piecewise cost curve, ensure its convexity past p_min
+    # if no curve_type+'_type' is specified, we assume piecewise (for backwards
+    # compatibility with no 'fuel_curve_type')
+    if curve_type + '_type' not in curve or \
+            curve[curve_type + '_type'] == 'piecewise':
+        cleaned_values = list()
+        last_slope = None
+        for (o1, c1), (o2, c2) in zip(values, values[1:]):
+            if o2 <= p_min or math.isclose(p_min, o2):
+                continue
+
+            if p_max <= o1 or math.isclose(p_max, o1):
+                continue
+
+            if len(cleaned_values) == 0:
+                cleaned_values.append((o1, c1))
+
+            if math.isclose(o2, o1):
+                if math.isclose(c2, c1):
+                    continue
+                raise ValueError(f"Found piecewise {curve_type} for generator {gen_name} at time {t} " +
+                                 "with nearly infinite slope.")
+
+            cleaned_values.append((o2, c2))
+
+            # else p_min < o2
+            if last_slope is None:
+                last_slope = (c2 - c1) / (o2 - o1)
+                continue
+            this_slope = (c2 - c1) / (o2 - o1)
+            if this_slope < last_slope and not math.isclose(this_slope, last_slope):
+                raise ValueError(f"Piecewise {curve_type} must be convex above p_min. " +
+                                 f"Found non-convex piecewise {curve_type} for generator {gen_name} at time {t}")
+
+            # combine pieces if slope is the same
+            if math.isclose(this_slope, last_slope):
+                cleaned_values.pop(-2)
+
+        # match first and last point with p_min and p_max
+        first_slope = (cleaned_values[1][1] - cleaned_values[0][1]) / (cleaned_values[1][0] - cleaned_values[0][0])
+        first_intercept = cleaned_values[0][1] - first_slope * cleaned_values[0][0]
+        first_cost = first_slope * p_min + first_intercept
+        cleaned_values.pop(0)
+        cleaned_values.insert(0, (p_min, first_cost))
+
+        last_slope = (cleaned_values[-1][1] - cleaned_values[-2][1]) / (cleaned_values[-1][0] - cleaned_values[-2][0])
+        last_intercept = cleaned_values[-1][1] - last_slope * cleaned_values[-1][0]
+        last_cost = last_slope * p_max + last_intercept
+        cleaned_values.pop()
+        cleaned_values.append((p_max, last_cost))
+
+    # if we have a quadratic cost curve, ensure its convexity
+    elif curve[curve_type + '_type'] == 'polynomial':
+        if set(values.keys()) <= {0, 1, 2}:
+            if 2 in values and values[2] < 0:
+                raise ValueError(f"Polynomial {curve_type}s must be convex. " +
+                                 f"Found non-convex {curve_type} for generator {gen_name} at time {t}.")
+        else:
+            raise ValueError(f"Polynomial {curve_type}s must be quadratic. " +
+                             f"Found non-quatric {curve_type} for generator {gen_name} at time {t}.")
+        cleaned_values = copy.copy(values)
+    else:
+        raise Exception(f"Unexpected {curve_type}_type")
+
+    return cleaned_values

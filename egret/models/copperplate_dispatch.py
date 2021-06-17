@@ -44,7 +44,7 @@ def _validate_and_extract_slack_penalty(model_data):
     assert('load_mismatch_cost' in model_data.data['system'])
     return model_data.data['system']['load_mismatch_cost']
 
-def create_copperplate_dispatch_approx_model(model_data, include_feasibility_slack=False):
+def create_copperplate_dispatch_approx_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -94,12 +94,18 @@ def create_copperplate_dispatch_approx_model(model_data, include_feasibility_sla
                                    )
 
     ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
-
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
