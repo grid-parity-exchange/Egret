@@ -763,6 +763,11 @@ def _lazy_ptdf_termination_cleanup(m, md, time_periods, solver, ptdf_options, pr
         if persistent_solver:
             lpu._load_pf_slacks(solver, m, t_subset)
         _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options, prepend_str)
+        # After adding so many constraints,
+        # the warmstart basis is typically
+        # worse than useless. If the solver
+        # implements it, reset the solver.
+        solver.reset()
         results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
     if persistent_solver and duals and (results is not None) and (vars_to_load is None):
         solver.load_duals()
