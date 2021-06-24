@@ -546,6 +546,21 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
 def radians_from_degrees_dict(d):
     return {k:radians(d[k]) for k in d}
 
+def _insert_first_point(p_min, values, pop=True):
+    first_slope = (values[1][1] - values[0][1]) / (values[1][0] - values[0][0])
+    first_intercept = values[0][1] - first_slope * values[0][0]
+    first_cost = first_slope * p_min + first_intercept
+    if pop:
+        values.pop(0)
+    values.insert(0, (p_min, first_cost))
+
+def _insert_last_point(p_max, values, pop=True):
+    last_slope = (values[-1][1] - values[-2][1]) / (values[-1][0] - values[-2][0])
+    last_intercept = values[-1][1] - last_slope * values[-1][0]
+    last_cost = last_slope * p_max + last_intercept
+    if pop:
+        values.pop()
+    values.append((p_max, last_cost))
 
 def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=None):
     """
@@ -577,11 +592,53 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
             logger.warning(f"WARNING: Generator {gen_name} has no cost information associated with it at time {t}")
         return copy.copy(values)
 
+
     # if we have a piecewise cost curve, ensure its convexity past p_min
     # if no curve_type+'_type' is specified, we assume piecewise (for backwards
     # compatibility with no 'fuel_curve_type')
     if curve_type + '_type' not in curve or \
             curve[curve_type + '_type'] == 'piecewise':
+
+        # handle this case specially
+        if len(values) == 1:
+            o1, c1 = values[0]
+            # allow and resolve some FP error
+            if math.isclose(p_min, p_max) and (math.isclose(p_min, o1) or math.isclose(p_max, o1)):
+                return [(p_min,c1), (p_max,c1)]
+            else:
+                at_time_t = "" if (t is None) else f"at time {t}"
+                raise ValueError(f"Generator {gen_name} {at_time_t} has only a single point on its "
+                                  "piecewise cost curve which is not covered by p_min or p_max.")
+
+        # print a warning (once) if we're extending the cost curve
+        if (p_min < values[0][0] and not math.isclose(p_min, values[0][0])) or \
+                (p_max > values[-1][0] and not math.isclose(p_max, values[-1][0])):
+            msg = f"WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator {gen_name}"
+            if validate_and_clean_cost_curve._printed_warning:
+                logger.debug(msg)
+            else:
+                logger.warning(msg)
+                validate_and_clean_cost_curve._printed_warning = True
+
+            # we should have copied the user's data at this point, and this
+            # will allow the user to see in the output *how* we modified their
+            # provided cost curve, in case that's useful
+            if (p_min < values[0][0] and not math.isclose(p_min, values[0][0])):
+                _insert_first_point(p_min, values, pop=False)
+            if (p_max > values[-1][0] and not math.isclose(p_max, values[-1][0])):
+                _insert_last_point(p_max, values, pop=False)
+
+        # now that we've extended the cost curve, we need to catch the
+        # case that p_min == p_max and we're at one of the extremes
+        # of the cost curve. The logic below fails in this case.
+        if math.isclose(p_min, p_max):
+            of, cf = values[0]
+            if math.isclose(p_min, of):
+                return [(p_min,cf), (p_max,cf)]
+            ol, cl = values[-1]
+            if math.isclose(p_max, ol):
+                return [(p_min,cl), (p_max,cl)]
+
         cleaned_values = list()
         last_slope = None
         for (o1, c1), (o2, c2) in zip(values, values[1:]):
@@ -614,19 +671,12 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
             # combine pieces if slope is the same
             if math.isclose(this_slope, last_slope):
                 cleaned_values.pop(-2)
+            else: # update last slope
+                last_slope = this_slope
 
         # match first and last point with p_min and p_max
-        first_slope = (cleaned_values[1][1] - cleaned_values[0][1]) / (cleaned_values[1][0] - cleaned_values[0][0])
-        first_intercept = cleaned_values[0][1] - first_slope * cleaned_values[0][0]
-        first_cost = first_slope * p_min + first_intercept
-        cleaned_values.pop(0)
-        cleaned_values.insert(0, (p_min, first_cost))
-
-        last_slope = (cleaned_values[-1][1] - cleaned_values[-2][1]) / (cleaned_values[-1][0] - cleaned_values[-2][0])
-        last_intercept = cleaned_values[-1][1] - last_slope * cleaned_values[-1][0]
-        last_cost = last_slope * p_max + last_intercept
-        cleaned_values.pop()
-        cleaned_values.append((p_max, last_cost))
+        _insert_first_point(p_min, cleaned_values, pop=True)
+        _insert_last_point(p_max, cleaned_values, pop=True)
 
     # if we have a quadratic cost curve, ensure its convexity
     elif curve[curve_type + '_type'] == 'polynomial':
@@ -642,3 +692,5 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
         raise Exception(f"Unexpected {curve_type}_type")
 
     return cleaned_values
+
+validate_and_clean_cost_curve._printed_warning = False
