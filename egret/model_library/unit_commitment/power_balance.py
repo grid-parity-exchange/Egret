@@ -578,6 +578,7 @@ def _get_pg_expr_rule(t):
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
                 + sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesTo[b]) \
                 - sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesFrom[b]) \
+                - sum(m.PriceResponsiveLoadServed[l,t] for l in m.PriceResponsiveLoadAtBus[b]) \
                 + m.LoadGenerateMismatch[b,t]
     return pg_expr_rule
 
@@ -784,6 +785,7 @@ def power_balance_constraints(model, slacks=True):
                 - sum(m.LinePower[l,t] for l in m.LinesFrom[b]) \
                 + sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesTo[b]) \
                 - sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesFrom[b]) \
+                - sum(m.PriceResponsiveLoadServed[l,t] for l in m.PriceResponsiveLoadAtBus[b]) \
                 + m.LoadGenerateMismatch[b,t] \
                 == m.Demand[b, t] 
     model.PowerBalance = Constraint(model.Buses, model.TimePeriods, rule=power_balance)

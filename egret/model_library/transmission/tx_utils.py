@@ -312,6 +312,8 @@ scaled_attributes = {
                                                       'q_load',
                                                       'p_load_shed',
                                                       'q_load_shed',
+                                                      'p_price',
+                                                      'q_price',
                                                      ],
                        ('element_type','branch', None) : [
                                                        'rating_long_term',

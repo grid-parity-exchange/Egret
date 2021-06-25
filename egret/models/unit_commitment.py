@@ -995,6 +995,7 @@ def _save_uc_results(m, relaxed):
     areas = dict(md.elements(element_type='area'))
     pg_security_constraints = dict(md.elements(element_type='security_constraint', security_constraint_type='pg'))
     dc_branches = dict(md.elements(element_type='dc_branch'))
+    loads = dict(md.elements(element_type='load'))
 
     data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
@@ -1199,7 +1200,13 @@ def _save_uc_results(m, relaxed):
         if sc_violation is not None:
             sc_dict['pf_violation'] = _time_series_dict(sc_violation)
 
-    ## NOTE: UC model currently has no notion of separate loads
+    for ln, l_dict in loads.items():
+        if 'p_price' in l_dict and l_dict['p_price'] is not None:
+            load_shed = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                load_shed[dt] = value(m.PriceResponsiveLoadDemand[ln,mt]) - \
+                                 value(m.PriceResponsiveLoadServed[ln,mt])
+            l_dict['p_load_shed'] = _time_series_dict(load_shed)
 
     if m.power_balance == 'btheta_power_flow':
         for l,l_dict in branches.items():
