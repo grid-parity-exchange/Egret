@@ -340,14 +340,17 @@ def load_params(model, model_data):
     for lname, load in loads.items():
         load_time = TimeMapper(load['p_load'])
         bus = load['bus']
+        # priced loads will be handled separately
+        if 'price' in load and load['price'] is not None:
+            continue
         if isinstance(bus, dict):
             assert bus['data_type'] == 'load_distribution_factor'
             for bn, multi in bus['values'].items():
-                for t in model.TimePeriods:
-                    bus_loads[bn, t] += multi*load_time[t]
+                for t, load in load_time.items():
+                    bus_loads[bn, t] += multi*load
         else:
-            for t in model.TimePeriods:
-                bus_loads[bus, t] += load_time[t]
+            for t, load in load_time.items():
+                bus_loads[bus, t] += load
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
