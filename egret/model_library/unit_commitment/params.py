@@ -476,6 +476,13 @@ def load_params(model, model_data):
                                             validate=maximum_nd_output_validator,
                                             initialize=TimeMapper(renewable_gen_attrs.get('p_max', dict())))
 
+    model.NondispatchableMarginalCost = Param(model.AllNondispatchableGenerators,
+                                            model.TimePeriods,
+                                            within=Reals, # more permissive; e.g. CSP
+                                            default=0.0,
+                                            mutable=True,
+                                            initialize=TimeMapper(renewable_gen_attrs.get('p_cost', dict())))
+
     #################################################
     # generator ramp up/down rates. units are MW/h. #
     # IMPORTANT: Generator ramp limits can exceed   #

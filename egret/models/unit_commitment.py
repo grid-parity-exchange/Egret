@@ -1166,9 +1166,12 @@ def _save_uc_results(m, relaxed):
 
     for g,g_dict in renewable_gens.items():
         pg_dict = _preallocated_list(data_time_periods)
+        production_cost = _preallocated_list(data_time_periods)
         for dt, mt in enumerate(m.TimePeriods):
             pg_dict[dt] = value(m.NondispatchablePowerUsed[g,mt])
+            production_cost[dt] = value(m.NondispatchableProductionCost[g,mt])
         g_dict['pg'] = _time_series_dict(pg_dict)
+        g_dict['production_cost'] = _time_series_dict(production_cost)
 
     for s,s_dict in storage.items():
         state_of_charge_dict = _preallocated_list(data_time_periods)
@@ -1203,10 +1206,13 @@ def _save_uc_results(m, relaxed):
     for ln, l_dict in loads.items():
         if 'p_price' in l_dict and l_dict['p_price'] is not None:
             load_shed = _preallocated_list(data_time_periods)
+            payment = _preallocated_list(data_time_periods)
             for dt, mt in enumerate(m.TimePeriods):
                 load_shed[dt] = value(m.PriceResponsiveLoadDemand[ln,mt]) - \
                                  value(m.PriceResponsiveLoadServed[ln,mt])
+                payment[dt] = -value(m.PriceResponsiveLoadCost[ln,mt])
             l_dict['p_load_shed'] = _time_series_dict(load_shed)
+            l_dict['payment_revenue'] = _time_series_dict(payment)
 
     if m.power_balance == 'btheta_power_flow':
         for l,l_dict in branches.items():

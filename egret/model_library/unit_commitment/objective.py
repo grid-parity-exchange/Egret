@@ -132,6 +132,8 @@ def basic_objective(model):
               sum(m.ContingencyViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st]) + \
               sum(m.PriceResponsiveLoadCost[l,t] for l in m.PriceResponsiveLoad
+                      for t in m.GenerationTimeInStage[st]) + \
+              sum(m.NondispatchableProductionCost[n,t] for n in m.AllNondispatchableGenerators
                       for t in m.GenerationTimeInStage[st])
         if m.reactive_power:
             cc += sum(m.LoadMismatchCostReactive[t] for t in m.GenerationTimeInStage[st])
