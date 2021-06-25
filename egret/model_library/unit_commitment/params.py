@@ -189,6 +189,34 @@ def load_params(model, model_data):
                                         initialize={'Stage_1':model.TimePeriods, 'Stage_2': list() } ) 
     model.GenerationTimeInStage = Set(model.StageSet, within=model.TimePeriods,
                                         initialize={'Stage_1': list(), 'Stage_2': model.TimePeriods } )
+
+    ##########################################
+    # penalty costs for constraint violation #
+    ##########################################
+
+    ModeratelyBigPenalty = 1e3*system['baseMVA']
+
+    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
+
+    BigPenalty = 1e4*system['baseMVA']
+
+    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
+
+    model.Contingencies = Set(initialize=contingencies.keys())
+
+    # leaving this unindexed for now for simpility
+    model.SystemContingencyLimitPenalty = Param(within=NonNegativeReals,
+                                          initialize=system.get('contingency_flow_violation_cost', BigPenalty/2.),
+                                          mutable=True)
+
+    model.SystemTransmissionLimitPenalty = Param(within=NonNegativeReals,
+                                           initialize=system.get('transmission_flow_violation_cost', BigPenalty/2.),
+                                           mutable=True)
+
+    model.SystemInterfaceLimitPenalty = Param(within=NonNegativeReals,
+                                        initialize=system.get('interface_flow_violation_cost', BigPenalty/4.),
+                                        mutable=True)
     
     ##############################################
     # Network definition (S)
@@ -230,18 +258,25 @@ def load_params(model, model_data):
     model.HVDCLineOutOfService = Param(model.HVDCLines, model.TimePeriods, within=Boolean, default=False,
                                        initialize=TimeMapper(dc_branch_attrs.get('planned_outage', dict())))
 
-    _branch_penalties = dict()
     _md_violation_penalties = branch_attrs.get('violation_penalty')
+    _branch_penalties = {}
+    _branches_without_slack = set()
     if _md_violation_penalties is not None:
         for i, val in _md_violation_penalties.items():
-            if val is not None:
+            if val is None:
+                _branches_without_slack.add(i)
+            else:
                 _branch_penalties[i] = val
                 if val <= 0:
                     logger.warning("Branch {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i,val))
 
-    model.BranchesWithSlack = Set(within=model.TransmissionLines, initialize=_branch_penalties.keys())
+    model.BranchesWithSlack = Set(within=model.TransmissionLines, initialize=(set(model.TransmissionLines) - _branches_without_slack))
 
-    model.BranchLimitPenalty = Param(model.BranchesWithSlack, within=NonNegativeReals, initialize=_branch_penalties)
+    model.BranchLimitPenalty = Param(model.BranchesWithSlack,
+                                     within=NonNegativeReals,
+                                     default=value(model.SystemTransmissionLimitPenalty),
+                                     mutable=True,
+                                     initialize=_branch_penalties)
 
     ## Interfaces
     model.Interfaces = Set(initialize=interface_attrs['names'])
@@ -270,18 +305,25 @@ def load_params(model, model_data):
 
     model.InterfaceLineOrientation = Param(model.InterfaceLinePairs, initialize=_interface_line_orientation_dict, within=set([-1,0,1]))
 
-    _interface_penalties = dict()
     _md_violation_penalties = interface_attrs.get('violation_penalty')
+    _interface_penalties = dict()
+    _interfaces_without_slack = set()
     if _md_violation_penalties is not None:
         for i, val in _md_violation_penalties.items():
             if val is not None:
+                _interfaces_without_slack.add(i)
+            else:
                 _interface_penalties[i] = val
                 if val <= 0:
                     logger.warning("Interface {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i,val))
 
-    model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_interface_penalties.keys())
+    model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=(set(model.Interfaces) - _interfaces_without_slack))
 
-    model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack, within=NonNegativeReals, initialize=_interface_penalties)
+    model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack,
+                                        within=NonNegativeReals,
+                                        default=value(model.SystemInterfaceLimitPenalty),
+                                        mutable=True,
+                                        initialize=_interface_penalties)
   
     ##########################################################
     # string indentifiers for the set of thermal generators. #
@@ -1257,23 +1299,6 @@ def load_params(model, model_data):
 
     ## END PRODUCTION COST CALCULATIONS
 
-    #########################################
-    # penalty costs for constraint violation #
-    #########################################
-
-    ModeratelyBigPenalty = 1e3*system['baseMVA']
-    
-    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
-    
-    BigPenalty = 1e4*system['baseMVA']
-    
-    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
-    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
-
-    model.Contingencies = Set(initialize=contingencies.keys())
-
-    # leaving this unindexed for now for simpility
-    model.ContingencyLimitPenalty = Param(within=NonNegativeReals, initialize=system.get('contingency_flow_violation_cost', BigPenalty/2.), mutable=True)
 
     #
     # STORAGE parameters

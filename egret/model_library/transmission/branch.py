@@ -1090,7 +1090,7 @@ def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
                 pos_slack = m.pfc_slack_pos[contingency_name, branch_name]
                 uc_model = slack_cost_expr.parent_block()
                 slack_cost_expr.expr += (uc_model.TimePeriodLengthHours
-                                         * uc_model.ContingencyLimitPenalty
+                                         * uc_model.SystemContingencyLimitPenalty
                                          * (neg_slack + pos_slack) )
                 assert len(m.pfc_slack_pos) == len(m.pfc_slack_neg)
             else:

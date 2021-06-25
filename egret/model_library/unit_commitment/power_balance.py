@@ -591,27 +591,29 @@ def _get_qg_expr_rule(t):
     return qg_expr_rule
 
 ## Defines generic interface for egret tramsmission models
-def _add_egret_power_flow(model, network_model_builder, reactive_power=False, slacks=True):
+def _add_egret_power_flow(model, network_model_builder,
+                          reactive_power=False, slacks=True,
+                          slacks_by_bus=False):
 
     ## save flag for objective
     model.reactive_power = reactive_power
 
-    system_load_mismatch = (network_model_builder in \
+    if (network_model_builder in \
                             [_copperplate_approx_network_model, \
                              _copperplate_relax_network_model, \
                             ]
-                           )
+                            ):
+        # only one slack as there's only a
+        # single power-balance constraint
+        slacks_by_bus = False
 
     if slacks:
-        if system_load_mismatch:
-            _add_system_load_mismatch(model)
-        else:
+        if slacks_by_bus:
             _add_load_mismatch(model)
-    else:
-        if system_load_mismatch:
-            _add_blank_system_load_mismatch(model)
         else:
-            _add_blank_load_mismatch(model)
+            _add_system_load_mismatch(model)
+    else:
+        _add_blank_load_mismatch(model)
 
     _add_hvdc(model)
 
@@ -653,32 +655,36 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def copperplate_power_flow(model, slacks=True):
-    _add_egret_power_flow(model, _copperplate_approx_network_model, reactive_power=False, slacks=slacks)
+def copperplate_power_flow(model, slacks=True, slacks_by_bus=False):
+    _add_egret_power_flow(model, _copperplate_approx_network_model, reactive_power=False,
+                            slacks=slacks, slacks_by_bus=slacks_by_bus)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def copperplate_relaxed_power_flow(model, slacks=True):
-    _add_egret_power_flow(model, _copperplate_relax_network_model, reactive_power=False, slacks=slacks)
+def copperplate_relaxed_power_flow(model, slacks=True, slacks_by_bus=False):
+    _add_egret_power_flow(model, _copperplate_relax_network_model, reactive_power=False,
+                            slacks=slacks, slacks_by_bus=slacks_by_bus)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def ptdf_power_flow(model, slacks=True):
-    _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
+def ptdf_power_flow(model, slacks=True, slacks_by_bus=False):
+    _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False,
+                            slacks=slacks, slacks_by_bus=slacks_by_bus)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def btheta_power_flow(model, slacks=True):
-    _add_egret_power_flow(model, _btheta_dcopf_network_model, reactive_power=False, slacks=slacks)
+def btheta_power_flow(model, slacks=True, slacks_by_bus=False):
+    _add_egret_power_flow(model, _btheta_dcopf_network_model, reactive_power=False,
+                            slacks=slacks, slacks_by_bus=slacks_by_bus)
 
 
 @add_model_attr(component_name, requires = {'data_loader': None,
@@ -686,7 +692,7 @@ def btheta_power_flow(model, slacks=True):
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def power_balance_constraints(model, slacks=True):
+def power_balance_constraints(model, slacks=True, slacks_by_bus=False):
     '''
     adds the demand and network constraints to the model
     '''
@@ -769,7 +775,10 @@ def power_balance_constraints(model, slacks=True):
     model.ContingencyViolationCost = Expression(model.TimePeriods, rule=lambda m,t:0.)
     
     if slacks:
-        _add_load_mismatch(model)
+        if slacks_by_bus:
+            _add_load_mismatch(model)
+        else:
+            _add_system_load_mismatch(model)
     else:
         _add_blank_load_mismatch(model)
     

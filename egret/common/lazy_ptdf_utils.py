@@ -693,7 +693,7 @@ def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_opt
         contingencies_monitored.append((cn, i_b))
         if new_slacks:
             m = model
-            obj_coef = pyo.value(m.TimePeriodLengthHours*m.ContingencyLimitPenalty)
+            obj_coef = pyo.value(m.TimePeriodLengthHours*m.SystemContingencyLimitPenalty)
 
             if persistent_solver:
                 m_model = m.model()
