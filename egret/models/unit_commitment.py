@@ -15,7 +15,7 @@ unit commitment formulations
 '''
 
 from egret.model_library.unit_commitment.uc_model_generator \
-        import UCFormulation, generate_model 
+        import UCFormulation, generate_model, SlackType
 from egret.common.log import logger
 from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver

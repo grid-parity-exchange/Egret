@@ -18,6 +18,7 @@ from egret.model_library.unit_commitment import \
         uptime_downtime, startup_costs, \
         services, power_balance, reserve_requirement, \
         objective, fuel_supply, fuel_consumption, security_constraints
+from .uc_utils import SlackType
 from egret.model_library.transmission.tx_utils import scale_ModelData_to_pu
 from collections import namedtuple
 import pyomo.environ as pe
@@ -37,7 +38,7 @@ UCFormulation = namedtuple('UCFormulation',
                              ]
                             )
 
-def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_options=None, PTDF_matrix_dict=None ):
+def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_options=None, PTDF_matrix_dict=None, slack_type=SlackType.TRANSMISSION_LIMITS ):
     """
     returns a UC uc_formulation as an abstract model with the 
     components specified in a UCFormulation, with the option
@@ -57,6 +58,10 @@ def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_optio
         Dictionary of egret.data.ptdf_utils.PTDFMatrix objects for use in model construction.
         WARNING: Nearly zero checking is done on the consistency of this object with the
                  model_data. Use with extreme caution!
+    slack_type : SlackType, optional
+        Types of slacks to use in the unit commitment model. By default,
+        a global load/generation mismatch slack is placed at the reference
+        bus and all transmission limits are enforced with soft constraints.
 
     Returns
     -------
@@ -66,7 +71,7 @@ def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_optio
 
     md = model_data.clone_in_service()
     scale_ModelData_to_pu(md, inplace=True)
-    return _generate_model( md, *_get_formulation_from_UCFormulation( uc_formulation ), relax_binaries , ptdf_options, PTDF_matrix_dict )
+    return _generate_model( md, *_get_formulation_from_UCFormulation( uc_formulation ), relax_binaries , ptdf_options, PTDF_matrix_dict, slack_type )
 
 def _generate_model( model_data,
                     _status_vars,
@@ -84,6 +89,7 @@ def _generate_model( model_data,
                     _relax_binaries = False,
                     _ptdf_options = None,
                     _PTDF_matrix_dict = None,
+                    _slack_type = SlackType.TRANSMISSION_LIMITS,
                     ):
     
     model = pe.ConcreteModel()
@@ -114,7 +120,7 @@ def _generate_model( model_data,
     ## to relax binaries
     model.relax_binaries = _relax_binaries
 
-    params.load_params(model, model_data)
+    params.load_params(model, model_data, _slack_type)
     getattr(status_vars, _status_vars)(model)
     getattr(power_vars, _power_vars)(model)
     getattr(reserve_vars, _reserve_vars)(model)
@@ -126,7 +132,7 @@ def _generate_model( model_data,
     getattr(startup_costs, _startup_costs)(model)
     services.storage_services(model)
     services.ancillary_services(model)
-    getattr(power_balance, _power_balance)(model)
+    getattr(power_balance, _power_balance)(model, _slack_type)
     getattr(reserve_requirement, _reserve_requirement)(model)
 
     if 'fuel_supply' in model_data.data['elements'] and bool(model_data.data['elements']['fuel_supply']):

@@ -14,6 +14,7 @@ working with unit commitment models
 """
 
 ## some useful functions and function decorators for building these dynamic models
+from enum import Enum
 from functools import wraps
 from pyomo.environ import Var, quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
@@ -22,6 +23,16 @@ import warnings
 
 import logging
 logger = logging.getLogger('egret.model_library.unit_commitment.uc_utils')
+
+class SlackType(Enum):
+    '''
+    BUS_BALANCE: Slacks at every bus balance constraint
+    TRANSMISSION_LIMITS: Slacks at the reference bus and every transmission limit
+    NONE: Slacks nowhere (model may be infeasible)
+    '''
+    BUS_BALANCE = 1
+    TRANSMISSION_LIMITS = 2
+    NONE = 3
 
 def add_model_attr(attr, requires = {}):
     def actual_decorator(func):

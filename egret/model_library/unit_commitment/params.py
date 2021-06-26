@@ -14,7 +14,7 @@ from egret.data.data_utils import map_items, zip_items
 from egret.model_library.transmission import tx_utils
 from egret.common.log import logger
     
-from .uc_utils import add_model_attr, uc_time_helper
+from .uc_utils import add_model_attr, uc_time_helper, SlackType
 
 component_name = 'data_loader'
 
@@ -70,7 +70,7 @@ def _add_initial_time_periods_on_off_line(model):
     model.InitialTimePeriodsOffLine = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=initial_time_periods_offline_rule, mutable=True)
 
 @add_model_attr(component_name)
-def load_params(model, model_data):
+def load_params(model, model_data, slack_type):
     
     '''
     This loads unit commitment params from a GridModel object
@@ -258,19 +258,20 @@ def load_params(model, model_data):
     model.HVDCLineOutOfService = Param(model.HVDCLines, model.TimePeriods, within=Boolean, default=False,
                                        initialize=TimeMapper(dc_branch_attrs.get('planned_outage', dict())))
 
-    _md_violation_penalties = branch_attrs.get('violation_penalty')
     _branch_penalties = {}
-    _branches_without_slack = set()
-    if _md_violation_penalties is not None:
-        for i, val in _md_violation_penalties.items():
-            if val is None:
-                _branches_without_slack.add(i)
-            else:
-                _branch_penalties[i] = val
+    _branches_with_slack = []
+    for bn, branch in branches.items():
+        if 'violation_penalty' in branch:
+            val = branch['violation_penalty']
+            if val is not None:
+                _branch_penalties[bn] = val
+                _branches_with_slack.append(bn)
                 if val <= 0:
-                    logger.warning("Branch {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i,val))
+                    logger.warning("Branch {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(bn,val))
+        elif slack_type == SlackType.TRANSMISSION_LIMITS:
+            _branches_with_slack.append(bn)
 
-    model.BranchesWithSlack = Set(within=model.TransmissionLines, initialize=(set(model.TransmissionLines) - _branches_without_slack))
+    model.BranchesWithSlack = Set(within=model.TransmissionLines, initialize=_branches_with_slack)
 
     model.BranchLimitPenalty = Param(model.BranchesWithSlack,
                                      within=NonNegativeReals,
@@ -305,19 +306,20 @@ def load_params(model, model_data):
 
     model.InterfaceLineOrientation = Param(model.InterfaceLinePairs, initialize=_interface_line_orientation_dict, within=set([-1,0,1]))
 
-    _md_violation_penalties = interface_attrs.get('violation_penalty')
-    _interface_penalties = dict()
-    _interfaces_without_slack = set()
-    if _md_violation_penalties is not None:
-        for i, val in _md_violation_penalties.items():
+    _interface_penalties = {}
+    _interfaces_with_slack = []
+    for i_n, interface in interfaces.items():
+        if 'violation_penalty' in interface:
+            val = interface['violation_penalty']
             if val is not None:
-                _interfaces_without_slack.add(i)
-            else:
-                _interface_penalties[i] = val
+                _interface_penalties[i_n] = val
+                _interfaces_with_slack.append(i_n)
                 if val <= 0:
-                    logger.warning("Interface {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i,val))
+                    logger.warning("Interface {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i_n,val))
+        elif slack_type == SlackType.TRANSMISSION_LIMITS:
+            _interfaces_with_slack.append(bn)
 
-    model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=(set(model.Interfaces) - _interfaces_without_slack))
+    model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_interfaces_with_slack)
 
     model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack,
                                         within=NonNegativeReals,

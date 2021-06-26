@@ -59,7 +59,7 @@ def _test_uc_model(uc_model, relax=False, test_objvals=test_int_objvals):
         md_dict = json.load(open(test_case,'r'))
         md = ModelData(md_dict)
         
-        model = uc_model(md, relaxed=relax)
+        model = uc_model(md, relaxed=relax, slack_type=SlackType.NONE)
         opt = SolverFactory(test_solver)
         _set_options(opt, mipgap=0.0)
 
@@ -80,6 +80,7 @@ def _make_get_dcopf_uc_model(network):
     return get_dcopf_uc_model
 
 ## definitely skip MIP tests if we don't have one of gurobi or cplex available
+
 @unittest.skipUnless(comm_mip_avail, "Neither Gurobi or CPLEX solver is available")
 def test_int_all_uc_models():
     _test_uc_model(create_tight_unit_commitment_model)
@@ -160,7 +161,7 @@ def test_uc_runner():
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
         md_in = ModelData(input_json_file_name)
-        md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0)
+        md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, slack_type=SlackType.BUS_BALANCE )
 
         reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
         md_reference = ModelData(reference_json_file_name)
