@@ -676,7 +676,6 @@ def _add_interface_violations(lazy_violations, flows, mb, md, solver, ptdf_optio
                                                         obj_coef*mb.pfi_slack_neg[i_n] )
         if persistent_solver:
             solver.add_constraint(constr[i_n])
-        print(f"adding constraint for interface {i_n}")
 
 def _add_contingency_violations(lazy_violations, flows, mb, md, solver, ptdf_options,
                                 PTDF, model, baseMVA, persistent_solver, rel_ptdf_tol, abs_ptdf_tol,
@@ -722,7 +721,12 @@ def _iter_over_initial_set(branches, branches_in_service, PTDF):
                 logger.warning("Branch {0} has flag 'lazy' set to False but is excluded from monitored set based on kV limits".format(bn))
 
 ### initial monitored set adder
-def add_initial_monitored_branches(mb, branches, branches_in_service, ptdf_options, PTDF):
+def add_initial_monitored_branches(mb, branches, branches_in_service, ptdf_options, PTDF, time=None):
+    if time is None:
+        model = mb
+    else:
+        model = mb.parent_block()
+
     ## static information between runs
     rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
     abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
@@ -732,8 +736,13 @@ def add_initial_monitored_branches(mb, branches, branches_in_service, ptdf_optio
     for i, bn in _iter_over_initial_set(branches, branches_in_service, PTDF):
         thermal_limit = PTDF.branch_limits_array_masked[i]
         mb.pf[bn] = libbranch.get_power_flow_expr_ptdf_approx(mb, bn, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
-        constr[bn], _ = _generate_branch_thermal_bounds(mb, bn, thermal_limit)
+        constr[bn], new_slacks = _generate_branch_thermal_bounds(mb, bn, thermal_limit)
         viol_in_mb.append(i)
+        if new_slacks:
+            m = model
+            obj_coef = m.TimePeriodLengthHours*m.BranchLimitPenalty[bn]
+            m.BranchViolationCost[time].expr += ( obj_coef*mb.pf_slack_pos[bn] + \
+                                                  obj_coef*mb.pf_slack_neg[bn] )
 
 def _iter_over_initial_set_interfaces(interfaces, PTDF):
     for i_n, interface in interfaces.items():
@@ -742,7 +751,12 @@ def _iter_over_initial_set_interfaces(interfaces, PTDF):
             yield i, i_n
 
 ### initial monitored set adder
-def add_initial_monitored_interfaces(mb, interfaces, ptdf_options, PTDF):
+def add_initial_monitored_interfaces(mb, interfaces, ptdf_options, PTDF, time=None):
+    if time is None:
+        model = mb
+    else:
+        model = mb.parent_block()
+
     ## static information between runs
     rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
     abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
@@ -753,8 +767,13 @@ def add_initial_monitored_interfaces(mb, interfaces, ptdf_options, PTDF):
         minimum_limit = PTDF.interface_min_limits[i]
         maximum_limit = PTDF.interface_max_limits[i]
         mb.pfi[i_n] = libbranch.get_power_flow_interface_expr_ptdf(mb, i_n, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
-        constr[i_n], _ = _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit)
+        constr[i_n], new_slacks = _generate_interface_bounds(mb, i_n, minimum_limit, maximum_limit)
         int_viol_in_mb.append(i)
+        if new_slacks:
+            m = model
+            obj_coef = m.TimePeriodLengthHours*m.InterfaceLimitPenalty[i_n]
+            m.InterfaceViolationCost[time].expr += (obj_coef*mb.pfi_slack_pos[i_n] + \
+                                                    obj_coef*mb.pfi_slack_neg[i_n] )
 
 def copy_active_to_next_time(m, b_next, PTDF_next, slacks, slacks_I, slacks_C):
     active_slack_tol = m._ptdf_options['active_flow_tol']
