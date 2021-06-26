@@ -38,7 +38,7 @@ UCFormulation = namedtuple('UCFormulation',
                              ]
                             )
 
-def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_options=None, PTDF_matrix_dict=None, slack_type=SlackType.TRANSMISSION_LIMITS ):
+def generate_model( model_data, uc_formulation, relax_binaries=False, ptdf_options=None, PTDF_matrix_dict=None, slack_type=SlackType.BUS_BALANCE):
     """
     returns a UC uc_formulation as an abstract model with the 
     components specified in a UCFormulation, with the option

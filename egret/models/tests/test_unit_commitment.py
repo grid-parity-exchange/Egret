@@ -181,7 +181,8 @@ def test_uc_transmission_models():
         for tc in tc_networks:
             for kwargs in tc_networks[tc]:
 
-                md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, uc_model_generator = _make_get_dcopf_uc_model(tc), **kwargs)
+                md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0,
+                                                    slack_type=SlackType.TRANSMISSION_LIMITS, uc_model_generator = _make_get_dcopf_uc_model(tc), **kwargs)
                 reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_results.json')
                 md_reference = ModelData(reference_json_file_name)
                 assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
@@ -200,7 +201,7 @@ def test_uc_relaxation():
 
     md_in = ModelData(input_json_file_name)
 
-    md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True)
+    md_results = solve_unit_commitment(md_in, solver=test_solver, slack_type=SlackType.TRANSMISSION_LIMITS, relaxed=True)
     reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'_relaxed_results.json')
     md_reference = ModelData(reference_json_file_name)
     assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
@@ -233,7 +234,7 @@ def test_uc_lazy_ptdf_thresholding():
                         (ntc_cost, {'branch_kv_threshold':301, 'kv_threshold_type':'both'}),
                        ]
     for c, ptdf_opt in ptdf_sol_options:
-        md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, ptdf_options=ptdf_opt)
+        md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, slack_type=SlackType.TRANSMISSION_LIMITS, ptdf_options=ptdf_opt)
         assert math.isclose(c, md_results.data['system']['total_cost'], rel_tol=rel_tol)
 
 def test_uc_ptdf_termination():
@@ -243,7 +244,7 @@ def test_uc_ptdf_termination():
     md_in = ModelData(input_json_file_name)
 
     kwargs = {'ptdf_options':{'lazy': True, 'rel_ptdf_tol':10.}}
-    md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, return_results=True, **kwargs)
+    md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, slack_type=SlackType.TRANSMISSION_LIMITS, return_results=True, **kwargs)
 
     assert results.egret_metasolver['iterations'] == 1
 
@@ -251,14 +252,14 @@ def test_scuc():
     input_json_file_name = os.path.join(current_dir, 'uc_test_instances', 'test_scuc_masked.json')
 
     md_in = ModelData.read(input_json_file_name)
-    md_results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True)
+    md_results = solve_unit_commitment(md_in, solver=test_solver, slack_type=SlackType.TRANSMISSION_LIMITS, relaxed=True)
 
     md_baseline = ModelData.read(os.path.join(
                             current_dir, 'uc_test_instances', 'test_scuc_full_enforce_relaxed_sol.json'))
     assert math.isclose( md_results.data['system']['total_cost'], md_baseline.data['system']['total_cost'], rel_tol=rel_tol)
 
     ptdf_options = {'branch_kv_threshold':300, 'kv_threshold_type':'both'}
-    md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, ptdf_options=ptdf_options)
+    md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0, slack_type=SlackType.TRANSMISSION_LIMITS, ptdf_options=ptdf_options)
     md_baseline = ModelData.read(os.path.join(
                             current_dir, 'uc_test_instances', 'test_scuc_sparse_enforce_sol.json'))
     assert math.isclose( md_results.data['system']['total_cost'], md_baseline.data['system']['total_cost'], rel_tol=rel_tol)
