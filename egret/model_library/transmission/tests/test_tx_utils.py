@@ -113,7 +113,7 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                     t=None)
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(cleaned_values, curve['values'])
-        self.assertEqual(cm.output, ['WARNING:egret.model_library.transmission.tx_utils:WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator foo'])
+        self.assertEqual(cm.output, ['WARNING:egret.model_library.transmission.tx_utils:WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator foo (and perhaps others)'])
         # reset for next test
         tx_utils.validate_and_clean_cost_curve._printed_warning = False
 
@@ -131,7 +131,7 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                     t=None)
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(cleaned_values, curve['values'])
-        self.assertEqual(cm.output, ['WARNING:egret.model_library.transmission.tx_utils:WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator foo'])
+        self.assertEqual(cm.output, ['WARNING:egret.model_library.transmission.tx_utils:WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator foo (and perhaps others)'])
         # reset for next test
         tx_utils.validate_and_clean_cost_curve._printed_warning = False
 
@@ -256,7 +256,7 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 p_max=40,
                                                                 gen_name='foo',
                                                                 t=None)
-        expected_values = [(40, 128), (40, 128)]
+        expected_values = [(40, 128)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
 
@@ -272,7 +272,7 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 p_max=40,
                                                                 gen_name='foo',
                                                                 t=None)
-        expected_values = [(40, 128), (40, 128)]
+        expected_values = [(40, 128)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
 
@@ -297,7 +297,7 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 p_max=5,
                                                                 gen_name='foo',
                                                                 t=None)
-        expected_values = [(5, 3), (5, 3)]
+        expected_values = [(5, 3)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
         tx_utils.validate_and_clean_cost_curve._printed_warning = False
@@ -323,7 +323,7 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 p_max=10,
                                                                 gen_name='foo',
                                                                 t=None)
-        expected_values = [(10, 18), (10, 18)]
+        expected_values = [(10, 18)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
         tx_utils.validate_and_clean_cost_curve._printed_warning = False
@@ -349,7 +349,7 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 p_max=100,
                                                                 gen_name='foo',
                                                                 t=None)
-        expected_values = [(100, 588), (100, 588)]
+        expected_values = [(100, 588)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
         tx_utils.validate_and_clean_cost_curve._printed_warning = False
@@ -375,7 +375,7 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 p_max=90,
                                                                 gen_name='foo',
                                                                 t=None)
-        expected_values = [(90, 498), (90, 498)]
+        expected_values = [(90, 498)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
         tx_utils.validate_and_clean_cost_curve._printed_warning = False

@@ -604,7 +604,7 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
             o1, c1 = values[0]
             # allow and resolve some FP error
             if math.isclose(p_min, p_max) and (math.isclose(p_min, o1) or math.isclose(p_max, o1)):
-                return [(p_min,c1), (p_max,c1)]
+                return [(p_min,c1)]
             else:
                 at_time_t = "" if (t is None) else f"at time {t}"
                 raise ValueError(f"Generator {gen_name} {at_time_t} has only a single point on its "
@@ -617,7 +617,7 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
             if validate_and_clean_cost_curve._printed_warning:
                 logger.debug(msg)
             else:
-                logger.warning(msg)
+                logger.warning(msg+" (and perhaps others)")
                 validate_and_clean_cost_curve._printed_warning = True
 
             # we should have copied the user's data at this point, and this
@@ -634,10 +634,10 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
         if math.isclose(p_min, p_max):
             of, cf = values[0]
             if math.isclose(p_min, of):
-                return [(p_min,cf), (p_max,cf)]
+                return [(p_min,cf)]
             ol, cl = values[-1]
             if math.isclose(p_max, ol):
-                return [(p_min,cl), (p_max,cl)]
+                return [(p_max,cl)]
 
         cleaned_values = list()
         last_slope = None
@@ -677,6 +677,12 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
         # match first and last point with p_min and p_max
         _insert_first_point(p_min, cleaned_values, pop=True)
         _insert_last_point(p_max, cleaned_values, pop=True)
+
+        # If p_min is p_max, we'll have two identical
+        # (or close to identical) points. In this case
+        # we'll just take the last one.
+        if math.isclose(p_min, p_max):
+            cleaned_values.pop(0)
 
     # if we have a quadratic cost curve, ensure its convexity
     elif curve[curve_type + '_type'] == 'polynomial':

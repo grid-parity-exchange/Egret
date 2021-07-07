@@ -153,13 +153,18 @@ def _pw_cost_helper(cost_dict, cost_var, gen_var, pw_cost_set, gen_name, indexed
                                                                 p_min=gen_var.lb,
                                                                 p_max=gen_var.ub,
                                                                 gen_name=gen_name)
-        for ndx, ((pt1, cost1), (pt2, cost2)) in enumerate(zip(cleaned_values, cleaned_values[1:])):
-            slope = (cost2 - cost1) / (pt2 - pt1)
-            intercept = cost2 - slope * pt2
-            pw_cost_set.add((gen_name, ndx))
-            indexed_pw_cost_con[gen_name, ndx] = cost_var >= slope * gen_var + intercept
+        if len(cleaned_values) > 1:
+            for ndx, ((pt1, cost1), (pt2, cost2)) in enumerate(zip(cleaned_values, cleaned_values[1:])):
+                slope = (cost2 - cost1) / (pt2 - pt1)
+                intercept = cost2 - slope * pt2
+                pw_cost_set.add((gen_name, ndx))
+                indexed_pw_cost_con[gen_name, ndx] = cost_var >= slope * gen_var + intercept
+        else:
+            intercept = cleaned_values[0][1]
+            pw_cost_set.add((gen_name, 0))
+            indexed_pw_cost_con[gen_name, 0] = cost_var == intercept
     else:
-        raise ValueError(f"Unrecognized cost_cureve_type: {cost_dict['cost_curve_type']}")
+        raise ValueError(f"Unrecognized cost_curve_type: {cost_dict['cost_curve_type']}")
 
 
 def declare_piecewise_pg_cost_cons(model, index_set, p_costs):
@@ -217,9 +222,10 @@ def declare_expression_pg_operating_cost(model, index_set, p_costs, pw_formulati
                                                                             p_max=p_max,
                                                                             gen_name=gen_name)
                     expr = cleaned_values[0][1]
-                    for ndx, ((o1, c1), (o2, c2)) in enumerate(zip(cleaned_values, cleaned_values[1:])):
-                        slope = (c2 - c1) / (o2 - o1)
-                        expr += slope * m.delta_pg[gen_name, ndx]
+                    if len(cleaned_values) > 1:
+                        for ndx, ((o1, c1), (o2, c2)) in enumerate(zip(cleaned_values, cleaned_values[1:])):
+                            slope = (c2 - c1) / (o2 - o1)
+                            expr += slope * m.delta_pg[gen_name, ndx]
                     m.pg_operating_cost[gen_name] = expr
                 else:
                     m.pg_operating_cost[gen_name] = m.pg_cost[gen_name]
