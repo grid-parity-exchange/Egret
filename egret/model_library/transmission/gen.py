@@ -161,9 +161,10 @@ def _pw_cost_helper(cost_dict, cost_var, gen_var, pw_cost_set, gen_name, indexed
                 indexed_pw_cost_con[gen_name, ndx] = cost_var >= slope * gen_var + intercept
         else:
             intercept = cleaned_values[0][1]
+            pw_cost_set.add((gen_name, 0))
             indexed_pw_cost_con[gen_name, 0] = cost_var == intercept
     else:
-        raise ValueError(f"Unrecognized cost_cureve_type: {cost_dict['cost_curve_type']}")
+        raise ValueError(f"Unrecognized cost_curve_type: {cost_dict['cost_curve_type']}")
 
 
 def declare_piecewise_pg_cost_cons(model, index_set, p_costs):
