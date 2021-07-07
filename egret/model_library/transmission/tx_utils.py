@@ -678,6 +678,12 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
         _insert_first_point(p_min, cleaned_values, pop=True)
         _insert_last_point(p_max, cleaned_values, pop=True)
 
+        # If p_min is p_max, we'll have two identical
+        # (or close to identical) points. In this case
+        # we'll just take the last one.
+        if math.isclose(p_min, p_max):
+            cleaned_values.pop(0)
+
     # if we have a quadratic cost curve, ensure its convexity
     elif curve[curve_type + '_type'] == 'polynomial':
         if set(values.keys()) <= {0, 1, 2}:
