@@ -617,7 +617,7 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
             if validate_and_clean_cost_curve._printed_warning:
                 logger.debug(msg)
             else:
-                logger.warning(msg)
+                logger.warning(msg+" (and perhaps others)")
                 validate_and_clean_cost_curve._printed_warning = True
 
             # we should have copied the user's data at this point, and this
