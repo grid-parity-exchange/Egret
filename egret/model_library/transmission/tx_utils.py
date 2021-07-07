@@ -604,7 +604,7 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
             o1, c1 = values[0]
             # allow and resolve some FP error
             if math.isclose(p_min, p_max) and (math.isclose(p_min, o1) or math.isclose(p_max, o1)):
-                return [(p_min,c1), (p_max,c1)]
+                return [(p_min,c1)]
             else:
                 at_time_t = "" if (t is None) else f"at time {t}"
                 raise ValueError(f"Generator {gen_name} {at_time_t} has only a single point on its "
@@ -634,10 +634,10 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
         if math.isclose(p_min, p_max):
             of, cf = values[0]
             if math.isclose(p_min, of):
-                return [(p_min,cf), (p_max,cf)]
+                return [(p_min,cf)]
             ol, cl = values[-1]
             if math.isclose(p_max, ol):
-                return [(p_min,cl), (p_max,cl)]
+                return [(p_max,cl)]
 
         cleaned_values = list()
         last_slope = None
