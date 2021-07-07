@@ -153,11 +153,15 @@ def _pw_cost_helper(cost_dict, cost_var, gen_var, pw_cost_set, gen_name, indexed
                                                                 p_min=gen_var.lb,
                                                                 p_max=gen_var.ub,
                                                                 gen_name=gen_name)
-        for ndx, ((pt1, cost1), (pt2, cost2)) in enumerate(zip(cleaned_values, cleaned_values[1:])):
-            slope = (cost2 - cost1) / (pt2 - pt1)
-            intercept = cost2 - slope * pt2
-            pw_cost_set.add((gen_name, ndx))
-            indexed_pw_cost_con[gen_name, ndx] = cost_var >= slope * gen_var + intercept
+        if len(cleaned_values) > 1:
+            for ndx, ((pt1, cost1), (pt2, cost2)) in enumerate(zip(cleaned_values, cleaned_values[1:])):
+                slope = (cost2 - cost1) / (pt2 - pt1)
+                intercept = cost2 - slope * pt2
+                pw_cost_set.add((gen_name, ndx))
+                indexed_pw_cost_con[gen_name, ndx] = cost_var >= slope * gen_var + intercept
+        else:
+            intercept = cleaned_values[0][1]
+            indexed_pw_cost_con[gen_name, 0] = cost_var == intercept
     else:
         raise ValueError(f"Unrecognized cost_cureve_type: {cost_dict['cost_curve_type']}")
 
