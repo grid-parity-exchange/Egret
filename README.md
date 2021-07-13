@@ -11,7 +11,7 @@ Major features:
 * Generic handling of data across model formulations
 * Declarative model representation to support formulation development
 
-EGRET is available under the BSD License (see LICENSE.txt)
+EGRET is available under the BSD License (see [LICENSE.txt](https://github.com/grid-parity-exchange/Egret/blob/main/LICENSE.txt))
 
 ### Installation
 
@@ -20,7 +20,7 @@ EGRET is available under the BSD License (see LICENSE.txt)
 * Download (or clone) EGRET from this GitHub site.
 * From the main EGRET folder (i.e., the folder containing setup.py), use a terminal (or the Anaconda prompt for Windows users) to run setup.py to install EGRET into your Python installation - as follows:
 
-   pip install -e .
+      pip install -e .
 
 ### Requirements
 
@@ -31,7 +31,7 @@ EGRET is available under the BSD License (see LICENSE.txt)
 
 We additionally recommend that EGRET users install the open source CBC MIP solver. The specific mechanics of installing CBC are platform-specific. When using Anaconda on Linux and Mac platforms, this can be accomplished simply by:
 
-   conda install -c conda-forge coincbc
+    conda install -c conda-forge coincbc
 
 The COIN-OR organization - who developers CBC - also provides pre-built binaries for a full range of platforms on https://bintray.com/coin-or/download.
 
@@ -39,19 +39,20 @@ The COIN-OR organization - who developers CBC - also provides pre-built binaries
 
 To test the functionality of the unit commitment aspects of EGRET, execute the following command from the EGRET models/tests sub-directory:
 
-   pytest test_unit_commitment.py
+    pytest test_unit_commitment.py
 
 If EGRET can find a commerical MIP solver on your system via Pyomo, EGRET will execute a large test suite including solving several MIPs to optimality. If EGRET can only find an open-source solver, it will execute a more limited test suite which mostly relies on solving LP relaxations. Example output is below.
 
-=================================== test session starts ==================================<br/>
-platform darwin -- Python 3.7.7, pytest-5.4.2, py-1.8.1, pluggy-0.13.0<br/>
-rootdir: /home/some-user/egret<br/>
-collected 21 items<br/>
-<br/>
-test_unit_commitment.py s....................                                       [100%]<br/>
-<br/>
-========================= 20 passed, 1 skipped in 641.80 seconds =========================<br/>
+```
+=================================== test session starts ==================================
+platform darwin -- Python 3.7.7, pytest-5.4.2, py-1.8.1, pluggy-0.13.0
+rootdir: /home/some-user/egret
+collected 21 items
 
+test_unit_commitment.py s....................                                       [100%]
+
+========================= 20 passed, 1 skipped in 641.80 seconds =========================
+```
 
 ### How to Cite EGRET in Your Research
 
