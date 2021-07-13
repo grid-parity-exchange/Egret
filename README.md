@@ -20,7 +20,7 @@ EGRET is available under the BSD License (see [LICENSE.txt](https://github.com/g
 * Download (or clone) EGRET from this GitHub site.
 * From the main EGRET folder (i.e., the folder containing setup.py), use a terminal (or the Anaconda prompt for Windows users) to run setup.py to install EGRET into your Python installation - as follows:
 
-     pip install -e .
+      pip install -e .
 
 ### Requirements
 
