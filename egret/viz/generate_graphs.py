@@ -214,7 +214,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 if not sum(pg_array) > 0.0:
                     continue
 
-                reported_fuel_type = generator_data['fuel']
+                reported_fuel_type = generator_data.get('fuel', 'Other')
 
                 # Check if dual fuel generator and override 'fuel' field with 'Dual Fuel'
                 if generator_data.get('aux_fuel_capable', False):
@@ -324,7 +324,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 else:
                     st_array = None
 
-                reported_fuel_type = generator_data['fuel']
+                reported_fuel_type = generator_data.get('fuel', 'Other')
 
                 # Check if dual fuel generator and override 'fuel' field with 'Dual Fuel'
                 if generator_data.get('aux_fuel_capable', False):
