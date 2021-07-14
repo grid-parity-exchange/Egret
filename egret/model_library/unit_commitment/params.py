@@ -99,7 +99,7 @@ def load_params(model, model_data):
 
     loads = dict(md.elements(element_type='load'))
     thermal_gens = dict(md.elements(element_type='generator', generator_type='thermal'))
-    renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
+    renewable_gens = dict(md.elements(element_type='generator', generator_type=('renewable','virtual')))
     buses = dict(md.elements(element_type='bus'))
     shunts = dict(md.elements(element_type='shunt'))
     branches = dict(md.elements(element_type='branch'))
@@ -109,7 +109,7 @@ def load_params(model, model_data):
     dc_branches = dict(md.elements(element_type='dc_branch'))
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
-    renewable_gen_attrs = md.attributes(element_type='generator', generator_type='renewable')
+    renewable_gen_attrs = md.attributes(element_type='generator', generator_type=('renewable','virtual'))
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     load_attrs = md.attributes(element_type='load')

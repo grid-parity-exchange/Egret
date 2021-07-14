@@ -985,7 +985,7 @@ def _save_uc_results(m, relaxed):
 
     # save results data to ModelData object
     thermal_gens = dict(md.elements(element_type='generator', generator_type='thermal'))
-    renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
+    renewable_gens = dict(md.elements(element_type='generator', generator_type=('renewable','virtual')))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
     interfaces = dict(md.elements(element_type='interface'))
@@ -996,6 +996,7 @@ def _save_uc_results(m, relaxed):
     pg_security_constraints = dict(md.elements(element_type='security_constraint', security_constraint_type='pg'))
     dc_branches = dict(md.elements(element_type='dc_branch'))
     loads = dict(md.elements(element_type='load'))
+    interchanges = dict(md.elements(element_type='interchange'))
 
     data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
