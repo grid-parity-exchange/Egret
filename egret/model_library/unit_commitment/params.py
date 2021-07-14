@@ -366,16 +366,21 @@ def load_params(model, model_data):
     if warn_neg_load:
         model.WarnAboutNegativeDemand = BuildAction(model.Buses, model.TimePeriods, rule=warn_about_negative_demand_rule)
 
-    _price_responsive_load_by_bus = { _b : [] for _b in bus_attrs['names'] }
+    _price_responsive_load_by_bus = {}
     _price_responsive_load_attrs = {'names': [], 'p_price': {}, 'p_load': {}}
     for ln, load in loads.items():
         if 'p_price' in load and load['p_price'] is not None:
-            _price_responsive_load_by_bus[load['bus']].append(ln)
+            bus = load['bus']
+            if bus in _price_responsive_load_by_bus:
+                _price_responsive_load_by_bus[bus].append(ln)
+            else:
+                _price_responsive_load_by_bus[bus]= [ln]
             _price_responsive_load_attrs['names'].append(ln)
             _price_responsive_load_attrs['p_price'][ln] = load['p_price']
             _price_responsive_load_attrs['p_load'][ln] = load['p_load']
 
-    model.PriceResponsiveLoadAtBus = Set(model.Buses, initialize=_price_responsive_load_by_bus)
+    model.PriceResponsiveLoadAtBus = Set(model.Buses,
+            initialize=lambda m,b : _price_responsive_load_by_bus[b] if b in _price_responsive_load_by_bus else ())
 
     model.PriceResponsiveLoad = Set(initialize=_price_responsive_load_attrs['names'])
 
