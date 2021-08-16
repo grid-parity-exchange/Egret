@@ -212,10 +212,8 @@ def _ptdf_dcopf_network_model(block,tm):
         lpu.add_monitored_flow_tracker(block)
 
         ### add initial branches to monitored set
-        lpu.add_initial_monitored_branches(block, branches, branches_in_service, ptdf_options, PTDF, time=tm)
-
-        ### add initial interfaces to monitored set
-        lpu.add_initial_monitored_interfaces(block, interfaces, ptdf_options, PTDF, time=tm)
+        lpu.add_initial_monitored_constraints(block, m.model_data, branches_in_service,
+                ptdf_options, PTDF, time=tm)
         
     else: ### add all the dense constraints
         if contingencies:

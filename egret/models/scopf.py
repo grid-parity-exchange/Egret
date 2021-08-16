@@ -166,7 +166,7 @@ def create_scopf_model(model_data, include_feasibility_slack=False,
     lpu.add_monitored_flow_tracker(model)
 
     ### add initial branches to monitored set
-    lpu.add_initial_monitored_branches(model, branches, branches_idx, ptdf_options, PTDF)
+    lpu.add_initial_monitored_constraints(model, md, branches_idx, ptdf_options, PTDF)
 
     ### declare the generator cost objective
     p_costs = gen_attrs['p_cost']
