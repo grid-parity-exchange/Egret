@@ -89,7 +89,7 @@ def _generate_model( model_data,
                     _relax_binaries = False,
                     _ptdf_options = None,
                     _PTDF_matrix_dict = None,
-                    _slack_type = SlackType.TRANSMISSION_LIMITS,
+                    _slack_type = SlackType.BUS_BALANCE,
                     ):
     
     model = pe.ConcreteModel()
