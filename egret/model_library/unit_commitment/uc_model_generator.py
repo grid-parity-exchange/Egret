@@ -125,6 +125,7 @@ def _generate_model( model_data,
     getattr(uptime_downtime, _uptime_downtime)(model)
     getattr(startup_costs, _startup_costs)(model)
     services.storage_services(model)
+    services.load_services(model)
     services.ancillary_services(model)
     getattr(power_balance, _power_balance)(model)
     getattr(reserve_requirement, _reserve_requirement)(model)

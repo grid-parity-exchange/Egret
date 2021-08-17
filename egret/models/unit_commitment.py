@@ -990,7 +990,7 @@ def _save_uc_results(m, relaxed):
 
     # save results data to ModelData object
     thermal_gens = dict(md.elements(element_type='generator', generator_type='thermal'))
-    renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
+    renewable_gens = dict(md.elements(element_type='generator', generator_type=('renewable','virtual')))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
     interfaces = dict(md.elements(element_type='interface'))
@@ -1000,6 +1000,8 @@ def _save_uc_results(m, relaxed):
     areas = dict(md.elements(element_type='area'))
     pg_security_constraints = dict(md.elements(element_type='security_constraint', security_constraint_type='pg'))
     dc_branches = dict(md.elements(element_type='dc_branch'))
+    loads = dict(md.elements(element_type='load'))
+    interchanges = dict(md.elements(element_type='interchange'))
 
     data_time_periods = md.data['system']['time_keys']
     reserve_requirement = ('reserve_requirement' in md.data['system'])
@@ -1170,9 +1172,12 @@ def _save_uc_results(m, relaxed):
 
     for g,g_dict in renewable_gens.items():
         pg_dict = _preallocated_list(data_time_periods)
+        production_cost = _preallocated_list(data_time_periods)
         for dt, mt in enumerate(m.TimePeriods):
             pg_dict[dt] = value(m.NondispatchablePowerUsed[g,mt])
+            production_cost[dt] = value(m.NondispatchableProductionCost[g,mt])
         g_dict['pg'] = _time_series_dict(pg_dict)
+        g_dict['production_cost'] = _time_series_dict(production_cost)
 
     for s,s_dict in storage.items():
         state_of_charge_dict = _preallocated_list(data_time_periods)
@@ -1204,7 +1209,16 @@ def _save_uc_results(m, relaxed):
         if sc_violation is not None:
             sc_dict['pf_violation'] = _time_series_dict(sc_violation)
 
-    ## NOTE: UC model currently has no notion of separate loads
+    for ln, l_dict in loads.items():
+        if 'p_price' in l_dict and l_dict['p_price'] is not None:
+            load_shed = _preallocated_list(data_time_periods)
+            payment = _preallocated_list(data_time_periods)
+            for dt, mt in enumerate(m.TimePeriods):
+                load_shed[dt] = value(m.PriceResponsiveLoadDemand[ln,mt]) - \
+                                 value(m.PriceResponsiveLoadServed[ln,mt])
+                payment[dt] = -value(m.PriceResponsiveLoadCost[ln,mt])
+            l_dict['p_load_shed'] = _time_series_dict(load_shed)
+            l_dict['payment_revenue'] = _time_series_dict(payment)
 
     if m.power_balance == 'btheta_power_flow':
         for l,l_dict in branches.items():

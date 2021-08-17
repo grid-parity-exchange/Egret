@@ -164,6 +164,23 @@ def storage_services(model):
     return
 ## end storage_services
 
+@add_model_attr('load_service', requires = {'data_loader': None})
+def load_services(model):
+    '''
+    For price-responsive load
+    '''
+
+    model.PriceResponsiveLoadServed = Var(model.PriceResponsiveLoad,
+                                          model.TimePeriods,
+                                          within=NonNegativeReals,
+                                          bounds=lambda m,l,t:(0, m.PriceResponsiveLoadDemand[l,t]))
+
+    def _price_responsive_load_cost_rule(m,l,t):
+        return -1*m.TimePeriodLengthHours*m.PriceResponsiveLoadPrice[l,t]*m.PriceResponsiveLoadServed[l,t]
+    model.PriceResponsiveLoadCost = Expression(model.PriceResponsiveLoad, model.TimePeriods,
+                                               rule=_price_responsive_load_cost_rule)
+
+    return
 
 ## NOTE: when moving to a Real-Time market, ramping limits need to be also considered
 ##       It seems MISO did not in its DA as of 2009 [1], but definitely does in RT as of 2016 [2].
