@@ -21,7 +21,7 @@ import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
 from egret.model_library.defn import FlowType, CoordinateType
 from egret.data.data_utils import map_items, zip_items
-from math import pi, radians, degrees
+from math import pi, radians, degrees, cos, sin
 from collections import OrderedDict
 from egret.data.networkx_utils import get_networkx_graph
 import networkx
@@ -106,8 +106,52 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
                             initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
                             bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
                                              {k: v**2 for k, v in bus_attrs['v_max'].items()}))
-    libbranch.declare_var_c(model=model, index_set=unique_bus_pairs, initialize=1)
-    libbranch.declare_var_s(model=model, index_set=unique_bus_pairs, initialize=0)
+
+    branch_w_index = {(v['from_bus'], v['to_bus']): v for v in branches.values()}
+
+    def _c_bounds_rule(m, from_bus, to_bus):
+        bdat = branch_w_index[(from_bus, to_bus)]
+        if bdat['angle_diff_max'] < 0:
+            the_mid = bdat['angle_diff_max']
+        elif bdat['angle_diff_min'] > 0:
+            the_mid = bdat['angle_diff_min']
+        else:
+            the_mid = 0
+        lb = (bus_attrs['v_min'][from_bus]
+              * bus_attrs['v_min'][to_bus]
+              * cos(max(abs(bdat['angle_diff_min']),
+                        abs(bdat['angle_diff_max']))*pi/180))
+        ub = (bus_attrs['v_max'][from_bus]
+              *  bus_attrs['v_max'][to_bus]
+              *  cos(the_mid*pi/180))
+        return lb, ub
+    libbranch.declare_var_c(model=model,
+                            index_set=unique_bus_pairs,
+                            initialize=1,
+                            bounds=_c_bounds_rule)
+
+    def _s_bounds_rule(m, from_bus, to_bus):
+        bdat = branch_w_index[(from_bus, to_bus)]
+
+        if bdat['angle_diff_min'] >= 0:
+            lb = (bus_attrs['v_min'][from_bus]
+                  * bus_attrs['v_min'][to_bus]
+                  * sin(bdat['angle_diff_min']*pi/180))
+        else:
+            lb = (bus_attrs['v_max'][from_bus]
+                  * bus_attrs['v_max'][to_bus]
+                  * sin(bdat['angle_diff_min']*pi/180))
+        if bdat['angle_diff_max'] >= 0:
+            ub = (bus_attrs['v_max'][from_bus]
+                  * bus_attrs['v_max'][to_bus]
+                  * sin(bdat['angle_diff_max']*pi/180))
+        else:
+            ub = (bus_attrs['v_min'][from_bus]
+                  * bus_attrs['v_min'][to_bus]
+                  * sin(bdat['angle_diff_max']*pi/180))
+        return lb, ub
+    libbranch.declare_var_s(model=model, index_set=unique_bus_pairs, initialize=0,
+                            bounds=_s_bounds_rule)
 
     ### include the feasibility slack for the bus balances
     p_rhs_kwargs = {}
@@ -293,10 +337,15 @@ def create_atan_acopf_model(model_data, include_feasibility_slack=False, pw_cost
         else:
             cycle_basis_bus_pairs.add((b2, b1))
 
+    branches = dict(md.elements(element_type='branch'))
+    branch_w_index = {(v['from_bus'], v['to_bus']): v for v in branches.values()}
+    def _dva_bounds_rule(m, from_bus, to_bus):
+        bdat = branch_w_index[(from_bus, to_bus)]
+        return max(-pi/2, bdat['angle_diff_min'] * pi / 180), min(pi/2, bdat['angle_diff_max'] * pi / 180)
     libbranch.declare_var_dva(model=model,
                               index_set=list(cycle_basis_bus_pairs),
                               initialize=0,
-                              bounds=(-pi/2, pi/2))
+                              bounds=_dva_bounds_rule)
     libbranch.declare_eq_dva_arctan(model=model, index_set=list(cycle_basis_bus_pairs))
     libbranch.declare_eq_dva_cycle_sum(model=model, cycle_basis=cycle_basis, valid_bus_pairs=cycle_basis_bus_pairs)
     libbranch.declare_ineq_soc(model=model, index_set=list(unique_bus_pairs), use_outer_approximation=False)

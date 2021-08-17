@@ -386,6 +386,8 @@ def create_model_data_dict(matpower_filename):
                     branch_dict['transformer_phase_shift'] = SHIFT
                     branch_dict['branch_type'] = 'transformer'
                 else:
+                    if SHIFT != 0:
+                        raise ValueError('Parsing branch with 0 tap ratio but nonzero shift;\n  from bus: {0}\n  to bus: {1}'.format(str(F_BUS), str(T_BUS)))
                     branch_dict['branch_type'] = 'line'
 
                 branch_dict['rating_long_term'] = None
