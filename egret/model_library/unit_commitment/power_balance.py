@@ -12,7 +12,7 @@ from pyomo.environ import *
 from pyomo.core.expr.numeric_expr import LinearExpression
 import math
 
-from .uc_utils import add_model_attr
+from .uc_utils import add_model_attr, SlackType
 from .power_vars import _add_reactive_power_vars
 from .generation_limits import _add_reactive_limits
 
@@ -590,39 +590,44 @@ def _get_qg_expr_rule(t):
     return qg_expr_rule
 
 ## Defines generic interface for egret tramsmission models
-def _add_egret_power_flow(model, network_model_builder, reactive_power=False, slacks=True):
+def _add_egret_power_flow(model, network_model_builder,
+                          reactive_power=False,
+                          slack_type=SlackType.TRANSMISSION_LIMITS):
 
     ## save flag for objective
     model.reactive_power = reactive_power
 
-    system_load_mismatch = (network_model_builder in \
+    if (slack_type==SlackType.BUS_BALANCE) and \
+            (network_model_builder in \
                             [_copperplate_approx_network_model, \
                              _copperplate_relax_network_model, \
-                            ]
-                           )
+                            ]):
+        # only one slack as there's only a
+        # single power-balance constraint
+        slack_type = SlackType.TRANSMISSION_LIMITS
 
-    if slacks:
-        if system_load_mismatch:
-            _add_system_load_mismatch(model)
-        else:
-            _add_load_mismatch(model)
+    if slack_type == SlackType.BUS_BALANCE:
+        _add_load_mismatch(model)
+    elif slack_type == SlackType.TRANSMISSION_LIMITS:
+        _add_system_load_mismatch(model)
+    elif slack_type == SlackType.NONE:
+        _add_blank_load_mismatch(model)
     else:
-        if system_load_mismatch:
-            _add_blank_system_load_mismatch(model)
-        else:
-            _add_blank_load_mismatch(model)
+        raise ValueError(f"Unrecognized slack_type: {slack_type}")
 
     _add_hvdc(model)
 
     if reactive_power:
-        if system_load_mismatch:
-            raise Exception("Need to implement system mismatch for reactive power")
         _add_reactive_power_vars(model)
         _add_reactive_limits(model)
-        if slacks:
+        if slack_type == SlackType.BUS_BALANCE:
             _add_q_load_mismatch(model)
-        else:
+        elif slack_type == SlackType.TRANSMISSION_LIMITS:
+            raise NotImplementedError("Need to implement transmission slacks for reactive power")
+        elif slack_type == SlackType.NONE:
             _add_blank_q_load_mistmatch(model)
+        else:
+            raise ValueError(f"Unrecognized slack_type: {slack_type}")
 
     # for transmission network
     model.TransmissionBlock = Block(model.TimePeriods, concrete=True)
@@ -652,32 +657,36 @@ def _add_egret_power_flow(model, network_model_builder, reactive_power=False, sl
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def copperplate_power_flow(model, slacks=True):
-    _add_egret_power_flow(model, _copperplate_approx_network_model, reactive_power=False, slacks=slacks)
+def copperplate_power_flow(model, slack_type=SlackType.TRANSMISSION_LIMITS):
+    _add_egret_power_flow(model, _copperplate_approx_network_model, reactive_power=False,
+                            slack_type=slack_type)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def copperplate_relaxed_power_flow(model, slacks=True):
-    _add_egret_power_flow(model, _copperplate_relax_network_model, reactive_power=False, slacks=slacks)
+def copperplate_relaxed_power_flow(model, slack_type=SlackType.TRANSMISSION_LIMITS):
+    _add_egret_power_flow(model, _copperplate_relax_network_model, reactive_power=False,
+                            slack_type=slack_type)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def ptdf_power_flow(model, slacks=True):
-    _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False, slacks=slacks)
+def ptdf_power_flow(model, slack_type=SlackType.TRANSMISSION_LIMITS):
+    _add_egret_power_flow(model, _ptdf_dcopf_network_model, reactive_power=False,
+                            slack_type=slack_type)
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'power_vars': None,
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def btheta_power_flow(model, slacks=True):
-    _add_egret_power_flow(model, _btheta_dcopf_network_model, reactive_power=False, slacks=slacks)
+def btheta_power_flow(model, slack_type=SlackType.TRANSMISSION_LIMITS):
+    _add_egret_power_flow(model, _btheta_dcopf_network_model, reactive_power=False,
+                            slack_type=slack_type)
 
 
 @add_model_attr(component_name, requires = {'data_loader': None,
@@ -685,7 +694,7 @@ def btheta_power_flow(model, slacks=True):
                                             'non_dispatchable_vars': None,
                                             'storage_service': None,
                                             })
-def power_balance_constraints(model, slacks=True):
+def power_balance_constraints(model, slack_type=SlackType.TRANSMISSION_LIMITS):
     '''
     adds the demand and network constraints to the model
     '''
@@ -766,12 +775,16 @@ def power_balance_constraints(model, slacks=True):
     # for contingency violation costs at a time step
     # This model does not work with contingencies, but we need the Expression for the objective
     model.ContingencyViolationCost = Expression(model.TimePeriods, rule=lambda m,t:0.)
-    
-    if slacks:
+
+    if slack_type == SlackType.BUS_BALANCE:
         _add_load_mismatch(model)
-    else:
+    elif slack_type == SlackType.TRANSMISSION_LIMITS:
+        _add_system_load_mismatch(model)
+    elif slack_type == SlackType.NONE:
         _add_blank_load_mismatch(model)
-    
+    else:
+        raise ValueError(f"Unrecognized slack_type: {slack_type}")
+
     # Power balance at each node (S)
     def power_balance(m, b, t):
         # bus b, time t (S)
