@@ -264,6 +264,11 @@ def load_params(model, model_data, slack_type):
         if 'violation_penalty' in branch:
             val = branch['violation_penalty']
             if val is not None:
+                # resolve the contradiction here if the user specifies
+                # no slacks and print a single message to the screen
+                if slack_type == SlackType.NONE:
+                    logger.warning("Ignoring slacks on individual transmission constraints because SlackType.NONE was specified")
+                    break
                 _branch_penalties[bn] = val
                 _branches_with_slack.append(bn)
                 if val <= 0:
