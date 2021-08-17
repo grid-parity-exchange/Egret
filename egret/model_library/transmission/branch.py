@@ -972,7 +972,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
                                             )
                 else:
                     expr = m.pf[branch_name] - pos_slack
-                m.ineq_pf_branch_thermal_lb[branch_name] = \
+                m.ineq_pf_branch_thermal_ub[branch_name] = \
                     (None, expr, p_thermal_limits[branch_name])
             else:
                 m.ineq_pf_branch_thermal_ub[branch_name] = \

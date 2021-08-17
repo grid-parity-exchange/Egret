@@ -99,7 +99,7 @@ def load_params(model, model_data, slack_type):
 
     loads = dict(md.elements(element_type='load'))
     thermal_gens = dict(md.elements(element_type='generator', generator_type='thermal'))
-    renewable_gens = dict(md.elements(element_type='generator', generator_type='renewable'))
+    renewable_gens = dict(md.elements(element_type='generator', generator_type=('renewable','virtual')))
     buses = dict(md.elements(element_type='bus'))
     shunts = dict(md.elements(element_type='shunt'))
     branches = dict(md.elements(element_type='branch'))
@@ -109,7 +109,7 @@ def load_params(model, model_data, slack_type):
     dc_branches = dict(md.elements(element_type='dc_branch'))
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
-    renewable_gen_attrs = md.attributes(element_type='generator', generator_type='renewable')
+    renewable_gen_attrs = md.attributes(element_type='generator', generator_type=('renewable','virtual'))
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     load_attrs = md.attributes(element_type='load')
@@ -384,14 +384,17 @@ def load_params(model, model_data, slack_type):
     for lname, load in loads.items():
         load_time = TimeMapper(load['p_load'])
         bus = load['bus']
+        # priced loads will be handled separately
+        if 'p_price' in load and load['p_price'] is not None:
+            continue
         if isinstance(bus, dict):
             assert bus['data_type'] == 'load_distribution_factor'
             for bn, multi in bus['values'].items():
-                for t in model.TimePeriods:
-                    bus_loads[bn, t] += multi*load_time[t]
+                for t, load in load_time.items():
+                    bus_loads[bn, t] += multi*load
         else:
-            for t in model.TimePeriods:
-                bus_loads[bus, t] += load_time[t]
+            for t, load in load_time.items():
+                bus_loads[bus, t] += load
     model.Demand = Param(model.Buses, model.TimePeriods, initialize=bus_loads, mutable=True)
     
     def calculate_total_demand(m, t):
@@ -406,6 +409,34 @@ def load_params(model, model_data, slack_type):
     
     if warn_neg_load:
         model.WarnAboutNegativeDemand = BuildAction(model.Buses, model.TimePeriods, rule=warn_about_negative_demand_rule)
+
+    _price_responsive_load_by_bus = {}
+    _price_responsive_load_attrs = {'names': [], 'p_price': {}, 'p_load': {}}
+    for ln, load in loads.items():
+        if 'p_price' in load and load['p_price'] is not None:
+            bus = load['bus']
+            if bus in _price_responsive_load_by_bus:
+                _price_responsive_load_by_bus[bus].append(ln)
+            else:
+                _price_responsive_load_by_bus[bus]= [ln]
+            _price_responsive_load_attrs['names'].append(ln)
+            _price_responsive_load_attrs['p_price'][ln] = load['p_price']
+            _price_responsive_load_attrs['p_load'][ln] = load['p_load']
+
+    model.PriceResponsiveLoadAtBus = Set(model.Buses,
+            initialize=lambda m,b : _price_responsive_load_by_bus[b] if b in _price_responsive_load_by_bus else ())
+
+    model.PriceResponsiveLoad = Set(initialize=_price_responsive_load_attrs['names'])
+
+    model.PriceResponsiveLoadPrice = Param(model.PriceResponsiveLoad,
+                                           model.TimePeriods,
+                                           within=Reals,
+                                           initialize=TimeMapper(_price_responsive_load_attrs['p_price']))
+
+    model.PriceResponsiveLoadDemand = Param(model.PriceResponsiveLoad,
+                                            model.TimePeriods,
+                                            within=NonNegativeReals,
+                                            initialize=TimeMapper(_price_responsive_load_attrs['p_load']))
     
     ##################################################################
     # the global system reserve, for each time period. units are MW. #
@@ -493,6 +524,13 @@ def load_params(model, model_data, slack_type):
                                             mutable=True,
                                             validate=maximum_nd_output_validator,
                                             initialize=TimeMapper(renewable_gen_attrs.get('p_max', dict())))
+
+    model.NondispatchableMarginalCost = Param(model.AllNondispatchableGenerators,
+                                            model.TimePeriods,
+                                            within=Reals, # more permissive; e.g. CSP
+                                            default=0.0,
+                                            mutable=True,
+                                            initialize=TimeMapper(renewable_gen_attrs.get('p_cost', dict())))
 
     #################################################
     # generator ramp up/down rates. units are MW/h. #

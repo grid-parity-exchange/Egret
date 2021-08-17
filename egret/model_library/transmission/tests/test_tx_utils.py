@@ -104,28 +104,64 @@ class TestValidateCostCurves(unittest.TestCase):
         expected_values = copy.deepcopy(curve['values'])
         expected_values.pop(0)
         expected_values.insert(0, (5, 3))
-        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
-                                                                curve_type='cost_curve',
-                                                                p_min=5,
-                                                                p_max=90,
-                                                                gen_name='foo',
-                                                                t=None)
+        with self.assertLogs('egret.model_library.transmission.tx_utils', level=logging.WARNING) as cm:
+            cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                    curve_type='cost_curve',
+                                                                    p_min=5,
+                                                                    p_max=90,
+                                                                    gen_name='foo',
+                                                                    t=None)
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(cleaned_values, curve['values'])
+        self.assertEqual(cm.output, ['WARNING:egret.model_library.transmission.tx_utils:WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator foo (and perhaps others)'])
+        # reset for next test
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
 
     def test_pw_high_p_max(self):
         curve = example_pw_curve()
         expected_values = copy.deepcopy(curve['values'])
         expected_values.pop(-1)
         expected_values.append((95, 543))
+        with self.assertLogs('egret.model_library.transmission.tx_utils', level=logging.WARNING) as cm:
+            cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                    curve_type='cost_curve',
+                                                                    p_min=10,
+                                                                    p_max=95,
+                                                                    gen_name='foo',
+                                                                    t=None)
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(cleaned_values, curve['values'])
+        self.assertEqual(cm.output, ['WARNING:egret.model_library.transmission.tx_utils:WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator foo (and perhaps others)'])
+        # reset for next test
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pw_high_p_max_low_p_min_debug(self):
+        curve = example_pw_curve()
+        # evoke warning once
         cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
                                                                 curve_type='cost_curve',
                                                                 p_min=10,
                                                                 p_max=95,
                                                                 gen_name='foo',
                                                                 t=None)
+        expected_values = example_pw_curve()['values']
+        expected_values.pop(-1)
+        expected_values.append((95, 543))
+        expected_values.pop(0)
+        expected_values.insert(0, (5, 3))
+        with self.assertLogs('egret.model_library.transmission.tx_utils', level=logging.DEBUG) as cm:
+            cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                    curve_type='cost_curve',
+                                                                    p_min=5,
+                                                                    p_max=95,
+                                                                    gen_name='foo',
+                                                                    t=None)
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(cleaned_values, curve['values'])
+        # debug output this time
+        self.assertEqual(cm.output, ['DEBUG:egret.model_library.transmission.tx_utils:WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator foo'])
+        # reset for next test
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
 
     def test_extra_pw_pieces_below_pmin(self):
         curve = example_pw_curve()
@@ -138,6 +174,18 @@ class TestValidateCostCurves(unittest.TestCase):
         self.assertEqual(cleaned_values, curve['values'][1:])
         self.assertIsNot(cleaned_values, curve['values'])
 
+    def test_extra_pw_pieces_below_pmin2(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=85,
+                                                                p_max=90,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(85, 453), (90, 498)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(cleaned_values, curve['values'])
+
     def test_extra_pw_pieces_above_pmax(self):
         curve = example_pw_curve()
         cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
@@ -147,6 +195,18 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 gen_name='foo',
                                                                 t=None)
         self.assertEqual(cleaned_values, curve['values'][:-1])
+        self.assertIsNot(cleaned_values, curve['values'])
+
+    def test_extra_pw_pieces_above_pmax2(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=10,
+                                                                p_max=15,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(10,18), (15,33)]
+        self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(cleaned_values, curve['values'])
 
     def test_pw_repeated_slope(self):
@@ -167,6 +227,203 @@ class TestValidateCostCurves(unittest.TestCase):
         expected_values = [(10, 20), (90, 100)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
+
+    def test_pw_repeated_slope2(self):
+        curve = dict()
+        curve['data_type'] = 'cost_curve'
+        curve['cost_curve_type'] = 'piecewise'
+        curve['values'] = [(10, 20),
+                           (30, 40),
+                           (50, 60),
+                           (70, 90),
+                           (90, 120)]
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=5,
+                                                                p_max=100,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(5, 15), (50,60), (100, 135)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pw_pmin_is_pmax_on_curve(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=40,
+                                                                p_max=40,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(40, 128)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+
+    def test_pw_pmin_is_pmax_single_point(self):
+        curve = example_pw_curve()
+        curve = dict()
+        curve['data_type'] = 'cost_curve'
+        curve['cost_curve_type'] = 'piecewise'
+        curve['values'] = [(40,128)]
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=40,
+                                                                p_max=40,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(40, 128)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+
+    def test_pmax_less_than_first_point(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=-5,
+                                                                p_max=5,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(-5, -27), (5, 3)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmax_less_than_first_point2(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=5,
+                                                                p_max=5,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(5, 3)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmax_is_first_point(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=0,
+                                                                p_max=10,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(0, -12), (10, 18)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmax_is_first_point2(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=10,
+                                                                p_max=10,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(10, 18)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmin_greater_than_last_point(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=100,
+                                                                p_max=110,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(100, 588), (110, 678)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmin_greater_than_last_point2(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=100,
+                                                                p_max=100,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(100, 588)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmin_is_last_point(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=90,
+                                                                p_max=110,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(90, 498), (110, 678)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmin_is_last_point2(self):
+        curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=90,
+                                                                p_max=90,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(90, 498)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pw_single_point_raises_value_error(self):
+        curve = example_pw_curve()
+        curve = dict()
+        curve['data_type'] = 'cost_curve'
+        curve['cost_curve_type'] = 'piecewise'
+        curve['values'] = [(40,128)]
+        with self.assertRaises(ValueError):
+            cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                    curve_type='cost_curve',
+                                                                    p_min=30,
+                                                                    p_max=30,
+                                                                    gen_name='foo',
+                                                                    t=None)
+
+        with self.assertRaises(ValueError):
+            cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                    curve_type='cost_curve',
+                                                                    p_min=30,
+                                                                    p_max=40,
+                                                                    gen_name='foo',
+                                                                    t=None)
+        with self.assertRaises(ValueError):
+            cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                    curve_type='cost_curve',
+                                                                    p_min=30,
+                                                                    p_max=50,
+                                                                    gen_name='foo',
+                                                                    t=None)
+
+        with self.assertRaises(ValueError):
+            cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                    curve_type='cost_curve',
+                                                                    p_min=40,
+                                                                    p_max=50,
+                                                                    gen_name='foo',
+                                                                    t=None)
+
+        with self.assertRaises(ValueError):
+            cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                    curve_type='cost_curve',
+                                                                    p_min=45,
+                                                                    p_max=50,
+                                                                    gen_name='foo',
+                                                                    t=None)
 
     def test_poly_simple(self):
         curve = example_poly_curve()

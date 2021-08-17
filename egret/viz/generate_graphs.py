@@ -214,7 +214,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 if not sum(pg_array) > 0.0:
                     continue
 
-                reported_fuel_type = generator_data['fuel']
+                reported_fuel_type = generator_data.get('fuel', 'Other')
 
                 # Check if dual fuel generator and override 'fuel' field with 'Dual Fuel'
                 if generator_data.get('aux_fuel_capable', False):
@@ -324,7 +324,7 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
                 else:
                     st_array = None
 
-                reported_fuel_type = generator_data['fuel']
+                reported_fuel_type = generator_data.get('fuel', 'Other')
 
                 # Check if dual fuel generator and override 'fuel' field with 'Dual Fuel'
                 if generator_data.get('aux_fuel_capable', False):
@@ -484,6 +484,24 @@ def generate_stack_graph(egret_model_data, bar_width=0.9,
     # Plot generation dispatch/output.
     total_dispatch_levels, y_min_lim = _plot_generation_stack_components()
     bottom = total_dispatch_levels
+
+    # Plot load response, if applicable.
+    load_dict = egret_model_data.data['elements']['load']
+    total_load_response_by_hour = np.zeros(len(indices))
+
+    for load, load_data in load_dict.items():
+        if 'p_load_shed' in load_data:
+            p_load_shed = attribute_to_array(load_data['p_load_shed'])
+            load_shed = np.maximum(0, p_load_shed)
+
+            total_load_response_by_hour += load_shed
+
+    if sum(total_load_response_by_hour) > 0.0:
+        component_color = '#cccc00'
+        ax.bar(indices, total_load_response_by_hour, bar_width, bottom=bottom, color=component_color,
+               edgecolor=None, linewidth=0,
+               label='Load Response')
+        bottom += total_load_response_by_hour
     
     # Plot load shedding, if applicable.    
     bus_dict = egret_model_data.data['elements']['bus']

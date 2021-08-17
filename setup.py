@@ -23,11 +23,11 @@ URL = 'https://github.com/grid-parity-exchange/Egret'
 
 setuptools_kwargs = {
     'zip_safe': False,
-    'install_requires': [],
     'scripts': [],
     'include_package_data': True,
-    'install_requires' : ['pyomo>=5.7.1', 'numpy', 'pytest', 'pandas', \
-                            'matplotlib', 'seaborn', 'scipy', 'networkx'],
+    'install_requires': ['pyomo>=5.7.1', 'numpy', 'pytest', 'pandas',
+                         'matplotlib', 'seaborn', 'scipy', 'networkx',
+                         'coramin==0.1.0'],
     'python_requires' : '>=3.7, <4',
 }
 

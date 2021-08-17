@@ -212,10 +212,8 @@ def _ptdf_dcopf_network_model(block,tm):
         lpu.add_monitored_flow_tracker(block)
 
         ### add initial branches to monitored set
-        lpu.add_initial_monitored_branches(block, branches, branches_in_service, ptdf_options, PTDF)
-
-        ### add initial interfaces to monitored set
-        lpu.add_initial_monitored_interfaces(block, interfaces, ptdf_options, PTDF)
+        lpu.add_initial_monitored_constraints(block, m.model_data, branches_in_service,
+                ptdf_options, PTDF, time=tm)
         
     else: ### add all the dense constraints
         if contingencies:
@@ -578,6 +576,7 @@ def _get_pg_expr_rule(t):
                 + sum(m.NondispatchablePowerUsed[g, t] for g in m.NondispatchableGeneratorsAtBus[b]) \
                 + sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesTo[b]) \
                 - sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesFrom[b]) \
+                - sum(m.PriceResponsiveLoadServed[l,t] for l in m.PriceResponsiveLoadAtBus[b]) \
                 + m.LoadGenerateMismatch[b,t]
     return pg_expr_rule
 
@@ -797,6 +796,7 @@ def power_balance_constraints(model, slack_type=SlackType.TRANSMISSION_LIMITS):
                 - sum(m.LinePower[l,t] for l in m.LinesFrom[b]) \
                 + sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesTo[b]) \
                 - sum(m.HVDCLinePower[k,t] for k in m.HVDCLinesFrom[b]) \
+                - sum(m.PriceResponsiveLoadServed[l,t] for l in m.PriceResponsiveLoadAtBus[b]) \
                 + m.LoadGenerateMismatch[b,t] \
                 == m.Demand[b, t] 
     model.PowerBalance = Constraint(model.Buses, model.TimePeriods, rule=power_balance)

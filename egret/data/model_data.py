@@ -221,12 +221,16 @@ class ModelData(object):
 
         # additional attributes have been specified
         for name, elem in self.data['elements'][element_type].items():
-            include = True
             for k, v in kwargs.items():
-                if k not in elem or elem[k] != v:
-                    include = False
+                if k not in elem:
                     break
-            if include:
+                if type(v) is tuple:
+                    if elem[k] not in v:
+                        break
+                else:
+                    if elem[k] != v:
+                        break
+            else: # no break
                 yield name, elem
 
     def attributes(self, element_type, **kwargs):

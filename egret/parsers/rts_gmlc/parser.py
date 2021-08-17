@@ -340,7 +340,6 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str) -> dict:
     data : dict
         Returns a dict loaded from the RTS-GMLC data
     """
-    from math import isnan
 
     base_dir = rts_gmlc_dir
 
@@ -353,6 +352,14 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str) -> dict:
 
     # this is the default used in the MATPOWER writer for RTS-GMLC
     system["baseMVA"] = 100.
+
+    bus_id_to_name = _read_buses_and_areas(base_dir, elements, system)
+    _read_branches(base_dir, elements, bus_id_to_name)
+    _read_generators(base_dir, elements, bus_id_to_name)
+
+    return model_data
+
+def _read_buses_and_areas(base_dir:str, elements:dict, system:dict) -> dict:
 
     elements["bus"] = {}
     elements["load"] = {}
@@ -432,6 +439,10 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str) -> dict:
     # add the areas
     elements['area'] = {name:dict() for name in bus_areas}
 
+    return bus_id_to_name
+
+def _read_branches(base_dir:str, elements:dict, bus_id_to_name:dict) -> None:
+
     # add the branches
     elements["branch"] = {}
     branch_df = pd.read_csv(os.path.join(base_dir,'branch.csv'))
@@ -487,6 +498,9 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str) -> dict:
     #        name = str(row['UID'])
     #        elements["dc_branch"][name] = branch_dict
     #    branch_df = None
+
+def _read_generators(base_dir:str, elements:dict, bus_id_to_name:dict) -> None:
+    from math import isnan
 
     # add the generators
     elements["generator"] = {}
@@ -633,8 +647,6 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str) -> dict:
 
         elements["generator"][name] = gen_dict
     gen_df = None
-
-    return model_data
 
 def _get_scalar_reserve_data(base_dir:str, metadata_df:df, model_dict:dict) -> ScalarReserveData:
     # Store scalar reserve values as stored in the input
