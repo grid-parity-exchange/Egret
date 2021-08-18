@@ -29,21 +29,17 @@ jobs:
             matrix:
                 os: [ubuntu-latest]
                 python-version: [3.7, 3.8, 3.9]
-                pyomo-version: [5.7.1]
-                pyutilib-version: [6.0.0]
+                pyomo-version: [6.1.1]
                 include:
                     - os: macos-latest
                       python-version: 3.7
-                      pyomo-version: 5.7.1
-                      pyutilib-version: 6.0.0
+                      pyomo-version: 6.1.1
                     - os: windows-latest
                       python-version: 3.7
-                      pyomo-version: 5.7.1
-                      pyutilib-version: 6.0.0
+                      pyomo-version: 6.1.1
                     - os: ubuntu-latest
                       python-version: 3.7
                       pyomo-version: main
-                      pyutilib-version: master
         steps:
           - uses: actions/checkout@v2
           - uses: conda-incubator/setup-miniconda@v2
@@ -111,9 +107,6 @@ jobs:
           - name: Install Cython/Numpy/Pandas
             run: |
               pip install cython numpy pandas
-          - name: Instal Pyutilib
-            run: |
-              pip install git+https://github.com/PyUtilib/pyutilib.git@${{ matrix.pyutilib-version }}
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}

@@ -25,7 +25,7 @@ setuptools_kwargs = {
     'zip_safe': False,
     'scripts': [],
     'include_package_data': True,
-    'install_requires': ['pyomo>=5.7.1', 'numpy', 'pytest', 'pandas',
+    'install_requires': ['pyomo>=6.1.1', 'numpy', 'pytest', 'pandas',
                          'matplotlib', 'seaborn', 'scipy', 'networkx',
                          'coramin==0.1.0'],
     'python_requires' : '>=3.7, <4',
