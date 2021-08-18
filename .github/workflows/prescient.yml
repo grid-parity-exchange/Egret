@@ -18,7 +18,7 @@ defaults:
 
 jobs:
     build:
-        name: Prescient master, ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
+        name: Prescient main, ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
         runs-on: ${{ matrix.os }}
         strategy:
             matrix:
@@ -58,7 +58,6 @@ jobs:
               cd ..
               git clone --depth=1 https://github.com/grid-parity-exchange/Prescient.git
               cd Prescient
-              conda env update --name test_env --file environment.yml
               python setup.py develop
           - name: Run Prescient Tests
             run: |
