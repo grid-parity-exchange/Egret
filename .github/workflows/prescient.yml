@@ -47,6 +47,8 @@ jobs:
               else
                 conda install -c conda-forge coincbc
               fi
+              # test cbc executable
+              cbc -quit
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
