@@ -29,14 +29,14 @@ jobs:
             matrix:
                 os: [ubuntu-latest]
                 python-version: [3.7, 3.8, 3.9]
-                pyomo-version: [6.1.1]
+                pyomo-version: [6.1.2]
                 include:
                     - os: macos-latest
                       python-version: 3.7
-                      pyomo-version: 6.1.1
+                      pyomo-version: 6.1.2
                     - os: windows-latest
                       python-version: 3.7
-                      pyomo-version: 6.1.1
+                      pyomo-version: 6.1.2
                     - os: ubuntu-latest
                       python-version: 3.7
                       pyomo-version: main

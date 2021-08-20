@@ -24,7 +24,7 @@ jobs:
             matrix:
                 os: [ubuntu-latest]
                 python-version: [3.7]
-                pyomo-version: [6.1.1]
+                pyomo-version: [6.1.2]
         steps:
           - uses: actions/checkout@v2
           - uses: conda-incubator/setup-miniconda@v2
