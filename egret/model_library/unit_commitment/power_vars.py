@@ -51,19 +51,19 @@ def _add_power_generated_startup_shutdown(model):
             future_startup_past_shutdown_production = 0.
             future_startup_power_index = time_periods_before_startup + m.NumTimePeriods - t
             if future_startup_power_index <= len(startup_curve):
-                future_startup_past_shutdown_production += startup_curve.card(future_startup_power_index)
+                future_startup_past_shutdown_production += startup_curve.at(future_startup_power_index)
 
             past_shutdown_power_index = time_periods_since_shutdown + t
             if past_shutdown_power_index <= len(shutdown_curve):
-                future_startup_past_shutdown_production += shutdown_curve.card(past_shutdown_power_index)
+                future_startup_past_shutdown_production += shutdown_curve.at(past_shutdown_power_index)
 
             linear_vars, linear_coefs = m._get_power_generated_lists(m,g,t)
             for startup_idx in range(1, min( len(startup_curve)+1, m.NumTimePeriods+1-t )):
                 linear_vars.append(m.UnitStart[g,t+startup_idx])
-                linear_coefs.append(startup_curve.card(startup_idx))
+                linear_coefs.append(startup_curve.at(startup_idx))
             for shutdown_idx in range(1, min( len(shutdown_curve)+1, t+1 )):
                 linear_vars.append(m.UnitStop[g,t-shutdown_idx+1])
-                linear_coefs.append(shutdown_curve.card(shutdown_idx))
+                linear_coefs.append(shutdown_curve.at(shutdown_idx))
             linear_expr = get_linear_expr(m.UnitOn, m.UnitStart, m.UnitStop)
             return linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs, constant=future_startup_past_shutdown_production)
 
