@@ -865,18 +865,18 @@ def load_params(model, model_data, slack_type):
     
     # startup lags must be monotonically increasing...
     def validate_startup_lags_rule(m, g):
-        startup_lags = list(m.StartupLags[g])
+        startup_lags = m.StartupLags[g]
     
         if len(startup_lags) == 0:
            print("DATA ERROR: The number of startup lags for thermal generator="+str(g)+" must be >= 1.")
            assert(False)
     
-        if startup_lags[0] != value(m.MinimumDownTime[g]):
+        if startup_lags.at(1) != value(m.MinimumDownTime[g]):
            print("DATA ERROR: The first startup lag for thermal generator="+str(g)+" must be equal the minimum down time="+str(value(m.MinimumDownTime[g]))+".")
            assert(False)      
     
-        for i in range(0, len(startup_lags)-1):
-           if startup_lags[i] >= startup_lags[i+1]:
+        for i in range(1, len(startup_lags)):
+           if startup_lags.at(i) >= startup_lags.at(i+1):
               print("DATA ERROR: Startup lags for thermal generator="+str(g)+" must be monotonically increasing.")
               assert(False)
     
@@ -885,8 +885,8 @@ def load_params(model, model_data, slack_type):
     # while startup costs must be monotonically non-decreasing!
     def validate_startup_costs_rule(m, g):
        startup_costs = m.StartupCosts[g]
-       for i in range(1, len(startup_costs)-1):
-          if startup_costs[i] > startup_costs[i+1]:
+       for i in range(1, len(startup_costs)):
+          if startup_costs.at(i) > startup_costs.at(i+1):
              print("DATA ERROR: Startup costs for thermal generator="+str(g)+" must be monotonically non-decreasing.")
              assert(False)
     
