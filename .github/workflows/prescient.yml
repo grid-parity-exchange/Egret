@@ -18,13 +18,13 @@ defaults:
 
 jobs:
     build:
-        name: Prescient master, ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
+        name: Prescient main, ${{ matrix.os }}, Python ${{ matrix.python-version }}, Pyomo ${{ matrix.pyomo-version }}
         runs-on: ${{ matrix.os }}
         strategy:
             matrix:
                 os: [ubuntu-latest]
                 python-version: [3.7]
-                pyomo-version: [5.7.1]
+                pyomo-version: [6.1.2]
         steps:
           - uses: actions/checkout@v2
           - uses: conda-incubator/setup-miniconda@v2
@@ -47,6 +47,8 @@ jobs:
               else
                 conda install -c conda-forge coincbc
               fi
+              # test cbc executable
+              cbc -quit
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
@@ -58,7 +60,6 @@ jobs:
               cd ..
               git clone --depth=1 https://github.com/grid-parity-exchange/Prescient.git
               cd Prescient
-              conda env update --name test_env --file environment.yml
               python setup.py develop
           - name: Run Prescient Tests
             run: |
