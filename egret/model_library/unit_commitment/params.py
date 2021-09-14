@@ -688,15 +688,26 @@ def load_params(model, model_data, slack_type):
 
         else:
             # Generator was off, but could have residual power due to
-            # start-up/shut-down curve. Therefore, do not be too picky
-            # as the value doesn't affect any constraints directly
+            # start-up/shut-down curve
             return True
+
+    def power_generated_t0_initializer(m, g):
+        if value(m.UnitOnT0[g]):
+            return thermal_gen_attrs['initial_p_output'][g]
+        else:
+            # return zero here for ramping
+            # constraints which need this to
+            # be 0 when the generator is off
+            # (power generated when ramping down
+            #  is handled "outside" the traditional
+            #  thermal generator model)
+            return 0.
 
     model.PowerGeneratedT0 = Param(model.ThermalGenerators, 
                                    within=NonNegativeReals,
                                    validate=power_generated_t0_validator,
                                    mutable=True,
-                                   initialize=thermal_gen_attrs['initial_p_output'])
+                                   initialize=power_generated_t0_initializer)
     
     # limits for time periods in which generators are brought on or off-line.
     # must be no less than the generator minimum output.
