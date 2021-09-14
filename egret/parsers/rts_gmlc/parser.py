@@ -660,6 +660,11 @@ def _get_scalar_reserve_data(base_dir:str, metadata_df:df, model_dict:dict) -> S
     # Collect constant scalar reserves
     da_scalars = []
     rt_scalars = []
+
+    if not os.path.exists(os.path.join(base_dir,'reserves.csv')):
+        logger.warning(f"Did not find reserves.csv; assuming no reserves")
+        return ScalarReserveData(da_scalars, rt_scalars)
+
     reserve_df = pd.read_csv(os.path.join(base_dir,'reserves.csv'))
     system = model_dict['system']
     areas = model_dict['elements']['area']
