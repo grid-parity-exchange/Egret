@@ -523,7 +523,6 @@ def _read_generators(base_dir:str, elements:dict, bus_id_to_name:dict) -> None:
             "mbase": 100.0,
             "pg": float(row['MW Inj']),
             "qg": float(row['MVAR Inj']),
-            "vg": float(row['V Setpoint p.u.']),
             "p_min": float(row['PMin MW']),
             "p_max": float(row['PMax MW']),
             "q_min": float(row['QMin MVAR']),

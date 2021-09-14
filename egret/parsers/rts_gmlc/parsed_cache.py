@@ -155,8 +155,8 @@ class ParsedCache():
             # overwrite p_load with timeseries
             load_dict['p_load'] = { 'data_type': 'time_series',
                                     'values' : [v*p_factor for v in data] }
-            if p_load is not None and 'q_load' in load_dict:
-                q_over_p = load_dict['q_load'] / p_load
+            if p_load is not None and 'q_load' in skeleton_loads[bus]:
+                q_over_p = skeleton_loads[bus]['q_load'] / p_load
                 load_dict['q_load'] = { 'data_type': 'time_series',
                                         'values' : [v*q_over_p for v in load_dict['p_load']['values']] }
 
