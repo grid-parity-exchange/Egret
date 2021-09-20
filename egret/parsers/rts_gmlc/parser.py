@@ -523,7 +523,6 @@ def _read_generators(base_dir:str, elements:dict, bus_id_to_name:dict) -> None:
             "mbase": 100.0,
             "pg": float(row['MW Inj']),
             "qg": float(row['MVAR Inj']),
-            "vg": float(row['V Setpoint p.u.']),
             "p_min": float(row['PMin MW']),
             "p_max": float(row['PMax MW']),
             "q_min": float(row['QMin MVAR']),
@@ -661,6 +660,11 @@ def _get_scalar_reserve_data(base_dir:str, metadata_df:df, model_dict:dict) -> S
     # Collect constant scalar reserves
     da_scalars = []
     rt_scalars = []
+
+    if not os.path.exists(os.path.join(base_dir,'reserves.csv')):
+        logger.warning(f"Did not find reserves.csv; assuming no reserves")
+        return ScalarReserveData(da_scalars, rt_scalars)
+
     reserve_df = pd.read_csv(os.path.join(base_dir,'reserves.csv'))
     system = model_dict['system']
     areas = model_dict['elements']['area']

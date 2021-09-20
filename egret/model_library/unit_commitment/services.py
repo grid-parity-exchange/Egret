@@ -403,6 +403,13 @@ def ancillary_services(model):
                     ((m.RegulationLowLimit[g,t] - m.MinimumPowerOutput[g,t])*m.RegulationOn[g,t] if reg else 0.)
     model.AncillaryServiceCapacityLimitLower = Constraint(model.ThermalGenerators, model.TimePeriods, rule=ancillary_service_capacity_limit_lower)
 
+    # What follows is shared ramping constraints for reserves
+    # We don't include these constraints unless explicitly told
+    # to do so. They are not universally used and can be
+    # computationally expensive.
+    if not system.get('reserve_ramping_constraints', False):
+        return
+
     ## NOTE: ScaledNominalRampUpLimit/ScaledNominalRampDownLimit and ScaledStartupRampLimit/ScaledShutdownRampLimit
     ##       are not appropriate in the ramp sharing constraints that follow.
     ##       In particular, we need to possibly allow these to be larger than (MaximumPowerGenerated -

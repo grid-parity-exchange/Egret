@@ -694,12 +694,12 @@ def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solve
     # is a subblock
     main_model = m.model()
     if solve_method_options is None:
-        solve_method_options = dict()
+        solve_method_options = {}
     if persistent_solver:
-        results = solver.solve(main_model, tee=solver_tee, load_solutions=False, save_results=False, **solve_method_options)
+        results = solver.solve(main_model, tee=solver_tee, load_solutions=False, save_results=False, warmstart=True, **solve_method_options)
         solver.load_vars(vars_to_load)
     else:
-        results = solver.solve(main_model, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False, **solve_method_options)
+        results = solver.solve(main_model, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False, warmstart=True, **solve_method_options)
         m.solutions.load_from(results)
     return results
 
@@ -899,6 +899,9 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
                 vars_to_load = None
                 vars_to_load_t_subset = None
                 break
+        if vars_to_load is not None:
+            for index_var in lpu._binary_var_generator(m):
+                vars_to_load.extend(index_var.values())
     else:
         vars_to_load = None
         vars_to_load_t_subset = None
