@@ -8,7 +8,7 @@ from PWL_Approx_Functions import *
 
 import json
 
-
+import pdb
 
 
 
@@ -16,25 +16,28 @@ if __name__ == '__main__':
 	import os
 	from egret.parsers.matpower_parser import create_ModelData
 
-	path = os.path.dirname(__file__)
+	path = os.path.dirname(os.path.dirname(os.getcwd()))
 	power_types = ["Reactive", "Active"]
 	bus_types = ["from_bus", "to_bus"]
 	case = 'case14_ieee'
 	filename = 'pglib_opf_' + case + '.m'
-	test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
+
+	test_case = os.path.join(path, 'thirdparty', 'pglib-opf-master', filename)    
 	md_dict = create_ModelData(test_case)
 	md = md_dict.clone_in_service()
 
 	branches = dict(md.elements(element_type='branch'))
 	branch_attrs = md.attributes(element_type='branch')
 
-
+	boxes = 4
 	
-	json_filename = case + '_delta_4_curvature_partition.json'
+	json_filename = case + '_delta_' + str(boxes) + '_curvature_partition.json'
 	with open(json_filename, "r") as read_file:
 		full_branches_dict = json.load(read_file)
 
 	branch_av_sq_diff_dict = dict([])
+	function_evaluations = []
+	f = {bus_type:{power_type:{branch_name: {} for branch_name in full_branches_dict[power_type + '_' + bus_type].keys()} for power_type in power_types} for bus_type in bus_types}
 
 	for bus_type in bus_types:
 		for power_type in power_types:
@@ -53,12 +56,26 @@ if __name__ == '__main__':
 						power_flow = power_flow_through_branch(point[0], point[1], point[2], branch, bus_type = bus_type, power_type=power_type) #Get actual power flow value
 						coeffs_list = p_b_branches_dict[branch_name]['boxes']['coefficients'][i]
 						pwl_approx = coeffs_list[0]*point[0]+coeffs_list[1]*point[1]+coeffs_list[2]*point[2]+coeffs_list[3]
+						function_evaluations.append((point, pwl_approx, power_flow))
+						if (point[0], point[1]) not in f[bus_type][power_type][branch_name]:
+							f[bus_type][power_type][branch_name][(point[0], point[1])] = {point[2]: (power_flow, pwl_approx)}
+						else:
+							f[bus_type][power_type][branch_name][(point[0], point[1])][point[2]] = (power_flow, pwl_approx)
 						box_sq_diffs.append((power_flow - pwl_approx)**2)
 					branch_sq_diffs.append((sum(box_sq_diffs))/(len(box_sq_diffs)))
 				p_b_branch_av_sq_diff_dict[branch_name] = (sum(branch_sq_diffs))/(len(branch_sq_diffs)) #Uncomment this line for a branch overview. 
 				#p_b_branch_av_sq_diff_dict[branch_name] = branch_sq_diffs #Uncomment this line for more specific information for boxes. 
 			branch_av_sq_diff_dict[power_type + '_' + bus_type] = p_b_branch_av_sq_diff_dict
 
-	print(branch_av_sq_diff_dict) 
+	def plot_cross_section(f, bus_type, power_type, branch_name, v1, v2):
+		delta_vals = f[bus_type][power_type][branch_name][(v1, v2)].keys()
+		y1_vals = [f[bus_type][power_type][branch_name][(v1, v2)][delta][0] for delta in delta_vals]
+		y2_vals = [f[bus_type][power_type][branch_name][(v1, v2)][delta][1] for delta in delta_vals]
+		plt.plot(delta_vals, y1_vals, '.', color="blue", label="actual")
+		plt.plot(delta_vals, y2_vals, '.', color="red", label="approximation")
+		plt.legend()
+		plt.show()
 
+	print(branch_av_sq_diff_dict) 
+	pdb.set_trace()
 

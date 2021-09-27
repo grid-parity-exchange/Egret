@@ -16,6 +16,10 @@ from egret.data.data_utils import map_items, zip_items
 from math import pi, radians, sqrt
 
 from egret.models.acopf import _include_feasibility_slack, solve_acopf, create_psv_acopf_model, create_rsv_acopf_model
+from collections import OrderedDict
+
+import coramin
+import pdb
 
 def eq_cosine_partition(lower_bound, upper_bound, Q):
 	#Divides the domain [lower_bound, upper_bound] into Q pieces of equal curvature for the cosine function. Domain must be contained in (-pi/2, pi/2)
@@ -28,7 +32,7 @@ def eq_cosine_partition(lower_bound, upper_bound, Q):
 	breakpoints.append(upper_bound)
 	return breakpoints
 
-def declare_pwl_cosine_bounds(model, index_set, branches, lower_bound, upper_bound, cosine_segment_count, mode="uniform"):
+def declare_pwl_cosine_bounds(model, index_set, branches, lower_bound, upper_bound, cosine_segment_count, mode="curvature"):
 	"""
 	Add piecewise linear constraints for the cosine hat variables. The constraints are indexed over the branches and the number of cosine segments. 
 	
@@ -36,11 +40,9 @@ def declare_pwl_cosine_bounds(model, index_set, branches, lower_bound, upper_bou
 						 or "curvature" (divide the domain into equal pieces based on accumulated curvature of the cosine function, as in Aravene et al. (2018))
 	"""
 	cons_index_set = pe.Set(initialize = model.N * index_set)
-
 	increment = (upper_bound - lower_bound)/(cosine_segment_count + 1)
 
 	breakpoints = eq_cosine_partition(lower_bound, upper_bound, cosine_segment_count)
-	
 	def pwl_cosine_rule(model, i, branch_name):
 		branch = branches[branch_name]
 
@@ -131,12 +133,12 @@ def create_hot_start_lpac_model(model_data, voltages, lower_bound = -pi/3, upper
     ### declare the generator real and reactive power
 	pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
 	libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init,
-                          bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
+                          bounds=zip_items([0 for element in gen_attrs['p_min']], gen_attrs['p_max'])
                           )
 
 	qg_init = {k: (gen_attrs['q_min'][k] + gen_attrs['q_max'][k]) / 2.0 for k in gen_attrs['qg']}
 	libgen.declare_var_qg(model, gen_attrs['names'], initialize=qg_init,
-                          bounds=zip_items(gen_attrs['q_min'], gen_attrs['q_max'])
+                          bounds=zip_items([0 for element in gen_attrs['q_min']], gen_attrs['q_max'])
                           )
 
     ### declare the current flows in the branches
@@ -323,10 +325,12 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
                                              {k: v**2 for k, v in bus_attrs['v_max'].items()}))
 
     ### declare the polar voltages
-	libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'] )
+	va_bounds = {b: (-pi, pi) for b in bus_attrs['names']}
+	libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'], bounds = va_bounds )
 
     ### declare the voltage change variables
-	decl.declare_var('phi', model, bus_attrs['names'])
+	phi_bounds = {b: (-0.05, 0.05) for b in bus_attrs['names']}
+	decl.declare_var('phi', model, bus_attrs['names'], bounds = phi_bounds)
 
     ### declare the cosine approximation variables
 	cos_hat_bounds = {k: (0, 1) for k in branch_attrs['names']}
@@ -342,7 +346,10 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
 
     ### declare (and fix) the loads at the buses
 	bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
-
+	buses_with_loads = list(k for k in bus_p_loads.keys() if bus_p_loads[k] != 0.)
+    
+	### declare load shed variables
+	decl.declare_var('load_shed', subproblem, buses_with_loads, initialize=0.0, domain=pe.NonNegativeReals)
 	libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
 	libbus.declare_var_ql(model, bus_attrs['names'], initialize=bus_q_loads)
 	model.pl.fix()
@@ -512,13 +519,13 @@ def create_warm_start_lpac_model(model_data, voltages, lower_bound = -pi/3, uppe
 	return model, md
 
 
-def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bound = -pi/3, upper_bound = pi/3, include_feasibility_slack = False, mode="uniform"):
+def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bound = -pi/3, upper_bound = pi/3, include_feasibility_slack = True, mode="curvature", parent_model = None):
 	"""
 	The cold start LPAC model assumes that no target voltages are available and that all voltages are initially approximated as 1 pu. 
 	"""
 	###Grid data
 	md = model_data.clone_in_service()
-	tx_utils.scale_ModelData_to_pu(md, inplace = True)
+	#tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
 	gens = dict(md.elements(element_type='generator'))
 	buses = dict(md.elements(element_type='bus'))
@@ -534,12 +541,22 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     
 	gens_by_bus = tx_utils.gens_by_bus(buses, gens)
+	bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
+	unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
 
-	model = pe.ConcreteModel()
+	if parent_model is None:
+		model = pe.ConcreteModel()
+	else:
+		model = parent_model.subproblem
 
     ### declare the polar voltages
-	libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va']
-                        )
+	va_bounds = {b: (-pi, pi) for b in bus_attrs['names']}
+	libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'], bounds = va_bounds)
+
+	libbranch.declare_var_dva(model=model,
+                              index_set=unique_bus_pairs,
+                              initialize=0,
+                              bounds=(-pi/3, pi/3))
 
 	libbus.declare_var_vmsq(model=model,
                             index_set=bus_attrs['names'],
@@ -548,7 +565,9 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
                                              {k: v**2 for k, v in bus_attrs['v_max'].items()}))
 
     ### declare the voltage change variables
-	decl.declare_var('phi', model, bus_attrs['names'])
+	phi_bounds = {b: (-0.05, 0.05) for b in bus_attrs['names']}
+	decl.declare_var('phi', model, bus_attrs['names'], bounds = phi_bounds)
+
 
     ### declare the cosine approximation variables
 	cos_hat_bounds = {k: (0, 1) for k in branch_attrs['names']}
@@ -559,8 +578,14 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
     #ref_angle = md.data['system']['reference_bus_angle']
 	model.va[ref_bus].fix(radians(0.0))
 
+
     ### declare (and fix) the loads at the buses
 	bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
+	buses_with_loads = list(k for k in bus_p_loads.keys() if bus_p_loads[k] != 0.0)
+	load_shed_bounds  = {load: (0, bus_p_loads[load]) for load in bus_p_loads}
+
+	### declare load shed variables
+	decl.declare_var('load_shed', model, bus_attrs['names'], initialize=0.0, domain=pe.NonNegativeReals, bounds = load_shed_bounds)
 
 	libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
 	libbus.declare_var_ql(model, bus_attrs['names'], initialize=bus_q_loads)
@@ -570,22 +595,30 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
 	### declare the fixed shunts at the buses
 	bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
 
+
      ### include the feasibility slack for the bus balances
 	p_rhs_kwargs = {}
 	q_rhs_kwargs = {}
 	if include_feasibility_slack:
 		p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
+	p_rhs_kwargs['include_feasibility_slack_neg'] = 'load_shed'
 
     ### declare the generator real and reactive power
 	pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
 	libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init,
-                          bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
+                          bounds=zip_items({key: 0 for key, value in gen_attrs['p_min'].items()}, gen_attrs['p_max'])
                           )
+	for gen in model.pg.index_set():
+		model.pg.setlb(0)
+
 
 	qg_init = {k: (gen_attrs['q_min'][k] + gen_attrs['q_max'][k]) / 2.0 for k in gen_attrs['qg']}
 	libgen.declare_var_qg(model, gen_attrs['names'], initialize=qg_init,
-                          bounds=zip_items(gen_attrs['q_min'], gen_attrs['q_max'])
+                          bounds=zip_items({key: 0 for key, value in gen_attrs['q_min'].items()}, gen_attrs['q_max'])
                           )
+
+	if parent_model is not None:
+		libgen.declare_generator_switching(parent_model, gen_attrs['names'])
 
     ### declare the current flows in the branches
 	vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -644,7 +677,6 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
                              )
 
 
-
 	################################
 	#Constraints
 	################################
@@ -654,6 +686,7 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
     #Should be able to just use DC OPF approximation of B-theta type? 
 
     ### declare the p balance
+    #libbus.declare_eq_p_balance_dc_approx
 	libbus.declare_eq_p_balance(model=model,
                                           index_set=bus_attrs['names'],
                                           bus_p_loads=bus_p_loads,
@@ -665,6 +698,7 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
                                           **p_rhs_kwargs
                                           )
 
+
     #Need one also for q balance 
 
 	libbus.declare_eq_q_balance(model=model, index_set=bus_attrs['names'],
@@ -675,7 +709,19 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
                          		outlet_branches_by_bus=outlet_branches_by_bus,
                         		 **q_rhs_kwargs)
 
-	
+	#Use feasibility slack to enable load switching
+	if parent_model is not None:
+		libbus.declare_load_switching(parent_model, bus_attrs['names'])
+
+	'''libbranch.declare_ineq_s_branch_thermal_limit(model=model,
+                                                  index_set=branch_attrs['names'],
+                                                  branches=branches,
+                                                  s_thermal_limits=s_max,
+                                                  flow_type=FlowType.POWER
+                                                  )'''
+
+	libbranch.declare_eq_delta_va(model=model,
+                                  index_set=unique_bus_pairs)
 
     ### Constraints for power in a branch 
 
@@ -686,6 +732,8 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
 	model.eq_qf_branch_t = pe.Constraint(branch_con_set)
 	model.eq_qt_branch_t = pe.Constraint(branch_con_set)
 
+
+
 	for branch_name in branch_con_set:
 		branch = branches[branch_name]
 
@@ -694,23 +742,25 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
 
 		g = tx_calc.calculate_conductance(branch)
 		b = tx_calc.calculate_susceptance(branch)
-
+		#min\{0, \b{A}\} \leq z \leq \bar{A}
+		#\b{A} x \leq z \leq \bar{A} x
+		#A - (1 - x)\bar{A} \leq z \leq A - (1 - x)\b{A}
+		#z \leq A + (1 - x)\bar{A}
 		model.eq_pf_branch_t[branch_name] = \
         	model.pf[branch_name] == \
-        	g - g * model.cos_hat[branch_name] - b * (model.va[from_bus] - model.va[to_bus])
+        	parent_model.w[branch_name]*(g - g * model.cos_hat[branch_name] - b * (model.va[from_bus] - model.va[to_bus]))
 
 		model.eq_pt_branch_t[branch_name] = \
         	model.pt[branch_name] == \
-        	g - g * model.cos_hat[branch_name] - b * (model.va[to_bus] - model.va[from_bus])
+        	parent_model.w[branch_name]*(g - g * model.cos_hat[branch_name] - b * (model.va[to_bus] - model.va[from_bus]))
 
 		model.eq_qf_branch_t[branch_name] = \
         	model.qf[branch_name] == \
-        	-b - g*(model.va[from_bus] - model.va[to_bus]) + b*model.cos_hat[branch_name] - b*(model.phi[from_bus] - model.phi[to_bus])
+        	parent_model.w[branch_name]*(-b - g*(model.va[from_bus] - model.va[to_bus]) + b*model.cos_hat[branch_name] - b*(model.phi[from_bus] - model.phi[to_bus]))
 
 		model.eq_qt_branch_t[branch_name] = \
         	model.qt[branch_name] == \
-        	-b - g*(model.va[to_bus] - model.va[from_bus]) +b*model.cos_hat[branch_name] - b*(model.phi[to_bus] - model.phi[from_bus])
-
+        	parent_model.w[branch_name]*(-b - g*(model.va[to_bus] - model.va[from_bus]) +b*model.cos_hat[branch_name] - b*(model.phi[to_bus] - model.phi[from_bus]))
     ### Piecewise linear cosine constraints
 
 	model.N = pe.Set(initialize=list(range(cosine_segment_count+1)))
@@ -722,7 +772,7 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
     							 upper_bound=upper_bound, 
     							 cosine_segment_count=cosine_segment_count,
     							 mode=mode)
-	
+
     ### Objective is to maximize cosine hat variables
 
 	# obj_expr = sum(model.cos_hat[branch_name] for branch_name in branch_attrs['names'])
@@ -734,21 +784,27 @@ def create_cold_start_lpac_model(model_data, cosine_segment_count = 20, lower_bo
 
 	###Objective to match with acopf.py
 
-	 ### declare the generator cost objective
-	libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost'],
-                                                  q_costs=gen_attrs.get('q_cost', None)
-                                                  )
+	### declare the generator cost objective
+	#libgen.declare_expression_pgqg_operating_cost(model=model,
+    #                                              index_set=gen_attrs['names'],
+    #                                              p_costs=gen_attrs['p_cost'],
+    #                                              q_costs=gen_attrs.get('q_cost', None)
+    #                                              )
+	obj_expr = sum(model.load_shed[bus] for bus in model.load_shed.index_set())
+	#if include_feasibility_slack:
+	#	obj_expr += penalty_expr
+	#if hasattr(model, 'qg_operating_cost'):
+	#	obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
 
-	obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
-	if include_feasibility_slack:
-		obj_expr += penalty_expr
-	if hasattr(model, 'qg_operating_cost'):
-		obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
+	model.obj = pe.Objective(expr=obj_expr, sense = pe.minimize)
+	pdb.set_trace()
+	# perform McCormick relaxation
+	fbbt_options = {'feasibility_tol': 1e-4,'max_iter': 2, 'deactivate_satisfied_constraints': True}
+	coramin.relaxations.relax(model, in_place=True, use_fbbt=False, fbbt_options=fbbt_options)
 
-	model.obj = pe.Objective(expr=obj_expr)
-
+	for r in coramin.relaxations.relaxation_data_objects(model):
+	    r.relaxation_side = coramin.utils.RelaxationSide.BOTH
+	    r.rebuild()
 
 	return model, md
 
@@ -892,7 +948,7 @@ if __name__ == '__main__':
     knitro_options = {'maxit': 20000}
     kwargs = {'include_feasibility_slack':False}
     kwargs_for_lpac = {'mode': "uniform"}
-    md,m,results = solve_lpac(model_data, "baron", options=baron_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
+    md,m,results = solve_lpac(model_data, "knitroampl", options=baron_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
     # md,m,results = solve_lpac(model_data, "cplex", ac_solver = "knitroampl", ac_options=knitro_options,lpac_model_generator=create_hot_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
     # md,m,results = solve_lpac(model_data, "knitroampl", options=knitro_options,lpac_model_generator=create_warm_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)
     # md,m,results = solve_lpac(model_data, "knitroampl",options=knitro_options,lpac_model_generator=create_cold_start_lpac_model,return_model=True, return_results=True, kwargs=kwargs, kwargs_for_lpac=kwargs_for_lpac)

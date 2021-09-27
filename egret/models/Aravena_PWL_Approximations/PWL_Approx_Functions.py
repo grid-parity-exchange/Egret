@@ -1,5 +1,5 @@
 #Code to produce results from Aravena (2018) paper. 
-
+import pdb
 import numpy as np
 
 import pyomo.environ as pe
@@ -14,7 +14,7 @@ from mpl_toolkits import mplot3d
 
 import itertools as it
 
-from Curvature import *
+from Aravena_PWL_Approximations.Curvature import *
 
 import json
 
@@ -285,22 +285,20 @@ def triple_integral_coefs(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, d
     return [ai1_sq_coef, ai2_sq_coef, ai3_sq_coef, bi_sq_coef, ai1ai2_coef, ai1ai3_coef, ai1bi_coef, ai2ai3_coef, ai2bi_coef, ai3bi_coef, ai1_coef, ai2_coef, ai3_coef, bi_coef, constant_coef]
 
 
-def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delta_upper, branch, bus_type = "from_bus", power_type = "Active"):
+def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delta_upper, branch, num_delta_boxes, bus_type = "from_bus", power_type = "Active"):
     #Given a box, solve for the piecewise linear approximation over this box.
     #I'd like to give the user functions to find partitions of the domains of Vi, Vj and Delta,
     #but for now I will specify them manually.
 
     Vi_partition = [Vi_lower, Vi_upper]
     Vj_partition = [Vj_lower, Vj_upper]
-    delta_partition = eq_curvature_partition(delta_lower, delta_upper, 10, branch, bus_type = bus_type, power_type=power_type)
-
+    delta_partition = eq_curvature_partition(delta_lower, delta_upper, num_delta_boxes, branch, bus_type = bus_type, power_type=power_type)
     model = pe.ConcreteModel()
 
     #Create a list of boxes from the elements of the given partition. They will be specified by a triple of coordinates
     Vi_intervals = [(Vi_partition[i], Vi_partition[i+1]) for i in range(0, len(Vi_partition) - 1)]
     Vj_intervals = [(Vj_partition[i], Vj_partition[i+1]) for i in range(0, len(Vj_partition) - 1)]
     delta_intervals = [(delta_partition[i], delta_partition[i+1]) for i in range(0, len(delta_partition) - 1)]
-
     boxes = list(it.product(Vi_intervals, Vj_intervals, delta_intervals))
     #print(boxes)
     model.boxes = pe.Set(initialize=range(len(boxes)))
@@ -318,7 +316,6 @@ def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delt
     for i in it.product(Vi_intervals, delta_intervals):
         for j in range(len(Vj_intervals) - 1):
             facets.append(('Vj', (i[0], i[1], Vj_intervals[j]), (i[0], i[1], Vj_intervals[j+1])))
-
     # print(facets)
     # print(len(facets))
 
@@ -337,7 +334,7 @@ def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delt
         box = boxes[i]
         box_coefs = triple_integral_coefs(box[0][0], box[0][1], box[1][0], box[1][1], box[2][0], box[2][1], branch, bus_type=bus_type, power_type=power_type)
         return box_coefs[0]*model.ai1[i]*model.ai1[i] + box_coefs[1]*model.ai2[i]*model.ai2[i] + box_coefs[2]*model.ai3[i]*model.ai3[i] + box_coefs[3]*model.bi[i]*model.bi[i] + \
-                        box_coefs[4]*model.ai1[i]*model.ai2[i] + box_coefs[5]*model.ai1[i]*model.ai3[i] + box_coefs[6]*model.ai1[i]*model.bi[i] + box_coefs[7]*model.ai2[i]*model.ai3[i] + \
+                        box_coefs[4]*model.ai1[i]*model.ai2[i] +box_coefs[5]*model.ai1[i]*model.ai3[i] + box_coefs[6]*model.ai1[i]*model.bi[i] + box_coefs[7]*model.ai2[i]*model.ai3[i] + \
                         box_coefs[8]*model.ai2[i]*model.bi[i] + box_coefs[9]*model.ai3[i]*model.bi[i] + box_coefs[10]*model.ai1[i] + box_coefs[11]*model.ai2[i] + box_coefs[12]*model.ai3[i] + \
                         box_coefs[13]*model.bi[i] + box_coefs[14]
 
@@ -358,18 +355,20 @@ def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delt
             r_box = boxes.index(facet[2])
             if vertex == 0:
                 return model.ai1[l_box]*facet[1][0][0] + model.ai2[l_box]*facet[1][1][0] + model.ai3[l_box]*facet[1][2][1] + model.bi[l_box] == \
-                        model.ai1[r_box]*facet[1][0][0] + model.ai2[r_box]*facet[1][1][0] + model.ai3[r_box]*facet[1][2][1] + model.bi[r_box]
+                        model.ai1[r_box]*facet[2][0][0] + model.ai2[r_box]*facet[2][1][0] + model.ai3[r_box]*facet[2][2][0] + model.bi[r_box]
             if vertex == 1:
                 return model.ai1[l_box]*facet[1][0][0] + model.ai2[l_box]*facet[1][1][1] + model.ai3[l_box]*facet[1][2][1] + model.bi[l_box] == \
-                        model.ai1[r_box]*facet[1][0][0] + model.ai2[r_box]*facet[1][1][1] + model.ai3[r_box]*facet[1][2][1] + model.bi[r_box]
+                        model.ai1[r_box]*facet[2][0][0] + model.ai2[r_box]*facet[2][1][1] + model.ai3[r_box]*facet[2][2][0] + model.bi[r_box]
             if vertex == 2:
                 return model.ai1[l_box]*facet[1][0][1] + model.ai2[l_box]*facet[1][1][0] + model.ai3[l_box]*facet[1][2][1] + model.bi[l_box] == \
-                        model.ai1[r_box]*facet[1][0][1] + model.ai2[r_box]*facet[1][1][0] + model.ai3[r_box]*facet[1][2][1] + model.bi[r_box]
+                        model.ai1[r_box]*facet[2][0][1] + model.ai2[r_box]*facet[2][1][0] + model.ai3[r_box]*facet[2][2][0] + model.bi[r_box]
             if vertex == 3:
                 return model.ai1[l_box]*facet[1][0][1] + model.ai2[l_box]*facet[1][1][1] + model.ai3[l_box]*facet[1][2][1] + model.bi[l_box] == \
-                        model.ai1[r_box]*facet[1][0][1] + model.ai2[r_box]*facet[1][1][1] + model.ai3[r_box]*facet[1][2][1] + model.bi[r_box]
+                        model.ai1[r_box]*facet[2][0][1] + model.ai2[r_box]*facet[2][1][1] + model.ai3[r_box]*facet[2][2][0] + model.bi[r_box]
+            return pe.Constraint.Skip
 
         if facet[0] == 'Vi':
+            pdb.set_trace()
             l_box = boxes.index((facet[1][2], facet[1][0], facet[1][1]))
             r_box = boxes.index((facet[2][2], facet[2][0], facet[2][1]))
             if vertex == 0:
@@ -381,11 +380,12 @@ def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delt
             if vertex == 2:
                 return model.ai2[l_box]*facet[1][0][1] + model.ai3[l_box]*facet[1][1][0] + model.ai1[l_box]*facet[1][2][1] + model.bi[l_box] == \
                         model.ai2[r_box]*facet[1][0][1] + model.ai3[r_box]*facet[1][1][0] + model.ai1[r_box]*facet[1][2][1] + model.bi[r_box]
-            if vertex == 3:
-                return model.ai2[l_box]*facet[1][0][1] + model.ai3[l_box]*facet[1][1][1] + model.ai1[l_box]*facet[1][2][1] + model.bi[l_box] == \
-                        model.ai2[r_box]*facet[1][0][1] + model.ai3[r_box]*facet[1][1][1] + model.ai1[r_box]*facet[1][2][1] + model.bi[r_box]
+            #if vertex == 3:
+            #    return model.ai2[l_box]*facet[1][0][1] + model.ai3[l_box]*facet[1][1][1] + model.ai1[l_box]*facet[1][2][1] + model.bi[l_box] == \
+            #            model.ai2[r_box]*facet[1][0][1] + model.ai3[r_box]*facet[1][1][1] + model.ai1[r_box]*facet[1][2][1] + model.bi[r_box]
 
         if facet[0] == 'Vj':
+            pdb.set_trace()
             l_box = boxes.index((facet[1][0], facet[1][2], facet[1][1]))
             r_box = boxes.index((facet[2][0], facet[2][2], facet[2][1]))
             if vertex == 0:
@@ -397,19 +397,19 @@ def generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delt
             if vertex == 2:
                 return model.ai1[l_box]*facet[1][0][1] + model.ai3[l_box]*facet[1][1][0] + model.ai2[l_box]*facet[1][2][1] + model.bi[l_box] == \
                         model.ai1[r_box]*facet[1][0][1] + model.ai3[r_box]*facet[1][1][0] + model.ai2[r_box]*facet[1][2][1] + model.bi[r_box]
-            if vertex == 3:
-                return model.ai1[l_box]*facet[1][0][1] + model.ai3[l_box]*facet[1][1][1] + model.ai2[l_box]*facet[1][2][1] + model.bi[l_box] == \
-                        model.ai1[r_box]*facet[1][0][1] + model.ai3[r_box]*facet[1][1][1] + model.ai2[r_box]*facet[1][2][1] + model.bi[r_box]
+            #if vertex == 3:
+            #    return model.ai1[l_box]*facet[1][0][1] + model.ai3[l_box]*facet[1][1][1] + model.ai2[l_box]*facet[1][2][1] + model.bi[l_box] == \
+            #            model.ai1[r_box]*facet[1][0][1] + model.ai3[r_box]*facet[1][1][1] + model.ai2[r_box]*facet[1][2][1] + model.bi[r_box]
 
 
-    model.facet_Constr = pe.Constraint(model.facets, model.N, rule=facet_cons_rule)
+    #model.facet_Constr = pe.Constraint(model.facets, model.N, rule=facet_cons_rule)
 
 
     return [model, boxes]
 
-def pwl_model_branch_preprocessing(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delta_upper, branch, bus_type = "from_bus", power_type = "Active"):
+def pwl_model_branch_preprocessing(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delta_upper, branch, num_delta_boxes, bus_type = "from_bus", power_type = "Active"):
     #Obtains information for a given branch based on the branch parameters
-    m = generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delta_upper, branch, bus_type=bus_type, power_type = power_type)
+    m = generate_pwl_model(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta_lower, delta_upper, branch, num_delta_boxes = num_delta_boxes, bus_type=bus_type, power_type = power_type)
     pwl_model = m[0]
     boxes = m[1]
 
@@ -423,8 +423,8 @@ def pwl_model_branch_preprocessing(Vi_lower, Vi_upper, Vj_lower, Vj_upper, delta
 
     branch_dict['from_bus'] = branch['from_bus']
     branch_dict['to_bus'] = branch['to_bus']
-   
-    opt = pe.SolverFactory("knitroampl")
+
+    opt = pe.SolverFactory("baron")
 
     #Knitro_options 
 
@@ -444,14 +444,15 @@ if __name__ == '__main__':
     import os
     from egret.parsers.matpower_parser import create_ModelData
 
-    path = os.path.dirname(__file__)
+    path = os.path.dirname(os.path.dirname(os.getcwd()))
     power_types = ["Reactive", "Active"]
     bus_types = ["from_bus", "to_bus"]
     case = 'case14_ieee'
     filename = 'pglib_opf_' + case + '.m'
-    test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
+    test_case = os.path.join(path, 'thirdparty', 'pglib-opf-master', filename)    
     md_dict = create_ModelData(test_case)
     md = md_dict.clone_in_service()
+    tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     branches = dict(md.elements(element_type='branch'))
     branch_attrs = md.attributes(element_type='branch')
@@ -459,6 +460,7 @@ if __name__ == '__main__':
     buses = dict(md.elements(element_type='bus'))
     bus_attrs = md.attributes(element_type='bus')
 
+    num_delta_boxes = 4
     #s_max = branch['rating_long_term']
 
     #print(triple_integral_coefs(0.95, 1.05, 0.95, 1.05, 0, np.pi/6, branch, power_type = "Active"))
@@ -497,10 +499,10 @@ if __name__ == '__main__':
                         delta_ub = (np.pi)/6
                     else:
                         delta_ub = branch['angle_diff_max']*(np.pi)/180.0
-                    branch_p_b_dict[branch_name] = pwl_model_branch_preprocessing(from_bus_lb, from_bus_ub, to_bus_lb, to_bus_ub, delta_lb, delta_ub, branch, bus_type, power_type)
+                    branch_p_b_dict[branch_name] = pwl_model_branch_preprocessing(from_bus_lb, from_bus_ub, to_bus_lb, to_bus_ub, delta_lb, delta_ub, branch, num_delta_boxes, bus_type, power_type)
                 all_branches_coefs_dict[power_type + '_' + bus_type] = branch_p_b_dict
     
-    json_filename = case + '_delta_10_curvature_partition.json'
+    json_filename = case + '_delta_' + str(num_delta_boxes) + '_curvature_partition.json'
     with open(json_filename, 'w') as file:
         json.dump(all_branches_coefs_dict, file, indent=2)
 

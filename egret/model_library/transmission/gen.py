@@ -28,6 +28,23 @@ def declare_var_qg(model, index_set, **kwargs):
     decl.declare_var('qg', model=model, index_set=index_set, **kwargs)
 
 
+def declare_generator_switching(model, index_set):
+    """
+    Create bounding inequalities that can be used to switch off a generator
+    """
+    m = model
+    con_set_lb = decl.declare_set('_con_gen_switching_lb',
+                               model=m.subproblem, index_set=index_set)
+    con_set_ub = decl.declare_set('_con_gen_switching_ub',
+                               model=m.subproblem, index_set=index_set)
+
+    m.subproblem.gen_switch_lb = pe.Constraint(con_set_lb)
+    m.subproblem.gen_switch_ub = pe.Constraint(con_set_ub)
+
+    for gen in con_set_lb:
+        m.subproblem.gen_switch_ub[gen] = m.subproblem.pg[gen] <= m.subproblem.pg[gen].ub*m.v[gen]
+        m.subproblem.gen_switch_lb[gen] = m.subproblem.pg[gen] >= m.subproblem.pg[gen].lb*m.v[gen]
+
 def declare_expression_pgqg_operating_cost(model, index_set,
                                            p_costs, q_costs=None):
     """

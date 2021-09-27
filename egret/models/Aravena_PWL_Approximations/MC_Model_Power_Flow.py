@@ -1,5 +1,5 @@
 #Implements the multiple choice model described in Aravena et al. -WL
-
+import pdb
 import pyomo.environ as pe
 
 import json
@@ -65,6 +65,9 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
                             initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
                             bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
                                              {k: v**2 for k, v in bus_attrs['v_max'].items()}))
+    libbus.declare_eq_vmsq(model=model,
+                           index_set=bus_attrs['names'],
+                           coordinate_type=CoordinateType.POLAR)
     # libbranch.declare_var_c(model=model, index_set=unique_bus_pairs)
     # libbranch.declare_var_s(model=model, index_set=unique_bus_pairs)
 
@@ -78,6 +81,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     libbranch.declare_var_dva(model, index_set=unique_bus_pairs)
 
     libbranch.declare_eq_delta_va(model, index_set=unique_bus_pairs)
+    #libbranch.declare_eq_branch_dva(model, index_set, branches)
 
     ### include the feasibility slack for the bus balances
     p_rhs_kwargs = {}
@@ -164,6 +168,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     branch_name_set = decl.declare_set('branch_name', model=model, index_set=branch_attrs['names'])
 
+    model.bigM_multiplier = pe.Param(initialize = 2)
     model.box_index_set = pe.RangeSet(Q)
 
     model.power_type_set = pe.Set(initialize=[0,1])
@@ -246,7 +251,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
     	b = tx_calc.calculate_susceptance(branch)
     	coeffs = branch_dict["Active_from_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
-    	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	M = model.bigM_multiplier*s_max[branch_name]# + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
     	return -model.pf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 0] + coeffs[3] <= M*(1-model.u_branch[branch_name, i, 0])
 
     model.pwl_active_from_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_from_ub_rule)
@@ -259,10 +264,9 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     	g = tx_calc.calculate_conductance(branch)
     	b = tx_calc.calculate_susceptance(branch)
-
     	coeffs = branch_dict["Active_from_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
-    	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	M = -model.bigM_multiplier*s_max[branch_name]# - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
     	return -model.pf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 0] + coeffs[3] >= M*(1-model.u_branch[branch_name, i, 0])
 
     model.pwl_active_from_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_from_lb_rule)
@@ -279,7 +283,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     	coeffs = branch_dict["Active_to_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
-    	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	M = model.bigM_multiplier*s_max[branch_name]# + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
     	return -model.pt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 0] + coeffs[3] <= M*(1-model.u_branch[branch_name, i, 0])
 
     model.pwl_active_to_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_to_ub_rule)
@@ -295,7 +299,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     	coeffs = branch_dict["Active_to_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
-    	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	M = -model.bigM_multiplier*s_max[branch_name]# - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
     	return -model.pt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 0] + coeffs[3] >= M*(1-model.u_branch[branch_name, i, 0])
 
     model.pwl_active_to_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_active_to_lb_rule)
@@ -313,7 +317,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     	coeffs = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
-    	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	M = model.bigM_multiplier*s_max[branch_name]# + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
     	return -model.qf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 1] + coeffs[3] <= M*(1-model.u_branch[branch_name, i, 1])
 
     model.pwl_reactive_from_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_from_ub_rule)
@@ -329,7 +333,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     	coeffs = branch_dict["Reactive_from_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
-    	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	M = -model.bigM_multiplier*s_max[branch_name]# - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
     	return -model.qf[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 1] + coeffs[3] >= M*(1-model.u_branch[branch_name, i, 1])
 
     model.pwl_reactive_from_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_from_lb_rule)
@@ -347,7 +351,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     	coeffs = branch_dict["Reactive_to_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = 10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3])
-    	M = 2*s_max[branch_name] + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	M = model.bigM_multiplier*s_max[branch_name]# + 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
     	return -model.qt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 1] + coeffs[3] <= M*(1-model.u_branch[branch_name, i, 1])
 
     model.pwl_reactive_to_ub_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_to_ub_rule)
@@ -363,7 +367,7 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
 
     	coeffs = branch_dict["Reactive_to_bus"][branch_name]['boxes']['coefficients'][i-1]
     	#M = -(10*(g+b) + 4*(coeffs[0]+coeffs[1]+coeffs[2]+coeffs[3]))
-    	M = -2*s_max[branch_name] - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
+    	M = -model.bigM_multiplier*s_max[branch_name]# - 10*(np.abs(coeffs[0])+np.abs(coeffs[1])+np.abs(coeffs[2])+np.abs(coeffs[3]))
     	return -model.qt[branch_name] + coeffs[0]*model.vm[from_bus] + coeffs[1]*model.vm[to_bus] + coeffs[2]*model.dva_branch[branch_name, i, 1] + coeffs[3] >= M*(1-model.u_branch[branch_name, i, 1])
 
     model.pwl_reactive_to_lb_Constr = pe.Constraint(branch_name_set, model.box_index_set, rule=pwl_reactive_to_lb_rule)
@@ -391,15 +395,15 @@ def _create_base_ac_with_pwl_approx_model(model_data, branch_dict, Q, include_fe
                                 )
 
     ### declare the thermal limits
-    libbranch.declare_ineq_s_branch_thermal_limit(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  s_thermal_limits=s_max,
-                                                  flow_type=FlowType.POWER
-                                                  )
+    #libbranch.declare_ineq_s_branch_thermal_limit(model=model,
+    #                                              index_set=branch_attrs['names'],
+    #                                              branches=branches,
+    #                                              s_thermal_limits=s_max,
+    #                                              flow_type=FlowType.POWER
+    #                                              )
 
     # declare angle difference limits on interconnected buses
-    # libbranch.declare_ineq_angle_diff_branch_lbub_c_s(model=model,
+    #libbranch.declare_ineq_angle_diff_branch_lbub_c_s(model=model,
     #                                                   index_set=branch_attrs['names'],
     #                                                   branches=branches
     #                                                   )
@@ -426,22 +430,29 @@ if __name__ == '__main__':
 	import os
 	from egret.parsers.matpower_parser import create_ModelData
 
-	path = os.path.dirname(__file__)
-	case = 'case30_ieee'
+	path = os.path.dirname(os.path.dirname(os.getcwd()))
+	case = 'case14_ieee'
 	filename = 'pglib_opf_' + case + '.m'
-	test_case = os.path.join('c:\\', 'Users', 'wlinz', 'Desktop', 'Restoration', 'Egret', 'egret', 'thirdparty', 'pglib-opf-master', filename) #Better if this isn't so user-dependent
+	test_case = os.path.join(path, 'thirdparty', 'pglib-opf-master', filename)
 	md_dict = create_ModelData(test_case)
 	md = md_dict.clone_in_service()
+	tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
+
+	num_boxes = 4
 	
-	json_filename = case + '_delta_4_curvature_partition.json'
+	json_filename = case + '_delta_' + str(num_boxes) + '_curvature_partition.json'
 	with open(json_filename, "r") as read_file:
 		branch_dict = json.load(read_file)
 
-	opt = pe.SolverFactory("cplex")
+	opt = pe.SolverFactory("gurobi")
+	opt.options['NonConvex'] = 2
+	#opt = pe.SolverFactory("knitroampl")
+	#opt = pe.SolverFactory("baron")
 
-	MC_model = _create_base_ac_with_pwl_approx_model(md_dict, branch_dict, 4, include_feasibility_slack=False)[0]
+
+	MC_model = _create_base_ac_with_pwl_approx_model(md_dict, branch_dict, num_boxes, include_feasibility_slack=False)[0]
 
 	#MC_model.pprint()
-
 	opt.solve(MC_model, tee=True, keepfiles=True, symbolic_solver_labels=True)
+	pdb.set_trace()

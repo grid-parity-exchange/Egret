@@ -15,6 +15,7 @@ import pyomo.environ as pe
 import egret.model_library.decl as decl
 from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
 from math import tan,  radians
+import pdb
 
 def declare_var_vr(model, index_set, **kwargs):
     """
@@ -313,7 +314,7 @@ def declare_eq_p_balance(model, index_set,
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
             vmsq = m.vmsq[bus_name]
-            p_expr -= bus_gs_fixed_shunts[bus_name] * vmsq
+            #p_expr -= bus_gs_fixed_shunts[bus_name] * vmsq
 
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             p_expr -= m.pl[bus_name]
@@ -330,7 +331,6 @@ def declare_eq_p_balance(model, index_set,
 
         m.eq_p_balance[bus_name] = \
             p_expr == 0.0
-
 
 def declare_eq_p_balance_with_i_aggregation(model, index_set,
                                             bus_p_loads,
@@ -391,7 +391,7 @@ def declare_eq_q_balance(model, index_set,
 
         if bus_bs_fixed_shunts[bus_name] != 0.0:
             vmsq = m.vmsq[bus_name]
-            q_expr += bus_bs_fixed_shunts[bus_name] * vmsq
+            #q_expr += bus_bs_fixed_shunts[bus_name] * vmsq
 
         if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             q_expr -= m.ql[bus_name]
@@ -470,3 +470,17 @@ def declare_ineq_vm_bus_lbub(model, index_set, buses, coordinate_type=Coordinate
                 buses[bus_name]['v_min']**2 <= m.vr[bus_name]**2 + m.vj[bus_name]**2
             m.ineq_vm_bus_ub[bus_name] = \
                 m.vr[bus_name]**2 + m.vj[bus_name]**2 <= buses[bus_name]['v_max']**2
+
+def declare_load_switching(model, index_set):
+    m = model
+    con_set_lb = decl.declare_set('_con_load_switching_lb',
+                               model=m.subproblem, index_set=index_set)
+    con_set_ub = decl.declare_set('_con_load_switching_ub',
+                               model=m.subproblem, index_set=index_set)
+
+    m.subproblem.load_switch_lb = pe.Constraint(con_set_lb)
+    m.subproblem.load_switch_ub = pe.Constraint(con_set_ub)
+
+    for bus in con_set_lb:
+        m.subproblem.load_switch_ub[bus] = m.subproblem.load_shed[bus] <= m.subproblem.pl[bus]
+        m.subproblem.load_switch_lb[bus] = m.subproblem.load_shed[bus] >= m.subproblem.pl[bus]*(1-m.u[bus])
