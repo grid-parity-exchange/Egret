@@ -16,7 +16,6 @@ import egret.model_library.decl as decl
 import pyomo.environ as pe
 import pyomo.gdp as gdp
 import math
-import pdb
 
 def disjunctify(model, indicator_name, disjunct_name, LHS_disjunct_set, RHS_disjunct_set):
     assert len(LHS_disjunct_set) == len(RHS_disjunct_set)
@@ -212,7 +211,7 @@ def declare_eq_branch_power_btheta_approx_nonlin(model, index_set, branches):
     con_set = decl.declare_set("_con_eq_branch_power_btheta_approx_bigM_set", model, index_set)
 
     m.eq_pf_branch = pe.Constraint(con_set)
-    #m.eq_pf_branch_lb = pe.Constraint(con_set)
+
     for branch_name in con_set:
         branch = branches[branch_name]
 
@@ -275,6 +274,7 @@ def declare_ineq_gen(model, index_set, gens):
 
     m.subproblem.ineq_gen_ub = pe.Constraint(con_set)
     m.subproblem.ineq_gen_lb = pe.Constraint(con_set)
+
 
     for gen_name in index_set:
         gen = gens[gen_name]

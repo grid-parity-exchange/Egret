@@ -14,7 +14,6 @@ working with the attacker-defender bilevel model
 
 import egret.model_library.decl as decl
 import pyomo.environ as pe
-import pdb
 
 
 def declare_budget(model, k, relays):

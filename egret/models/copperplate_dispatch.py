@@ -23,26 +23,28 @@ from egret.model_library.defn import ApproximationType
 from egret.data.data_utils import map_items, zip_items
 from math import pi
 
-
-def _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, penalty=1000):
+def _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty):
     import egret.model_library.decl as decl
-    slack_init = 0
-    slack_bounds = (0, sum(bus_p_loads.values()))
-    decl.declare_var('p_slack_pos', model=model, index_set=None,
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    decl.declare_var('p_slack_neg', model=model, index_set=None,
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
+    load = sum(bus_p_loads.values())
 
-    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
+    over_gen_bounds = (0, tx_utils.over_gen_limit(load, gen_attrs['names'], gen_attrs['p_max']))
+    decl.declare_var('p_over_generation', model=model, index_set=None,
+                     initialize=0., bounds=over_gen_bounds
+                     )
 
-    penalty_expr = p_penalty * (model.p_slack_pos + model.p_slack_neg)
+    load_shed_bounds = (0, tx_utils.load_shed_limit(load, gen_attrs['names'], gen_attrs['p_min']))
+    decl.declare_var('p_load_shed', model=model, index_set=None,
+                     initialize=0., bounds=load_shed_bounds
+                     )
+    p_rhs_kwargs = {'include_feasibility_load_shed':'p_load_shed', 'include_feasibility_over_generation':'p_over_generation'}
+    penalty_expr = p_marginal_slack_penalty * (model.p_load_shed + model.p_over_generation)
     return p_rhs_kwargs, penalty_expr
 
+def _validate_and_extract_slack_penalty(model_data):
+    assert('load_mismatch_cost' in model_data.data['system'])
+    return model_data.data['system']['load_mismatch_cost']
 
-def create_copperplate_dispatch_approx_model(model_data, include_feasibility_slack=False):
+def create_copperplate_dispatch_approx_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -79,7 +81,8 @@ def create_copperplate_dispatch_approx_model(model_data, include_feasibility_sla
     ### include the feasibility slack for the system balance
     p_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(model_data)                
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty)
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
@@ -91,12 +94,18 @@ def create_copperplate_dispatch_approx_model(model_data, include_feasibility_sla
                                    )
 
     ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
-
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
@@ -164,6 +173,8 @@ def solve_copperplate_dispatch(model_data,
     buses = dict(md.elements(element_type='bus'))
 
     md.data['system']['total_cost'] = value(m.obj)
+    if hasattr(m, 'p_load_shed'):
+        md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])

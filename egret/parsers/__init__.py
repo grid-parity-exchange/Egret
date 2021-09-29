@@ -7,3 +7,4 @@
 #  This software is distributed under the Revised BSD License.
 #  ___________________________________________________________________________
 
+from .rts_gmlc import parser as rts_gmlc_parser

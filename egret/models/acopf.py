@@ -19,45 +19,57 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
-
 from egret.model_library.defn import FlowType, CoordinateType
 from egret.data.data_utils import map_items, zip_items
-from math import pi, radians
+from math import pi, radians, degrees, cos, sin
 from collections import OrderedDict
+from egret.data.networkx_utils import get_networkx_graph
+import networkx
+from pyomo.common.collections.orderedset import OrderedSet
 
-
-def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads, penalty=1000):
+def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
+                               gens_by_bus, gen_attrs,
+                               p_marginal_slack_penalty, q_marginal_slack_penalty):
+    
     import egret.model_library.decl as decl
-    slack_init = {k: 0 for k in bus_attrs['names']}
-    slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
-    decl.declare_var('p_slack_pos', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    decl.declare_var('p_slack_neg', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    slack_bounds = {k: (0, sum(bus_q_loads.values())) for k in bus_attrs['names']}
-    decl.declare_var('q_slack_pos', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    decl.declare_var('q_slack_neg', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
-    q_rhs_kwargs = {'include_feasibility_slack_pos':'q_slack_pos','include_feasibility_slack_neg':'q_slack_neg'}
 
-    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
-    q_penalty = penalty * (max(gen_attrs.get('q_cost', gen_attrs['p_cost'])[k]['values'][1] for k in gen_attrs['names']) + 1)
+    p_over_gen_bounds = {k: (0, tx_utils.over_gen_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_max'])) for k in bus_names}
+    decl.declare_var('p_over_generation', model=model, index_set=bus_names,
+                     initialize=0., bounds=p_over_gen_bounds
+                     )
 
-    penalty_expr = sum(p_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
-                    + q_penalty * (model.q_slack_pos[bus_name] + model.q_slack_neg[bus_name])
-                    for bus_name in bus_attrs['names'])
+    p_load_shed_bounds  = {k: (0, tx_utils.load_shed_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_min'])) for k in bus_names}
+    decl.declare_var('p_load_shed', model=model, index_set=bus_names,
+                     initialize=0., bounds=p_load_shed_bounds
+                     )
+
+    q_over_gen_bounds = {k: (0, tx_utils.over_gen_limit(bus_q_loads[k], gens_by_bus[k], gen_attrs['q_max'])) for k in bus_names}
+    decl.declare_var('q_over_generation', model=model, index_set=bus_names,
+                     initialize=0., bounds=q_over_gen_bounds
+                     )
+
+    q_load_shed_bounds  = {k: (0, tx_utils.load_shed_limit(bus_q_loads[k], gens_by_bus[k], gen_attrs['q_min'])) for k in bus_names}
+    decl.declare_var('q_load_shed', model=model, index_set=bus_names,
+                     initialize=0., bounds=q_load_shed_bounds
+                     )
+    p_rhs_kwargs = {'include_feasibility_load_shed':'p_load_shed', 'include_feasibility_over_generation':'p_over_generation'}
+    q_rhs_kwargs = {'include_feasibility_load_shed':'q_load_shed', 'include_feasibility_over_generation':'q_over_generation'}
+
+    penalty_expr = sum(p_marginal_slack_penalty * (model.p_over_generation[bus_name] + model.p_load_shed[bus_name])
+                     + q_marginal_slack_penalty * (model.q_over_generation[bus_name] + model.q_load_shed[bus_name])
+                    for bus_name in bus_names)
     return p_rhs_kwargs, q_rhs_kwargs, penalty_expr
 
 
-def _create_base_ac_model(model_data, include_feasibility_slack=False):
+def _validate_and_extract_slack_penalties(model_data):
+    assert('load_mismatch_cost' in model_data.data['system'])
+    assert('q_load_mismatch_cost' in model_data.data['system'])
+    return model_data.data['system']['load_mismatch_cost'], model_data.data['system']['q_load_mismatch_cost']
+
+
+def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
-    tx_utils.scale_ModelData_to_pu(md, inplace = True)
+    tx_utils.scale_ModelData_to_pu(md, inplace=True)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -94,14 +106,63 @@ def _create_base_ac_model(model_data, include_feasibility_slack=False):
                             initialize={k: v**2 for k, v in bus_attrs['vm'].items()},
                             bounds=zip_items({k: v**2 for k, v in bus_attrs['v_min'].items()},
                                              {k: v**2 for k, v in bus_attrs['v_max'].items()}))
-    libbranch.declare_var_c(model=model, index_set=unique_bus_pairs)
-    libbranch.declare_var_s(model=model, index_set=unique_bus_pairs)
+
+    branch_w_index = {(v['from_bus'], v['to_bus']): v for v in branches.values()}
+
+    def _c_bounds_rule(m, from_bus, to_bus):
+        bdat = branch_w_index[(from_bus, to_bus)]
+        if bdat['angle_diff_max'] < 0:
+            the_mid = bdat['angle_diff_max']
+        elif bdat['angle_diff_min'] > 0:
+            the_mid = bdat['angle_diff_min']
+        else:
+            the_mid = 0
+        lb = (bus_attrs['v_min'][from_bus]
+              * bus_attrs['v_min'][to_bus]
+              * cos(max(abs(bdat['angle_diff_min']),
+                        abs(bdat['angle_diff_max']))*pi/180))
+        ub = (bus_attrs['v_max'][from_bus]
+              *  bus_attrs['v_max'][to_bus]
+              *  cos(the_mid*pi/180))
+        return lb, ub
+    libbranch.declare_var_c(model=model,
+                            index_set=unique_bus_pairs,
+                            initialize=1,
+                            bounds=_c_bounds_rule)
+
+    def _s_bounds_rule(m, from_bus, to_bus):
+        bdat = branch_w_index[(from_bus, to_bus)]
+
+        if bdat['angle_diff_min'] >= 0:
+            lb = (bus_attrs['v_min'][from_bus]
+                  * bus_attrs['v_min'][to_bus]
+                  * sin(bdat['angle_diff_min']*pi/180))
+        else:
+            lb = (bus_attrs['v_max'][from_bus]
+                  * bus_attrs['v_max'][to_bus]
+                  * sin(bdat['angle_diff_min']*pi/180))
+        if bdat['angle_diff_max'] >= 0:
+            ub = (bus_attrs['v_max'][from_bus]
+                  * bus_attrs['v_max'][to_bus]
+                  * sin(bdat['angle_diff_max']*pi/180))
+        else:
+            ub = (bus_attrs['v_min'][from_bus]
+                  * bus_attrs['v_min'][to_bus]
+                  * sin(bdat['angle_diff_max']*pi/180))
+        return lb, ub
+    libbranch.declare_var_s(model=model, index_set=unique_bus_pairs, initialize=0,
+                            bounds=_s_bounds_rule)
 
     ### include the feasibility slack for the bus balances
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
+        p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(md)
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'],
+                                                                              bus_p_loads, bus_q_loads,
+                                                                              gens_by_bus, gen_attrs,
+                                                                              p_marginal_slack_penalty,
+                                                                              q_marginal_slack_penalty)
 
     ### declare the generator real and reactive power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -115,8 +176,8 @@ def _create_base_ac_model(model_data, include_feasibility_slack=False):
                           )
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
     s_lbub = dict()
     for k in branches.keys():
@@ -211,26 +272,91 @@ def _create_base_ac_model(model_data, include_feasibility_slack=False):
                                                       branches=branches
                                                       )
 
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost'],
-                                                  q_costs=gen_attrs.get('q_cost', None)
-                                                  )
-
+    # declare the generator cost objective
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    q_costs = gen_attrs.get('q_cost', None)
+    if q_costs is not None:
+        pw_qg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=q_costs))
+        if len(pw_qg_cost_gens) > 0:
+            if pw_cost_model == 'delta':
+                libgen.declare_var_delta_qg(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+                libgen.declare_qg_delta_qg_con(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+            else:
+                libgen.declare_var_qg_cost(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+                libgen.declare_piecewise_qg_cost_cons(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+        libgen.declare_expression_qg_operating_cost(model=model, index_set=gen_attrs['names'], q_costs=q_costs, pw_formulation=pw_cost_model)
+        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
-    if hasattr(model, 'qg_operating_cost'):
-        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
 
     model.obj = pe.Objective(expr=obj_expr)
 
     return model, md
 
 
-def create_psv_acopf_model(model_data, include_feasibility_slack=False):
-    model, md = _create_base_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+def create_atan_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                            pw_cost_model=pw_cost_model)
+
+    branch_attrs = md.attributes(element_type='branch')
+    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
+    unique_bus_pairs = OrderedSet(val for val in bus_pairs.values())
+    for fb, tb in unique_bus_pairs:
+        assert (tb, fb) not in unique_bus_pairs
+
+    graph = get_networkx_graph(md)
+    ref_bus = md.data['system']['reference_bus']
+    cycle_basis = networkx.algorithms.cycle_basis(graph, root=ref_bus)
+
+    cycle_basis_bus_pairs = OrderedSet()
+    for cycle in cycle_basis:
+        for ndx in range(len(cycle) - 1):
+            b1 = cycle[ndx]
+            b2 = cycle[ndx + 1]
+            assert (b1, b2) in unique_bus_pairs or (b2, b1) in unique_bus_pairs
+            if (b1, b2) in unique_bus_pairs:
+                cycle_basis_bus_pairs.add((b1, b2))
+            else:
+                cycle_basis_bus_pairs.add((b2, b1))
+        b1 = cycle[-1]
+        b2 = cycle[0]
+        assert (b1, b2) in unique_bus_pairs or (b2, b1) in unique_bus_pairs
+        if (b1, b2) in unique_bus_pairs:
+            cycle_basis_bus_pairs.add((b1, b2))
+        else:
+            cycle_basis_bus_pairs.add((b2, b1))
+
+    branches = dict(md.elements(element_type='branch'))
+    branch_w_index = {(v['from_bus'], v['to_bus']): v for v in branches.values()}
+    def _dva_bounds_rule(m, from_bus, to_bus):
+        bdat = branch_w_index[(from_bus, to_bus)]
+        return max(-pi/2, bdat['angle_diff_min'] * pi / 180), min(pi/2, bdat['angle_diff_max'] * pi / 180)
+    libbranch.declare_var_dva(model=model,
+                              index_set=list(cycle_basis_bus_pairs),
+                              initialize=0,
+                              bounds=_dva_bounds_rule)
+    libbranch.declare_eq_dva_arctan(model=model, index_set=list(cycle_basis_bus_pairs))
+    libbranch.declare_eq_dva_cycle_sum(model=model, cycle_basis=cycle_basis, valid_bus_pairs=cycle_basis_bus_pairs)
+    libbranch.declare_ineq_soc(model=model, index_set=list(unique_bus_pairs), use_outer_approximation=False)
+    libbranch.declare_ineq_soc_ub(model=model, index_set=list(unique_bus_pairs))
+
+    return model, md
+
+
+def create_psv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                            pw_cost_model=pw_cost_model)
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -249,7 +375,7 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
     libbus.declare_var_va(model,
                           bus_attrs['names'],
-                          initialize=bus_attrs['va'],
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
                           bounds=va_bounds)
 
     # fix the reference bus
@@ -273,8 +399,9 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     return model, md
 
 
-def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
-    model, md = _create_base_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+def create_rsv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                            pw_cost_model=pw_cost_model)
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
@@ -282,12 +409,12 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
 
     # declare the rectangular voltages
     neg_v_max = map_items(op.neg, bus_attrs['v_max'])
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     libbus.declare_var_vr(model, bus_attrs['names'], initialize=vr_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
 
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     libbus.declare_var_vj(model, bus_attrs['names'], initialize=vj_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
@@ -315,7 +442,7 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
     return model, md
 
 
-def create_riv_acopf_model(model_data, include_feasibility_slack=False):
+def create_riv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -350,12 +477,12 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
 
     ### declare the rectangular voltages
     neg_v_max = map_items(op.neg, bus_attrs['v_max'])
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     libbus.declare_var_vr(model, bus_attrs['names'], initialize=vr_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
 
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     libbus.declare_var_vj(model, bus_attrs['names'], initialize=vj_init,
                           bounds=zip_items(neg_v_max, bus_attrs['v_max'])
                           )
@@ -364,7 +491,12 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
+        p_marginal_slack_penalty, q_marginal_slack_penalty = _validate_and_extract_slack_penalties(md)
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'],
+                                                                              bus_p_loads, bus_q_loads,
+                                                                              gens_by_bus, gen_attrs,
+                                                                              p_marginal_slack_penalty,
+                                                                              q_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -519,17 +651,32 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
                                                   coordinate_type=CoordinateType.RECTANGULAR)
 
     ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost'],
-                                                  q_costs=gen_attrs.get('q_cost', None)
-                                                  )
-
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+    q_costs = gen_attrs.get('q_cost', None)
+    if q_costs is not None:
+        pw_qg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=q_costs))
+        if len(pw_qg_cost_gens) > 0:
+            if pw_cost_model == 'delta':
+                libgen.declare_var_delta_qg(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+                libgen.declare_qg_delta_qg_con(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+            else:
+                libgen.declare_var_qg_cost(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+                libgen.declare_piecewise_qg_cost_cons(model=model, index_set=pw_qg_cost_gens, q_costs=q_costs)
+        libgen.declare_expression_qg_operating_cost(model=model, index_set=gen_attrs['names'], q_costs=q_costs, pw_formulation=pw_cost_model)
+        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
-    if hasattr(model, 'qg_operating_cost'):
-        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
 
     model.obj = pe.Objective(expr=obj_expr)
 
@@ -605,10 +752,14 @@ def solve_acopf(model_data,
         b_dict['pl'] = value(m.pl[b])
         if hasattr(m, 'vj'):
             b_dict['vm'] = tx_calc.calculate_vm_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
-            b_dict['va'] = tx_calc.calculate_va_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
+            b_dict['va'] = tx_calc.calculate_va_degrees_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
         else:
             b_dict['vm'] = value(m.vm[b])
-            b_dict['va'] = value(m.va[b])
+            b_dict['va'] = degrees(value(m.va[b]))
+        if hasattr(m, 'p_load_shed'):
+            b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
+        if hasattr(m, 'q_load_shed'):
+            b_dict['q_balance_violation'] = value(m.q_load_shed[b]) - value(m.q_over_generation[b])
 
     for k, k_dict in branches.items():
         if hasattr(m,'pf'):
@@ -624,7 +775,6 @@ def solve_acopf(model_data,
             k_dict['pt'] = value(tx_calc.calculate_p(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
             k_dict['qt'] = value(tx_calc.calculate_q(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
 
-
     unscale_ModelData_to_pu(md, inplace=True)
 
     if return_model and return_results:
@@ -634,6 +784,7 @@ def solve_acopf(model_data,
     elif return_results:
         return md, results
     return md
+
 
 if __name__ == '__main__':
     import os

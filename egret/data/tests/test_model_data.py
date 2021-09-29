@@ -34,7 +34,8 @@ testdata = {
                 {
                     'B1': {'bus_type': 'PV'},
                     'B2': {'bus_type': 'PQ'},
-                    'B3': {'bus_type': 'PQ'}
+                    'B3': {'bus_type': 'PQ'},
+                    'B4': {'bus_type': 'ref'},
                 },
             'branch':
                 {
@@ -135,16 +136,22 @@ def test_elements():
             assert e["generator_type"] == 'solar'
 
     buses = dict(md.elements(element_type='bus'))
-    assert len(buses) == 3
+    assert len(buses) == 4
     assert 'B1' in buses
     assert 'B2' in buses
     assert 'B3' in buses
+    assert 'B4' in buses
     assert buses['B1']['bus_type'] == 'PV'
 
     buses = dict(md.elements(element_type='bus', bus_type='PQ'))
     assert len(buses) == 2
     assert 'B2' in buses
     assert 'B3' in buses
+
+    buses = dict(md.elements(element_type='bus', bus_type=('PV','ref')))
+    assert len(buses) == 2
+    assert 'B1' in buses
+    assert 'B4' in buses
 
 def test_attributes():
     md = ModelData(dict(testdata))
@@ -226,3 +233,18 @@ def test_json_gz_read_write():
     md_read = ModelData.read('testdata.json.gz')
 
     assert md.data == md_read.data
+
+def test_init_read():
+    md = ModelData(testdata)
+    md.write('testdata.json')
+
+    md_read = ModelData('testdata.json')
+
+    assert md.data == md_read.data
+
+def test_init_clone():
+    md = ModelData(testdata)
+    md_clone = ModelData(md)
+
+    assert md.data == md_clone.data
+    assert id(md.data) != id(md_clone.data)

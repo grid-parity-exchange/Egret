@@ -140,20 +140,35 @@ class ModelData(object):
         """
         return {"elements": dict(), "system": dict()}
     
-    def __init__(self, data=None):
+    def __init__(self, source=None, file_type=None):
         """
         Create a new ModelData object to wrap a model_data dictionary with some helper methods.
 
         Parameters
         ----------
-        data : dict or None
-           An initial model_data dictionary if it is available, otherwise, a new model_data
-           dictionary is created.
+        source : dict, str, ModelData, or None (optional)
+            If dict, an initial model_data dictionary.
+            If str, a path to a file which is parsable by EGRET.
+            If ModelData, the original is copies into the new ModelData.
+            If None, a blank model_data dictionary is created.
+
+        file_type : str or None (optional)
+            If source is str, this is the specification of the file_type.
+            Valid values are 'json', 'json.gz' for json-ed EGRET ModelData
+            objects, 'm' for MATPOWER files, 'dat' for Prescient data files, and
+            'pglib-uc' for json files from pglib-uc. If None, the file type is
+            inferred from the extension.
         """
-        if data:
-            self.data = data
-        else:
+        if isinstance(source, dict):
+            self.data = source
+        elif isinstance(source, str):
+            self.data = du._read_from_file(source, file_type)
+        elif isinstance(source, ModelData):
+            self.data = source.clone().data
+        elif source is None:
             self.data = ModelData.empty_model_data_dict()
+        else:
+            raise RuntimeError("Unrecognized source for ModelData")
 
     @classmethod
     def read(cls, filename, file_type=None):
@@ -170,44 +185,7 @@ class ModelData(object):
             'pglib-uc' for json files from pglib-uc. If None, the file type is inferred from the
             extension.
         """
-        valid_file_types = ['json', 'json.gz', 'm', 'dat', 'pglib-uc']
-        if file_type is not None and file_type not in valid_file_types:
-            raise Exception("Unrecognized file_type {}. Valid file types are {}".format(file_type, valid_file_types))
-        elif file_type is None:
-            ## identify the file type
-            if filename[-5:] == '.json':
-                file_type = 'json'
-            elif filename[-8:] == '.json.gz':
-                file_type = 'json.gz'
-            elif filename[-2:] == '.m':
-                file_type = 'm'
-            elif filename[-4:] == '.dat':
-                file_type = 'dat'
-            else:
-                raise Exception("Could not infer type of file {} from its extension!".format(filename))
-
-        if file_type == 'json':
-            import json
-            with open(filename) as f:
-                data = json.load(f)
-        elif file_type == 'json.gz':
-            import json
-            import gzip
-            with gzip.open(filename, 'rt') as f:
-                data = json.load(f)
-        elif file_type == 'm':
-            from egret.parsers.matpower_parser import create_model_data_dict
-            data = create_model_data_dict(filename)
-        elif file_type == 'dat':
-            from egret.parsers.prescient_dat_parser import create_model_data_dict
-            data = create_model_data_dict(filename)
-        elif file_type == 'pglib-uc':
-            from egret.parsers.pglib_uc_parser import create_model_data_dict
-            data = create_model_data_dict(filename)
-
-        logger.debug("ModelData read from {}".format(filename))
-
-        return cls(data=data)
+        return cls(source=du._read_from_file(filename, file_type))
 
     def elements(self, element_type, **kwargs):
         """
@@ -243,12 +221,16 @@ class ModelData(object):
 
         # additional attributes have been specified
         for name, elem in self.data['elements'][element_type].items():
-            include = True
             for k, v in kwargs.items():
-                if k not in elem or elem[k] != v:
-                    include = False
+                if k not in elem:
                     break
-            if include:
+                if type(v) is tuple:
+                    if elem[k] not in v:
+                        break
+                else:
+                    if elem[k] != v:
+                        break
+            else: # no break
                 yield name, elem
 
     def attributes(self, element_type, **kwargs):

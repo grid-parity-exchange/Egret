@@ -21,6 +21,11 @@ def file_non_dispatchable_vars(model):
     # assume wind can be curtailed, then wind power is a decision variable
     def nd_bounds_rule(m,n,t):
         return (m.MinNondispatchablePower[n,t], m.MaxNondispatchablePower[n,t])
-    model.NondispatchablePowerUsed = Var(model.AllNondispatchableGenerators, model.TimePeriods, within=NonNegativeReals, bounds=nd_bounds_rule)
+    model.NondispatchablePowerUsed = Var(model.AllNondispatchableGenerators, model.TimePeriods, within=Reals, bounds=nd_bounds_rule)
+
+    def _nd_power_cost_rule(m,n,t):
+        return m.TimePeriodLengthHours*m.NondispatchableMarginalCost[n,t]*m.NondispatchablePowerUsed[n,t]
+    model.NondispatchableProductionCost = Expression(model.AllNondispatchableGenerators, model.TimePeriods,
+                                                    rule=_nd_power_cost_rule)
 
     return

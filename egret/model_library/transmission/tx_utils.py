@@ -13,6 +13,13 @@ working with transmission models
 """
 
 import egret.model_library.transmission.tx_calc as tx_calc
+import math
+from math import radians
+import logging
+import copy
+
+
+logger = logging.getLogger(__name__)
 
 
 def dicts_of_vr_vj(buses):
@@ -23,8 +30,8 @@ def dicts_of_vr_vj(buses):
     vr = dict()
     vj = dict()
     for bus_name, bus in buses.items():
-        vr[bus_name] = tx_calc.calculate_vr_from_vm_va(bus['vm'], bus['va'])
-        vj[bus_name] = tx_calc.calculate_vj_from_vm_va(bus['vm'], bus['va'])
+        vr[bus_name] = tx_calc.calculate_vr_from_vm_va_degrees(bus['vm'], bus['va'])
+        vj[bus_name] = tx_calc.calculate_vj_from_vm_va_degrees(bus['vm'], bus['va'])
 
     return vr, vj
 
@@ -93,10 +100,10 @@ def dict_of_branch_currents(branches, buses):
             and to_bus['vm'] is not None and to_bus['va'] is not None:
             # we have all the information we need
             y_matrix = tx_calc.calculate_y_matrix_from_branch(branch)
-            vfr = tx_calc.calculate_vr_from_vm_va(from_bus['vm'], from_bus['va'])
-            vfj = tx_calc.calculate_vj_from_vm_va(from_bus['vm'], from_bus['va'])
-            vtr = tx_calc.calculate_vr_from_vm_va(to_bus['vm'], to_bus['va'])
-            vtj = tx_calc.calculate_vj_from_vm_va(to_bus['vm'], to_bus['va'])
+            vfr = tx_calc.calculate_vr_from_vm_va_degrees(from_bus['vm'], from_bus['va'])
+            vfj = tx_calc.calculate_vj_from_vm_va_degrees(from_bus['vm'], from_bus['va'])
+            vtr = tx_calc.calculate_vr_from_vm_va_degrees(to_bus['vm'], to_bus['va'])
+            vtj = tx_calc.calculate_vj_from_vm_va_degrees(to_bus['vm'], to_bus['va'])
             ifr = tx_calc.calculate_ifr(vfr, vfj, vtr, vtj, y_matrix)
             ifj = tx_calc.calculate_ifj(vfr, vfj, vtr, vtj, y_matrix)
             itr = tx_calc.calculate_itr(vfr, vfj, vtr, vtj, y_matrix)
@@ -130,10 +137,10 @@ def dict_of_branch_powers(branches, buses):
             and to_bus['vm'] is not None and to_bus['va'] is not None:
             # we have all the information we need
             y_matrix = tx_calc.calculate_y_matrix_from_branch(branch)
-            vfr = tx_calc.calculate_vr_from_vm_va(from_bus['vm'], from_bus['va'])
-            vfj = tx_calc.calculate_vj_from_vm_va(from_bus['vm'], from_bus['va'])
-            vtr = tx_calc.calculate_vr_from_vm_va(to_bus['vm'], to_bus['va'])
-            vtj = tx_calc.calculate_vj_from_vm_va(to_bus['vm'], to_bus['va'])
+            vfr = tx_calc.calculate_vr_from_vm_va_degrees(from_bus['vm'], from_bus['va'])
+            vfj = tx_calc.calculate_vj_from_vm_va_degrees(from_bus['vm'], from_bus['va'])
+            vtr = tx_calc.calculate_vr_from_vm_va_degrees(to_bus['vm'], to_bus['va'])
+            vtj = tx_calc.calculate_vj_from_vm_va_degrees(to_bus['vm'], to_bus['va'])
             ifr = tx_calc.calculate_ifr(vfr, vfj, vtr, vtj, y_matrix)
             ifj = tx_calc.calculate_ifj(vfr, vfj, vtr, vtj, y_matrix)
             itr = tx_calc.calculate_itr(vfr, vfj, vtr, vtj, y_matrix)
@@ -173,6 +180,38 @@ def gens_by_bus(buses, gens):
         gens_by_bus[gen['bus']].append(gen_name)
 
     return gens_by_bus
+
+def over_gen_limit(load, gens, gen_maxs):
+    '''
+    Calculates the maximum amount of over-generation
+    given a load and set of generators with
+    associated maximum outputs
+    '''
+    max_over_gen = 0.
+    if load < 0.:
+        max_over_gen += -load
+    for g in gens:
+        g_max = gen_maxs[g]
+        if g_max > 0:
+            max_over_gen += g_max
+
+    return max_over_gen
+
+def load_shed_limit(load, gens, gen_mins):
+    '''
+    Calculates the maximum amount of load shedding
+    given a load and set of generators with
+    associated minimum outputs
+    '''
+    max_load_shed = 0.
+    if load > 0.:
+        max_load_shed += load
+    for g in gens:
+        g_min = gen_mins[g]
+        if g_min < 0:
+            max_load_shed += -g_min
+
+    return max_load_shed
 
 ## attributes which are scaled for power flow models
 ancillary_service_stack = [
@@ -214,6 +253,8 @@ scaled_attributes = {
                                                           'q_max',
                                                           'startup_capacity',
                                                           'shutdown_capacity',
+                                                          'startup_curve',
+                                                          'shutdown_curve',
                                                           'ramp_up_60min',
                                                           'ramp_down_60min',
                                                           'initial_p_output',
@@ -234,9 +275,9 @@ scaled_attributes = {
                                                           'headroom',
                                                           'reg_up_supplied',
                                                           'reg_down_supplied',
-                                                          'spin_supplied',
                                                           'flex_up_supplied',
                                                           'flex_down_supplied',
+                                                          'spinning_supplied',
                                                           'non_spinning_supplied',
                                                           'supplemental_supplied',
                                                           'p_cost',
@@ -271,9 +312,22 @@ scaled_attributes = {
                                                       'q_load',
                                                       'p_load_shed',
                                                       'q_load_shed',
+                                                      'p_price',
+                                                      'q_price',
                                                      ],
                        ('element_type','branch', None) : [
                                                        'rating_long_term',
+                                                        'rating_short_term',
+                                                        'rating_emergency',
+                                                        'pf',
+                                                        'qf',
+                                                        'pt',
+                                                        'qt',
+                                                        'violation_penalty',
+                                                        'pf_violation',
+                                                        ],
+                       ('element_type','dc_branch', None) : [
+                                                        'rating_long_term',
                                                         'rating_short_term',
                                                         'rating_emergency',
                                                         'pf',
@@ -322,8 +376,14 @@ scaled_attributes = {
                                                                          'pf',
                                                                          'pf_violation',
                                                                        ],
+                       ('element_type', 'contingency', None) : [ 
+                                                                 'violation_penalty',
+                                                                 'pf',
+                                                                 'pf_violation',
+                                                               ],
                        ('system_attributes', None, None ) : [
                                                         'load_mismatch_cost',
+                                                        'q_load_mismatch_cost',
                                                         'reserve_shortfall_cost',
                                                      ] + \
                                                      ancillary_service_stack,
@@ -338,10 +398,10 @@ def unscale_ModelData_to_pu(model_data, inplace=False):
     return _convert_modeldata_pu(model_data, _multiply_by_baseMVA, inplace)
 
 
-def _multiply_by_baseMVA(element, attr_name, attr, baseMVA):
-    _scale_by_baseMVA(_mul, _div, element, attr_name, attr, baseMVA)
-def _divide_by_baseMVA(element, attr_name, attr, baseMVA):
-    _scale_by_baseMVA(_div, _mul, element, attr_name, attr, baseMVA)
+def _multiply_by_baseMVA(element, attr_name, attr, baseMVA, attributes):
+    _scale_by_baseMVA(_mul, _div, element, attr_name, attr, baseMVA, attributes)
+def _divide_by_baseMVA(element, attr_name, attr, baseMVA, attributes):
+    _scale_by_baseMVA(_div, _mul, element, attr_name, attr, baseMVA, attributes)
 
 def _mul(a,b):
     return a*b
@@ -353,38 +413,95 @@ def _get_op(normal_op, inverse_op, attr_name):
         return inverse_op 
     return normal_op
 
-def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA):
+def _no_op(a,b):
+    return a
+
+def _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes):
+    if 'data_type' in value:
+        _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
+    else: # recurse deeper
+        for k,v in value.items():
+            _scale_by_baseMVA(normal_op, inverse_op, value, k, v, baseMVA, attributes)
+
+def _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, attr, baseMVA, attributes):
     if attr is None:
         return
     if isinstance(attr, dict):
-        if 'data_type' in attr and attr['data_type'] == 'time_series':
-            op = _get_op(normal_op, inverse_op, attr_name)
-            values_list = attr['values']
-            for time, value in enumerate(values_list):
-                if isinstance(value, dict):
-                    _scale_by_baseMVA(normal_op, inverse_op, element, attr_name, value, baseMVA)
+        if 'data_type' in attr:
+            if attr['data_type'] == 'time_series':
+                if attr_name in attributes:
+                    op = _get_op(normal_op, inverse_op, attr_name)
                 else:
-                    values_list[time] = op( value , baseMVA )
-        elif 'data_type' in attr and attr['data_type'] == 'cost_curve':
-            if attr['cost_curve_type'] == 'polynomial':
-                values_dict = attr['values']
-                new_values = { int(power): coeff*(inverse_op(1.,baseMVA)**int(power)) \
-                                for (power, coeff) in values_dict.items() }
-                attr['values'] = new_values
-            elif attr['cost_curve_type'] == 'piecewise':
-                values_list_of_tuples = attr['values']
-                new_values = [ ( normal_op(point,baseMVA), cost) \
-                                for (point, cost) in values_list_of_tuples ]
-                attr['values'] = new_values
-        elif 'data_type' in attr and attr['data_type'] == 'fuel_curve':
-            values_list_of_tuples = attr['values']
-            new_values = [ ( normal_op(point,baseMVA), fuel) \
-                            for (point, fuel) in values_list_of_tuples ]
-            attr['values'] = new_values
-
-    else:
+                    op = _no_op
+                values_list = attr['values']
+                for time, value in enumerate(values_list):
+                    if isinstance(value, dict):
+                        _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, value, baseMVA, attributes)
+                    elif isinstance(value, list):
+                        values_list[time] = [ op(v, baseMVA) for v in value ]
+                    elif isinstance(value, tuple):
+                        values_list[time] = tuple( op(v, baseMVA) for v in value )
+                    else:
+                        values_list[time] = op( value , baseMVA )
+            elif attr['data_type'] == 'cost_curve':
+                if attr['cost_curve_type'] == 'polynomial':
+                    values_dict = attr['values']
+                    if 'data_type' in values_dict:
+                        _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, values_dict, baseMVA, attributes)
+                    else:
+                        attr['values'] = { int(power): coeff*(inverse_op(1.,baseMVA)**int(power)) \
+                                        for (power, coeff) in values_dict.items() }
+                elif attr['cost_curve_type'] == 'piecewise':
+                    values = attr['values']
+                    if isinstance(values, list):
+                        attr['values'] = [ (normal_op(point,baseMVA), cost) \
+                                        for (point, cost) in values ]
+                    elif isinstance(values, tuple):
+                        attr['values'] = tuple( (normal_op(point,baseMVA), cost) \
+                                            for (point, cost) in values )
+                    elif isinstance(values, dict):
+                        _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, values, baseMVA, attributes)
+                    else:
+                        raise RuntimeError("Unexpected case converting piecewise cost curve")
+            elif attr['data_type'] == 'fuel_curve':
+                values = attr['values']
+                if isinstance(values, list):
+                    attr['values'] = [ (normal_op(point,baseMVA), fuel) \
+                                    for (point, fuel) in values ]
+                elif isinstance(values, tuple):
+                    attr['values'] = tuple( (normal_op(point,baseMVA), fuel) \
+                                        for (point, fuel) in values )
+                elif isinstance(values, dict):
+                    _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, values, baseMVA, attributes)
+                else:
+                    raise RuntimeError("Unexpected case converting piecewise fuel curve")
+            else: # potentially recurse deeper on the "values"
+                if attr_name in attributes:
+                    op = _get_op(normal_op, inverse_op, attr_name)
+                else:
+                    op = _no_op
+                values = attr['values']
+                if isinstance(values, dict):
+                    _recurse_deeper_dict(normal_op, inverse_op, element, attr_name, values, baseMVA, attributes)
+                elif isinstance(values, list):
+                    attr['values'] = [ op(v, baseMVA) for v in values ]
+                elif isinstance(value, tuple):
+                    attr['values'] = tuple( op(v, baseMVA) for v in values )
+                else:
+                    attr['values'] = op( values , baseMVA )
+        else: # recurse deeper AND we've already checked for data_type
+            for k,v in attr.items():
+                _scale_by_baseMVA(normal_op, inverse_op, attr, k, v, baseMVA, attributes)
+    elif attr_name in attributes:
         op = _get_op(normal_op, inverse_op, attr_name)
-        element[attr_name] = op( attr , baseMVA )
+        if isinstance(attr, list):
+            element[attr_name] = [ op(a, baseMVA) for a in attr ]
+        elif isinstance(attr, tuple):
+            element[attr_name] = tuple( op(a, baseMVA) for a in attr )
+        else:
+            element[attr_name] = op( attr , baseMVA )
+    else:
+        return
 
 
 ## NOTE: ideally this would be done in the definitions of
@@ -406,8 +523,7 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
             assert element_type is None
             assert element_subtype is None
             for name, sys_attr in system_dict.items():
-                if name in attributes:
-                    transform_func(system_dict, name, sys_attr, baseMVA)
+                transform_func(system_dict, name, sys_attr, baseMVA, attributes)
         
         elif attr_type == 'element_type':
             if element_type not in md.data['elements']:
@@ -416,17 +532,173 @@ def _convert_modeldata_pu(model_data, transform_func, inplace):
             if element_subtype is None:
                 for name, element in element_dict.items():
                     for attr_name, attr in element.items():
-                        if attr_name in attributes:
-                            transform_func(element, attr_name, attr, baseMVA)
+                        transform_func(element, attr_name, attr, baseMVA, attributes)
             else: ## allow for different actions depending on the subtype
                 for name, element in element_dict.items():
                     element_subtype_key = element_type+'_type'
                     if element_subtype == element[element_subtype_key]:
                         for attr_name, attr in element.items():
-                            if attr_name in attributes:
-                                transform_func(element, attr_name, attr, baseMVA)
+                            transform_func(element, attr_name, attr, baseMVA, attributes)
 
     if inplace:
         return
     else:
         return md
+
+def radians_from_degrees_dict(d):
+    return {k:radians(d[k]) for k in d}
+
+def _insert_first_point(p_min, values, pop=True):
+    first_slope = (values[1][1] - values[0][1]) / (values[1][0] - values[0][0])
+    first_intercept = values[0][1] - first_slope * values[0][0]
+    first_cost = first_slope * p_min + first_intercept
+    if pop:
+        values.pop(0)
+    values.insert(0, (p_min, first_cost))
+
+def _insert_last_point(p_max, values, pop=True):
+    last_slope = (values[-1][1] - values[-2][1]) / (values[-1][0] - values[-2][0])
+    last_intercept = values[-1][1] - last_slope * values[-1][0]
+    last_cost = last_slope * p_max + last_intercept
+    if pop:
+        values.pop()
+    values.append((p_max, last_cost))
+
+def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=None):
+    """
+    Parameters
+    ----------
+    curve: dict
+    curve_type: str
+    p_min: float
+    p_max: float
+    gen_name: str
+    t: None or int
+
+    Returns
+    -------
+    cleaned_values: list or dict
+        If the curve is piecewise, this function will return a list. If the curve is
+        a polynomial, this function will return a dict.
+    """
+    # validate that what we have is a cost_curve
+    if curve['data_type'] != curve_type:
+        raise ValueError(f"cost curve must be of data_type {curve_type}.")
+
+    # get the values, check against something empty
+    values = curve['values']
+    if len(values) == 0:
+        if t is None:
+            logger.warning(f"WARNING: Generator {gen_name} has no cost information associated with it")
+        else:
+            logger.warning(f"WARNING: Generator {gen_name} has no cost information associated with it at time {t}")
+        return copy.copy(values)
+
+
+    # if we have a piecewise cost curve, ensure its convexity past p_min
+    # if no curve_type+'_type' is specified, we assume piecewise (for backwards
+    # compatibility with no 'fuel_curve_type')
+    if curve_type + '_type' not in curve or \
+            curve[curve_type + '_type'] == 'piecewise':
+
+        # handle this case specially
+        if len(values) == 1:
+            o1, c1 = values[0]
+            # allow and resolve some FP error
+            if math.isclose(p_min, p_max) and (math.isclose(p_min, o1) or math.isclose(p_max, o1)):
+                return [(p_min,c1)]
+            else:
+                at_time_t = "" if (t is None) else f"at time {t}"
+                raise ValueError(f"Generator {gen_name} {at_time_t} has only a single point on its "
+                                  "piecewise cost curve which is not covered by p_min or p_max.")
+
+        # print a warning (once) if we're extending the cost curve
+        if (p_min < values[0][0] and not math.isclose(p_min, values[0][0])) or \
+                (p_max > values[-1][0] and not math.isclose(p_max, values[-1][0])):
+            msg = f"WARNING: Extending piecewise linear cost curve beyond p_min and/or p_max for generator {gen_name}"
+            if validate_and_clean_cost_curve._printed_warning:
+                logger.debug(msg)
+            else:
+                logger.warning(msg+" (and perhaps others)")
+                validate_and_clean_cost_curve._printed_warning = True
+
+            # we should have copied the user's data at this point, and this
+            # will allow the user to see in the output *how* we modified their
+            # provided cost curve, in case that's useful
+            if (p_min < values[0][0] and not math.isclose(p_min, values[0][0])):
+                _insert_first_point(p_min, values, pop=False)
+            if (p_max > values[-1][0] and not math.isclose(p_max, values[-1][0])):
+                _insert_last_point(p_max, values, pop=False)
+
+        # now that we've extended the cost curve, we need to catch the
+        # case that p_min == p_max and we're at one of the extremes
+        # of the cost curve. The logic below fails in this case.
+        if math.isclose(p_min, p_max):
+            of, cf = values[0]
+            if math.isclose(p_min, of):
+                return [(p_min,cf)]
+            ol, cl = values[-1]
+            if math.isclose(p_max, ol):
+                return [(p_max,cl)]
+
+        cleaned_values = list()
+        last_slope = None
+        for (o1, c1), (o2, c2) in zip(values, values[1:]):
+            if o2 <= p_min or math.isclose(p_min, o2):
+                continue
+
+            if p_max <= o1 or math.isclose(p_max, o1):
+                continue
+
+            if len(cleaned_values) == 0:
+                cleaned_values.append((o1, c1))
+
+            if math.isclose(o2, o1):
+                if math.isclose(c2, c1):
+                    continue
+                raise ValueError(f"Found piecewise {curve_type} for generator {gen_name} at time {t} " +
+                                 "with nearly infinite slope.")
+
+            cleaned_values.append((o2, c2))
+
+            # else p_min < o2
+            if last_slope is None:
+                last_slope = (c2 - c1) / (o2 - o1)
+                continue
+            this_slope = (c2 - c1) / (o2 - o1)
+            if this_slope < last_slope and not math.isclose(this_slope, last_slope):
+                raise ValueError(f"Piecewise {curve_type} must be convex above p_min. " +
+                                 f"Found non-convex piecewise {curve_type} for generator {gen_name} at time {t}")
+
+            # combine pieces if slope is the same
+            if math.isclose(this_slope, last_slope):
+                cleaned_values.pop(-2)
+            else: # update last slope
+                last_slope = this_slope
+
+        # match first and last point with p_min and p_max
+        _insert_first_point(p_min, cleaned_values, pop=True)
+        _insert_last_point(p_max, cleaned_values, pop=True)
+
+        # If p_min is p_max, we'll have two identical
+        # (or close to identical) points. In this case
+        # we'll just take the last one.
+        if math.isclose(p_min, p_max):
+            cleaned_values.pop(0)
+
+    # if we have a quadratic cost curve, ensure its convexity
+    elif curve[curve_type + '_type'] == 'polynomial':
+        if set(values.keys()) <= {0, 1, 2}:
+            if 2 in values and values[2] < 0:
+                raise ValueError(f"Polynomial {curve_type}s must be convex. " +
+                                 f"Found non-convex {curve_type} for generator {gen_name} at time {t}.")
+        else:
+            raise ValueError(f"Polynomial {curve_type}s must be quadratic. " +
+                             f"Found non-quatric {curve_type} for generator {gen_name} at time {t}.")
+        cleaned_values = copy.copy(values)
+    else:
+        raise Exception(f"Unexpected {curve_type}_type")
+
+    return cleaned_values
+
+validate_and_clean_cost_curve._printed_warning = False

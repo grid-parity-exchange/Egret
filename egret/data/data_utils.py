@@ -91,3 +91,39 @@ def _get_sub_list_indicies(master_list, sub_list):
             raise Exception("Could not find element {} in the list {}".format(sub_list[sub_list_pos], master_list))
     return sub_index_list
 
+def _read_from_file(filename, file_type):
+    valid_file_types = ['json', 'json.gz', 'm', 'dat', 'pglib-uc']
+    if file_type is not None and file_type not in valid_file_types:
+        raise Exception("Unrecognized file_type {}. Valid file types are {}".format(file_type, valid_file_types))
+    elif file_type is None:
+        ## identify the file type
+        if filename[-5:] == '.json':
+            file_type = 'json'
+        elif filename[-8:] == '.json.gz':
+            file_type = 'json.gz'
+        elif filename[-2:] == '.m':
+            file_type = 'm'
+        elif filename[-4:] == '.dat':
+            file_type = 'dat'
+        else:
+            raise Exception("Could not infer type of file {} from its extension!".format(filename))
+
+    if file_type == 'json':
+        import json
+        with open(filename) as f:
+            data = json.load(f)
+    elif file_type == 'json.gz':
+        import json
+        import gzip
+        with gzip.open(filename, 'rt') as f:
+            data = json.load(f)
+    elif file_type == 'm':
+        from egret.parsers.matpower_parser import create_model_data_dict
+        data = create_model_data_dict(filename)
+    elif file_type == 'dat':
+        from egret.parsers.prescient_dat_parser import create_model_data_dict
+        data = create_model_data_dict(filename)
+    elif file_type == 'pglib-uc':
+        from egret.parsers.pglib_uc_parser import create_model_data_dict
+        data = create_model_data_dict(filename)
+    return data
