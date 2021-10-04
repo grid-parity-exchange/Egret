@@ -28,12 +28,13 @@ import egret.common.lazy_ptdf_utils as lpu
 
 from egret.model_library.defn import CoordinateType, ApproximationType, RelaxationType, BasePointType
 from egret.data.data_utils import map_items, zip_items
-from egret.models.copperplate_dispatch import _include_system_feasibility_slack
+from egret.models.copperplate_dispatch import _include_system_feasibility_slack, _validate_and_extract_slack_penalty
 from egret.models.dcopf import _include_feasibility_slack
-from math import pi, radians
+from math import pi, radians, degrees
 
 
-def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC, include_angle_diff_limits=False, include_feasibility_slack=False):
+def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.SOC,
+        include_angle_diff_limits=False, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -66,9 +67,10 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
-                          bounds=va_bounds
-                          )
+    libbus.declare_var_va(model, bus_attrs['names'],
+            initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
+            bounds=va_bounds
+            )
 
     dva_initialize = {k: 0.0 for k in branch_attrs['names']}
     libbranch.declare_var_dva(model, branch_attrs['names'],
@@ -79,7 +81,9 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     p_rhs_kwargs = {}
     penalty_expr = None
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)                
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'], bus_p_loads,
+                                                                gens_by_bus, gen_attrs, p_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -93,8 +97,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
                           )
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
 
     branch_p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
 
@@ -183,12 +187,18 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
                                                       )
 
     ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
-
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
@@ -197,7 +207,8 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     return model, md
 
 
-def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options=None):
+def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False,
+        ptdf_options=None, pw_cost_model='delta'):
 
     ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
@@ -243,7 +254,8 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
     ### include the feasibility slack for the system balance
     p_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty)
 
     ### declare net withdraw expression for use in PTDF power flows
     libbus.declare_expr_p_net_withdraw_at_bus(model=model,
@@ -262,7 +274,7 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
         if k_p_max is None:
             pfl_bounds[k] = (None, None)
         else:
-            pfl_bounds[k] = (-(k_p_max**2), k_p_max**2)
+            pfl_bounds[k] = (0, k_p_max**2)
 
     pfl_init = {k: 0 for k in branches.keys()}
 
@@ -320,12 +332,18 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
                                                  )
 
     ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
-
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
@@ -400,13 +418,18 @@ def solve_dcopf_losses(model_data,
             b_dict['pl'] = value(m.pl[b])
             b_dict.pop('qlmp',None)
             b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
-            b_dict['va'] = value(m.va[b])
+            b_dict['va'] = degrees(value(m.va[b]))
+            if hasattr(m, 'p_load_shed'):
+                b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
     elif dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:
         PTDF = m._PTDF
         ptdf_r = PTDF.PTDFM
         ldf = PTDF.LDF
         buses_idx = PTDF.buses_keys
         branches_idx = PTDF.branches_keys
+
+        if hasattr(m, 'p_load_shed'):
+            md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
 
         for j, b in enumerate(buses_idx):
             b_dict = buses[b]

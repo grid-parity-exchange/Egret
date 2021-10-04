@@ -11,7 +11,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, get_linear_expr
 
 component_name = 'generation_limits'
 
@@ -32,19 +32,36 @@ def _CA_lower_limit(model):
     
     model.EnforceGeneratorOutputLimitsPartA = Constraint(model.ThermalGenerators, model.TimePeriods, rule=enforce_generator_output_limits_rule_part_a)
 
+def _get_initial_maximum_power_available_upperbound_lists(m,g,t):
+    linear_vars, linear_coefs = m._get_maximum_power_available_lists(m,g,t)
+    linear_vars.append(m.UnitOn[g,t])
+    linear_coefs.append(-m.MaximumPowerOutput[g,t])
+    return linear_vars, linear_coefs
+
+def _get_initial_power_generated_upperbound_lists(m,g,t):
+    linear_vars, linear_coefs = m._get_power_generated_lists(m,g,t)
+    linear_vars.append(m.UnitOn[g,t])
+    linear_coefs.append(-m.MaximumPowerOutput[g,t])
+    return linear_vars, linear_coefs
 
 def _MLR_generation_limits_uptime_1(model, tightened=False):
+
+    linear_expr = get_linear_expr(model.UnitOn, model.UnitStart, model.UnitStop)
+
     ## equations (9), (10) in ME:
     def power_limit_from_start_rule(m,g,t):
         if value(m.ScaledMinimumUpTime[g]) > 1:
             return Constraint.Skip
-        if t == m.NumTimePeriods:
-            return m.MaximumPowerAvailable[g,t] <= (m.MaximumPowerOutput[g,t]) * m.UnitOn[g,t] \
-                                                - (m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t])*m.UnitStart[g,t]
-        return m.MaximumPowerAvailable[g,t] <= (m.MaximumPowerOutput[g,t]) * m.UnitOn[g,t] \
-                                                - (m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t])*m.UnitStart[g,t] \
-                        - (max(value(m.ScaledStartupRampLimit[g,t] - m.ScaledShutdownRampLimit[g,t]), 0)*m.UnitStop[g,t+1] if tightened else 0.)
-    					  
+        linear_vars, linear_coefs = _get_initial_maximum_power_available_upperbound_lists(m,g,t)
+        linear_vars.append(m.UnitStart[g,t])
+        linear_coefs.append(m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t])
+        if t == m.NumTimePeriods or not tightened:
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
+        coef = max(value(m.ScaledStartupRampLimit[g,t]) - value(m.ScaledShutdownRampLimit[g,t]), 0)
+        if coef != 0.:
+            linear_vars.append(m.UnitStop[g,t+1])
+            linear_coefs.append(coef)
+        return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
     
     model.power_limit_from_start=Constraint(model.ThermalGenerators, model.TimePeriods, rule=power_limit_from_start_rule)
     
@@ -53,26 +70,37 @@ def _MLR_generation_limits_uptime_1(model, tightened=False):
             return Constraint.Skip
         if t == m.NumTimePeriods:
             return Constraint.Skip ## This case is handled above
-        return m.MaximumPowerAvailable[g,t] <= (m.MaximumPowerOutput[g,t]) * m.UnitOn[g,t] \
-                                                - (m.MaximumPowerOutput[g,t] - m.ScaledShutdownRampLimit[g,t])*m.UnitStop[g,t+1] \
-                        - (max(value(m.ScaledShutdownRampLimit[g,t] - m.ScaledStartupRampLimit[g,t]), 0)*m.UnitStart[g,t] if tightened else 0.)
+        linear_vars, linear_coefs = _get_initial_maximum_power_available_upperbound_lists(m,g,t)
+        linear_vars.append(m.UnitStop[g,t+1])
+        linear_coefs.append(m.MaximumPowerOutput[g,t] - m.ScaledShutdownRampLimit[g,t])
+        if not tightened:
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
+        coef = max(value(m.ScaledShutdownRampLimit[g,t]) - value(m.ScaledStartupRampLimit[g,t]), 0)
+        if coef != 0.:
+            linear_vars.append(m.UnitStart[g,t])
+            linear_coefs.append(coef)
+        return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
     
     model.power_limit_from_stop=Constraint(model.ThermalGenerators, model.TimePeriods, rule=power_limit_from_stop_rule)
 
 def _MLR_generation_limits(model, tightened=False):
 
     _MLR_generation_limits_uptime_1(model, tightened)
+
+    linear_expr = get_linear_expr(model.UnitOn, model.UnitStart, model.UnitStop)
     
     ## equation (11) in ME:
     def power_limit_from_start_stop_rule(m,g,t):
         if value(m.ScaledMinimumUpTime[g]) <= 1:
             return Constraint.Skip
+        linear_vars, linear_coefs = _get_initial_maximum_power_available_upperbound_lists(m,g,t)
+        linear_vars.append(m.UnitStart[g,t])
+        linear_coefs.append(m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t])
         if t == m.NumTimePeriods: 
-            return m.MaximumPowerAvailable[g,t] <= (m.MaximumPowerOutput[g,t]) *m.UnitOn[g,t] \
-                                                  - (m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t])*m.UnitStart[g,t]
-        return m.MaximumPowerAvailable[g,t] <= (m.MaximumPowerOutput[g,t]) *m.UnitOn[g,t] \
-                                              - (m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t])*m.UnitStart[g,t] \
-                                              - (m.MaximumPowerOutput[g,t] - m.ScaledShutdownRampLimit[g,t])*m.UnitStop[g,t+1]
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
+        linear_vars.append(m.UnitStop[g,t+1])
+        linear_coefs.append(m.MaximumPowerOutput[g,t] - m.ScaledShutdownRampLimit[g,t])
+        return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
     
     model.power_limit_from_start_stop=Constraint(model.ThermalGenerators,model.TimePeriods,rule=power_limit_from_start_stop_rule)
 
@@ -163,25 +191,33 @@ def _get_look_back_periods(m,g,t,UT_end):
 
 
 def _pan_guan_generation_limits(model, include_UT_1=True):
+   
+    linear_expr = get_linear_expr(model.UnitOn, model.UnitStart, model.UnitStop)
 
     #add the stronger ramp-up based inequality, which is a variant of power_limit_from_start_stop
     def power_limit_from_start_stop_rule(m,g,t):
         if (not include_UT_1) and (value(m.ScaledMinimumUpTime[g]) <= 1):
             return Constraint.Skip
         ## time to ramp-up
-        if value(m.ScaledNominalRampUpLimit[g,t]) == 0.:
-            ## if the generator can't ramp up, then how can
-            ## it ever be above min power?
-            return m.MaximumPowerAvailable[g,t] <= m.MinimumPowerOutput[g,t] * m.UnitOn[g,t]
+        Start = m.UnitStart
+        Pmax = m.MaximumPowerOutput[g,t]
+        SU = m.ScaledStartupRampLimit
+        RU = m.ScaledNominalRampUpLimit
         if t == m.NumTimePeriods: 
-            return m.MaximumPowerAvailable[g,t] <= (m.MaximumPowerOutput[g,t]) *m.UnitOn[g,t] \
-                                                  - sum((m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t-i] - sum(m.ScaledNominalRampUpLimit[g,t-j] for j in range(1,i+1)))*m.UnitStart[g,t-i] \
-                                                                    for i in range(0,_get_look_back_periods(m,g,t,m.ScaledMinimumUpTime[g]-1)+1) )
-                                                                                                                            ##### ^^^ in this case we can squeeze one more into the sum
-        return m.MaximumPowerAvailable[g,t] <= (m.MaximumPowerOutput[g,t]) *m.UnitOn[g,t] \
-                                              - sum((m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t-i] - sum(m.ScaledNominalRampUpLimit[g,t-j] for j in range(1,i+1)))*m.UnitStart[g,t-i] \
-                                                                for i in range(0, _get_look_back_periods(m,g,t,m.ScaledMinimumUpTime[g]-2)+1) ) \
-                                              - (m.MaximumPowerOutput[g,t] - m.ScaledShutdownRampLimit[g,t])*m.UnitStop[g,t+1]
+            ##### ^^^ in this case we can squeeze one more into the sum
+            linear_vars, linear_coefs = _get_initial_maximum_power_available_upperbound_lists(m,g,t)
+            for i in range(0, _get_look_back_periods(m,g,t,m.ScaledMinimumUpTime[g]-1)+1):
+                linear_vars.append(Start[g,t-i])
+                linear_coefs.append(Pmax - SU[g,t-i] - sum(RU[g,t-j] for j in range(1,i+1)))
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
+        else:
+            linear_vars, linear_coefs = _get_initial_maximum_power_available_upperbound_lists(m,g,t)
+            for i in range(0, _get_look_back_periods(m,g,t,m.ScaledMinimumUpTime[g]-2)+1):
+                linear_vars.append(Start[g,t-i])
+                linear_coefs.append(Pmax - SU[g,t-i] - sum(RU[g,t-j] for j in range(1,i+1)))
+            linear_vars.append(m.UnitStop[g,t+1])
+            linear_coefs.append(Pmax - m.ScaledShutdownRampLimit[g,t])
+            return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
     
     model.power_limit_from_start_stop=Constraint(model.ThermalGenerators,model.TimePeriods,rule=power_limit_from_start_stop_rule)
 
@@ -208,12 +244,10 @@ def pan_guan_gentile_generation_limits(model):
 
 def _KOW_generation_limits(model):
 
+    linear_expr = get_linear_expr(model.UnitOn, model.UnitStart, model.UnitStop)
+
     ## We'll assume _MLR_generation_limits_uptime_1 and _pan_guan_generation_limits are included
     def max_power_limit_from_starts_rule(m,g,t):
-        if value(m.ScaledNominalRampUpLimit[g,t]) == 0.:
-            ## if the generator can't ramp up, then how can
-            ## it ever be above min power?
-            return m.MaximumPowerAvailable[g,t] <= m.MinimumPowerOutput[g,t] * m.UnitOn[g,t]
         time_RU = _get_look_back_periods(m,g,t,None)
         if time_RU <= 0:
             return Constraint.Skip
@@ -221,43 +255,61 @@ def _KOW_generation_limits(model):
         ## this case is handled better above
         if time_RU <= UT - 2 or t == m.NumTimePeriods:
             return Constraint.Skip
+        Start = m.UnitStart
+        Pmax = m.MaximumPowerOutput[g,t]
+        SU = m.ScaledStartupRampLimit
+        RU = m.ScaledNominalRampUpLimit
+
+        linear_vars, linear_coefs = _get_initial_maximum_power_available_upperbound_lists(m,g,t)
+        for i in range(0, min(time_RU, UT-1, t-value(m.InitialTime))+1):
+            linear_vars.append(Start[g,t-i])
+            linear_coefs.append(Pmax - SU[g,t-i] - sum(RU[g,t-j] for j in range(1,i+1)))
+        return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
+        '''
         return m.MaximumPowerAvailable[g,t] <= (m.MaximumPowerOutput[g,t]) *m.UnitOn[g,t] \
                                               - sum((m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t-i] - sum(m.ScaledNominalRampUpLimit[g,t-j] for j in range(1,i+1)))*m.UnitStart[g,t-i] \
                                                                 for i in range(0, min(time_RU, UT-1, t-value(m.InitialTime))+1) )
+        '''
     model.max_power_limit_from_starts=Constraint(model.ThermalGenerators, model.TimePeriods, rule=max_power_limit_from_starts_rule)
 
     ## NOTE: it seems this tightening should really be done on the p^l variables, when they exist
     def power_limit_from_start_stops_rule(m,g,t):
-        if value(m.ScaledNominalRampUpLimit[g,t]) == 0.:
-            ## if the generator can't ramp up, then how can
-            ## it ever be above min power?
-            return m.MaximumPowerAvailable[g,t] <= m.MinimumPowerOutput[g,t] * m.UnitOn[g,t]
-        elif value(m.ScaledNominalRampDownLimit[g,t]) == 0.:
-            ## if the generator can't ramp down, then how can
-            ## it ever be above min power?
-            return m.MaximumPowerAvailable[g,t] <= m.MinimumPowerOutput[g,t] * m.UnitOn[g,t]
         UT = value(m.ScaledMinimumUpTime[g])
         SD_time_limit = _get_look_forward_periods(m,g,t,UT-1)
         if SD_time_limit <= 0: ## this is handled by the _MLR_generation_limits or _pan_guan_generation_limits
                                ## and this is needed so this number isn't negative in the computation of SU_time_limit below
             return Constraint.Skip
         SU_time_limit = _get_look_back_periods(m,g,t,UT-2-SD_time_limit)
-        expr = m.MaximumPowerOutput[g,t]*m.UnitOn[g,t] \
-                                        - sum((m.MaximumPowerOutput[g,t] - m.ScaledShutdownRampLimit[g,t+i] - sum(m.ScaledNominalRampDownLimit[g,t+j] for j in range(1,i+1)))*m.UnitStop[g,t+i+1] \
-                                               for i in range(0, SD_time_limit+1)) \
-                                        - sum((m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t-i] - sum(m.ScaledNominalRampUpLimit[g,t-j] for j in range(1,i+1)))*m.UnitStart[g,t-i] \
-                                               for i in range(0, SU_time_limit+1))                                
+
+        Start = m.UnitStart
+        Stop = m.UnitStop
+        Pmax = m.MaximumPowerOutput[g,t]
+
+        SU = m.ScaledStartupRampLimit
+        SD = m.ScaledShutdownRampLimit
+        RU = m.ScaledNominalRampUpLimit
+        RD = m.ScaledNominalRampDownLimit
+
+        linear_vars, linear_coefs = _get_initial_power_generated_upperbound_lists(m,g,t)
+        for i in range(0, SD_time_limit+1):
+            linear_vars.append(Stop[g,t+i+1])
+            linear_coefs.append(Pmax - SD[g,t+i] - sum(RD[g,t+j] for j in range(1,i+1)))
+        for i in range(0, SU_time_limit+1):
+            linear_vars.append(Start[g,t-i])
+            linear_coefs.append(Pmax - SU[g,t-i] - sum(RU[g,t-j] for j in range(1,i+1)))
 
         full_range = (UT >= max(SU_time_limit,0) + max(SD_time_limit,0) + 2)
         if not full_range: 
             i = SU_time_limit+1
             if (t-i) >= value(m.InitialTime):
-                expr -= max(value( (m.MaximumPowerOutput[g,t] - m.ScaledShutdownRampLimit[g,t+SD_time_limit] - sum(m.ScaledNominalRampDownLimit[g,t+j] for j in range(1,SD_time_limit+1)) - (m.MaximumPowerOutput[g,t] - m.ScaledStartupRampLimit[g,t-i] - sum(m.ScaledNominalRampUpLimit[g,t-j] for j in range(1,i+1)))) ),0)*m.UnitStart[g,t-i]
-        return m.PowerGenerated[g,t] <= expr
+                coef =  max((value(Pmax) - value(SD[g,t+SD_time_limit]) - sum(value(RD[g,t+j]) for j in range(1,SD_time_limit+1)) - \
+                        (value(Pmax) - value(SU[g,t-i]) - sum(value(RU[g,t-j]) for j in range(1,i+1)))), 0)
+                if coef != 0:
+                    linear_vars.append(Start[g,t-i])
+                    linear_coefs.append(coef)
+        return (None, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0)
 
     model.power_limit_from_start_stops=Constraint(model.ThermalGenerators, model.TimePeriods, rule=power_limit_from_start_stops_rule)
-
-        
 
 
 @add_model_attr(component_name, requires = {'data_loader': None,

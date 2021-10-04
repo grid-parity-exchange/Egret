@@ -12,10 +12,11 @@ from pyomo.environ import *
 import math
 from functools import lru_cache
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, get_linear_expr
 from .generation_limits import _get_look_back_periods, _get_look_forward_periods
 
 component_name = 'production_costs'
+
 
 ## NOTE: for now we'll just consider all piecewise variables to represent
 ##       power above minimum. This is how it's done the the Carrion-Arroyo 
@@ -84,56 +85,47 @@ def _basic_production_costs_vars(model):
     
     model.PiecewiseProduction = Var( model.PiecewiseProductionCostsIndexSet, within=NonNegativeReals, bounds = piecewise_production_bounds_rule )
     
+    linear_expr = get_linear_expr(model.PowerGeneratedAboveMinimum)
+
     def piecewise_production_sum_rule(m, g, t):
-        return sum( m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1) ) == m.PowerGeneratedAboveMinimum[g,t] 
+        linear_vars = list( m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1))
+        linear_coefs = [1.]*len(linear_vars)
+        linear_vars.append(m.PowerGeneratedAboveMinimum[g,t])
+        linear_coefs.append(-1.)
+        return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
     model.PiecewiseProductionSum = Constraint( model.PiecewiseGeneratorTimeIndexSet, rule=piecewise_production_sum_rule )
 
 def _basic_production_costs_constr(model):
 
     model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
 
-    def piecewise_production_costs_rule(m, g, t):
-        if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) *
-           m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1)) 
-        elif (g,t) in m.LinearGeneratorTimeIndexSet:
-            i = 0
-            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
-        else:
-            return m.ProductionCost[g,t] == 0.
-    
-    model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
-
-    _compute_total_production_cost(model)
-
-
-def _rescaled_basic_production_costs_vars(model):
-    
-    _get_piecewise_production_generators(model)
-
-    model.UnitPiecewiseProduction = Var( model.PiecewiseProductionCostsIndexSet, within=UnitInterval)
-
-    def piecewise_production_expr_rule(m, g, t, i):
-        return (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitPiecewiseProduction[g,t,i]
-    model.PiecewiseProduction = Expression( model.PiecewiseProductionCostsIndexSet, rule = piecewise_production_expr_rule )
-
-    def piecewise_production_sum_rule(m, g, t):
-        return sum( m.PiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1) ) == m.PowerGeneratedAboveMinimum[g,t]
-    model.PiecewiseProductionSum = Constraint( model.PiecewiseGeneratorTimeIndexSet, rule=piecewise_production_sum_rule )
-
-def _rescaled_basic_production_costs_constr(model):
-
-    model.ProductionCost = Var( model.SingleFuelGenerators, model.TimePeriods, within=Reals )
+    linear_expr = get_linear_expr()
 
     def piecewise_production_costs_rule(m, g, t):
+        
         if (g,t) in m.PiecewiseGeneratorTimeIndexSet:
-            return m.ProductionCost[g,t] == sum( (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i)) *
-           m.UnitPiecewiseProduction[g,t,i] for i in range(len(m.PowerGenerationPiecewisePoints[g,t])-1)) 
+            points = m.PowerGenerationPiecewisePoints[g,t]
+            costs = m.PowerGenerationPiecewiseCostValues[g,t]
+            time_scale = m.TimePeriodLengthHours
+            linear_coefs = [(time_scale*costs[i+1] - time_scale*costs[i])/(points[i+1] - points[i]) \
+                        for i in range(len(points)-1)]
+            linear_vars = [m.PiecewiseProduction[g,t,i] for i in range(len(points)-1)]
+            linear_coefs.append(-1.)
+            linear_vars.append(m.ProductionCost[g,t])
+            return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
         elif (g,t) in m.LinearGeneratorTimeIndexSet:
             i = 0
-            return m.ProductionCost[g,t] == (_production_cost_function(m,g,t,i+1) - _production_cost_function(m,g,t,i))/ (m.PowerGenerationPiecewisePoints[g,t][i+1]- m.PowerGenerationPiecewisePoints[g,t][i]) * m.PowerGeneratedAboveMinimum[g,t]
+            points = m.PowerGenerationPiecewisePoints[g,t]
+            costs = m.PowerGenerationPiecewiseCostValues[g,t]
+            time_scale = m.TimePeriodLengthHours
+            slope =(time_scale*costs[i+1] - time_scale*costs[i])/(points[i+1] - points[i])
+            linear_vars, linear_coefs = m._get_power_generated_above_minimum_lists(m,g,t)
+            linear_coefs = [slope*coef for coef in linear_coefs]
+            linear_vars.append(m.ProductionCost[g,t])
+            linear_coefs.append(-1.)
+            return (linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), 0.)
         else:
-            return m.ProductionCost[g,t] == 0.
+            return (m.ProductionCost[g,t], 0.)
     
     model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
@@ -206,15 +198,12 @@ def _step_coeff(upper, lower, susd):
                                             'status_vars': ['garver_3bin_vars','garver_3bin_relaxed_stop_vars', 'garver_2bin_vars', 'ALS_state_transition_vars'],
                                             'power_vars': None,
                                             })
-def KOW_production_costs_super_tight(model, rescaled=False):
+def KOW_production_costs_super_tight(model):
     '''
     production costs which take into account the ramping trajectories
     as noted, but not formulated, in text
     '''
-    if rescaled:
-        _rescaled_basic_production_costs_vars(model)
-    else:
-        _basic_production_costs_vars(model)
+    _basic_production_costs_vars(model)
 
     def piecewise_production_limits_from_start_stops_rule(m, g, t, i):
         RU = m.ScaledNominalRampUpLimit
@@ -292,21 +281,16 @@ def KOW_production_costs_super_tight(model, rescaled=False):
         return m.PiecewiseProduction[g,t,i] <= expr
     model.PiecewiseProductionLimits2 = Constraint( model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_limits_from_stops_start_rule )
 
-    if rescaled:
-        _rescaled_basic_production_costs_constr(model)
-    else:
-        _basic_production_costs_constr(model)
+    _basic_production_costs_constr(model)
 
 
-def _KOW_production_costs(model, tightened = False, rescaled = False):
+def _KOW_production_costs(model, tightened = False):
     '''
     Base for similarities between tightend and not KOW production costs
     '''
-    if rescaled:
-        _rescaled_basic_production_costs_vars(model)
-    else:
-        _basic_production_costs_vars(model)
+    _basic_production_costs_vars(model)
 
+    linear_expr = get_linear_expr(model.UnitOn, model.UnitStart, model.UnitStop)
 
     def piecewise_production_limits_rule(m, g, t, i):
         ### these can always be tightened based on SU/SD, regardless of the ramping/aggregation
@@ -314,28 +298,32 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
         upper = value(m.PowerGenerationPiecewisePoints[g,t][i+1])
         lower = value(m.PowerGenerationPiecewisePoints[g,t][i])
         SU = value(m.ScaledStartupRampLimit[g,t])
-        UT = value(m.ScaledMinimumUpTime[g])
         minP = value(m.MinimumPowerOutput[g,t])
 
         su_step = _step_coeff(upper, lower, SU-minP)
         if t < value(m.NumTimePeriods):
             SD = value(m.ScaledShutdownRampLimit[g,t])
+            UT = value(m.ScaledMinimumUpTime[g])
             sd_step = _step_coeff(upper, lower, SD-minP)
             if UT > 1:
-                return m.PiecewiseProduction[g,t,i] <= (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                        - su_step*m.UnitStart[g,t] \
-                                        - sd_step*m.UnitStop[g,t+1] 
+                linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t], m.UnitStop[g,t+1]]
+                linear_coefs = [-1., (upper-lower), -su_step, -sd_step]
+                return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
             else: ## MinimumUpTime[g] <= 1
-                expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                        - su_step*m.UnitStart[g,t] 
+                linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t],]
+                linear_coefs = [-1., (upper-lower), -su_step,]
                 if tightened:
-                    expr -= max(sd_step - su_step, 0)*m.UnitStop[g,t+1]
-                return m.PiecewiseProduction[g,t,i] <= expr 
+                    coef = -max(sd_step-su_step,0)
+                    if coef != 0:
+                        linear_vars.append(m.UnitStop[g,t+1])
+                        linear_coefs.append(coef)
+                return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
 
         else: ## t >= value(m.NumTimePeriods)
-            return m.PiecewiseProduction[g,t,i] <= (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                        - su_step*m.UnitStart[g,t] 
-            
+            linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStart[g,t],]
+            linear_coefs = [-1., (upper-lower), -su_step,]
+            return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
+
     model.PiecewiseProductionLimits = Constraint( model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_limits_rule )
     
     def piecewise_production_limits_rule2(m, g, t, i):
@@ -349,22 +337,23 @@ def _KOW_production_costs(model, tightened = False, rescaled = False):
             minP = value(m.MinimumPowerOutput[g,t])
 
             sd_step = _step_coeff(upper, lower, SD-minP)
-            expr = (m.PowerGenerationPiecewisePoints[g,t][i+1] - m.PowerGenerationPiecewisePoints[g,t][i])*m.UnitOn[g,t] \
-                                        - sd_step*m.UnitStop[g,t+1] 
+            linear_vars = [m.PiecewiseProduction[g,t,i], m.UnitOn[g,t], m.UnitStop[g,t+1],]
+            linear_coefs = [-1., (upper-lower), -sd_step,]
             if tightened:
                 SU = value(m.ScaledStartupRampLimit[g,t])
                 su_step = _step_coeff(upper, lower, SU-minP)
-                expr -= max(su_step - sd_step, 0)*m.UnitStart[g,t]
-            return m.PiecewiseProduction[g,t,i] <= expr
+                coef = -max(su_step - sd_step, 0)
+                if coef != 0:
+                    linear_vars.append(m.UnitStart[g,t])
+                    linear_coefs.append(coef)
+            return (0, linear_expr(linear_vars=linear_vars, linear_coefs=linear_coefs), None)
         else: ## MinimumUpTime[g] > 1 or we added it in the t == value(m.NumTimePeriods) clause above
             return Constraint.Skip
+
         
     model.PiecewiseProductionLimits2 = Constraint( model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_limits_rule2 )
     
-    if rescaled:
-        _rescaled_basic_production_costs_constr(model)
-    else:
-        _basic_production_costs_constr(model)
+    _basic_production_costs_constr(model)
 
 
 @add_model_attr(component_name, requires = {'data_loader': None,
@@ -403,23 +392,6 @@ def KOW_production_costs_tightened(model):
     '''
     _KOW_production_costs(model, True)
 
-@add_model_attr(component_name, requires = {'data_loader': None,
-                                            'status_vars': ['garver_3bin_vars','garver_3bin_relaxed_stop_vars', 'garver_2bin_vars', 'ALS_state_transition_vars'],
-                                            'power_vars': ['rescaled_power_vars'],
-                                            })
-def rescaled_KOW_production_costs_tightened(model):
-
-    '''
-    this is the (more ideal) production cost model introducted by:
-
-    Ben Knueven, Jim Ostrowski, and Jean-Paul Watson. Exploiting identical
-    generators in unit commitment. IEEE Transactions on Power Systems,
-    33(4), 2018.
-
-    with some tightening for when SU != SD, and unit rescaling
-    '''
-    _KOW_production_costs(model, True, True)
-    
 
 def _CW_production_costs_garver(model):
     '''
@@ -447,14 +419,14 @@ def _CW_production_costs_garver(model):
     def piecewise_production_costs_rule(m, g, t):
         return m.ProductionCost[g,t] == sum( (_production_cost_function(m, g, t, i))*m.PiecewiseProductionFrac[g,t,i] for i in range(1, len(m.PowerGenerationPiecewisePoints[g,t])))
 
-    model.ProductionCostConst = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
+    model.ProductionCostConstr = Constraint( model.SingleFuelGenerators, model.TimePeriods, rule=piecewise_production_costs_rule )
 
     _compute_total_production_cost(model)
 
 
 @add_model_attr(component_name, requires = {'data_loader': None,
                                             'status_vars': None,
-                                            'power_vars': ['garver_power_vars', 'rescaled_power_vars'],
+                                            'power_vars': ['garver_power_vars',],
                                             })
 def CW_production_costs_garver(model):
 
@@ -469,26 +441,6 @@ def CW_production_costs_garver(model):
     '''
     _CW_production_costs_garver(model)
 
-
-#@add_model_attr(component_name, requires = {'data_loader': None,
-#                                            'status_vars': ['garver_3bin_vars', 'garver_2bin_vars', 'ALS_state_transition_vars'],
-#                                            'power_vars': ['garver_power_vars'],
-#                                            })
-#def CW_production_costs_garver_tightened(model):
-#
-#    '''
-#    This is the ideal SOS2-type model for production costs proposed in:
-#
-#    Chen, Y. and Wang, F (2017). MIP formulation improvedment for large scale
-#    security constrained unit commitment with configuration based combined
-#    cycle modeling. Electric Power Systems Research 148 (2017) pp. 147-154
-#
-#    which is modified to work with garver (power above minimum) production variables.
-#    This version is tightened with SU/SD power
-#    '''
-#    _CW_production_costs_garver(model)
-#
-#    ## TODO: figure out the math for this
 
 def _SLL_production_costs(model, ideal=True):
     '''
@@ -648,7 +600,7 @@ def basic_production_costs_envelope(model):
         intercept = -slope*x0 + y0
         return m.ProductionCost[g,t] >= slope*m.PowerGeneratedAboveMinimum[g,t] + intercept
 
-    model.PiecewiseProductionCost = Constraint(model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_cost_rule)
+    model.ProductionCostConstr = Constraint(model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_cost_rule)
 
     _compute_total_production_cost(model)
 
@@ -681,6 +633,6 @@ def HB_production_costs(model):
         # this will be good regardless
         return m.ProductionCost[g,t] >= slope*m.PowerGeneratedAboveMinimum[g,t] + intercept*m.UnitOn[g,t]
 
-    model.PiecewiseProductionCost = Constraint(model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_cost_rule)
+    model.ProductionCostConstr = Constraint(model.PiecewiseProductionCostsIndexSet, rule=piecewise_production_cost_rule)
 
     _compute_total_production_cost(model)

@@ -24,31 +24,32 @@ import egret.data.ptdf_utils as ptdf_utils
 
 from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
 from egret.data.data_utils import map_items, zip_items
-from egret.models.copperplate_dispatch import _include_system_feasibility_slack, create_copperplate_dispatch_approx_model
+from egret.models.copperplate_dispatch import (_include_system_feasibility_slack,
+                                               _validate_and_extract_slack_penalty,
+                                               create_copperplate_dispatch_approx_model)
 from egret.common.log import logger
-from math import pi, radians
+from math import pi, radians, degrees
 
 
-def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, penalty=1000):
+def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_attrs, p_marginal_slack_penalty):
     import egret.model_library.decl as decl
-    slack_init = {k: 0 for k in bus_attrs['names']}
-    slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
-    decl.declare_var('p_slack_pos', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    decl.declare_var('p_slack_neg', model=model, index_set=bus_attrs['names'],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    p_rhs_kwargs = {'include_feasibility_slack_pos':'p_slack_pos','include_feasibility_slack_neg':'p_slack_neg'}
 
-    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
+    load_shed_bounds  = {k: (0, tx_utils.load_shed_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_min'])) for k in bus_names}
+    decl.declare_var('p_load_shed', model=model, index_set=bus_names,
+                     initialize=0., bounds=load_shed_bounds
+                     )
+    over_gen_bounds = {k: (0, tx_utils.over_gen_limit(bus_p_loads[k], gens_by_bus[k], gen_attrs['p_max'])) for k in bus_names}
+    decl.declare_var('p_over_generation', model=model, index_set=bus_names,
+                     initialize=0., bounds=over_gen_bounds
+                     )
 
-    penalty_expr = sum(p_penalty * (model.p_slack_pos[bus_name] + model.p_slack_neg[bus_name])
-                    for bus_name in bus_attrs['names'])
+    p_rhs_kwargs = {'include_feasibility_load_shed':'p_load_shed', 'include_feasibility_over_generation':'p_over_generation'}
+
+    penalty_expr = sum(p_marginal_slack_penalty * (model.p_load_shed[bus_name] + model.p_over_generation[bus_name])
+                    for bus_name in bus_names)
     return p_rhs_kwargs, penalty_expr
 
-
-def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False):
+def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False, pw_cost_model='delta'):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -57,6 +58,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     branches = dict(md.elements(element_type='branch'))
     loads = dict(md.elements(element_type='load'))
     shunts = dict(md.elements(element_type='shunt'))
+
+    dc_branches = dict(md.elements(element_type='dc_branch'))
 
     gen_attrs = md.attributes(element_type='generator')
     bus_attrs = md.attributes(element_type='bus')
@@ -79,7 +82,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
 
     ### declare the polar voltages
     va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
+    libbus.declare_var_va(model, bus_attrs['names'],
+                          initialize=tx_utils.radians_from_degrees_dict(bus_attrs['va']),
                           bounds=va_bounds
                           )
 
@@ -87,7 +91,9 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     p_rhs_kwargs = {}
     penalty_expr = None
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)        
+        p_rhs_kwargs, penalty_expr = _include_feasibility_slack(model, bus_attrs['names'], bus_p_loads,
+                                                                gens_by_bus, gen_attrs, p_marginal_slack_penalty)
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
@@ -101,8 +107,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
                           )
 
     ### declare the current flows in the branches
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
+    vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
+    vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
     p_lbub = dict()
     for k in branches.keys():
@@ -129,6 +135,26 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
                              bounds=pf_bounds
                              )
 
+    if dc_branches:
+        dcpf_bounds = dict()
+        for k, k_dict in dc_branches.items():
+            kp_max = k_dict['rating_long_term']
+            if kp_max is None:
+                dcpf_bounds[k] = (None, None)
+            else:
+                dcpf_bounds[k] = (-kp_max, kp_max)
+        libbranch.declare_var_dcpf(model=model,
+                                   index_set=dc_branches.keys(),
+                                   initialize=0.,
+                                   bounds=dcpf_bounds,
+                                  )
+        dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = \
+                tx_utils.inlet_outlet_branches_by_bus(dc_branches, buses)
+    else:
+        dc_inlet_branches_by_bus = None
+        dc_outlet_branches_by_bus = None
+
+
     ### declare the branch power flow approximation constraints
     libbranch.declare_eq_branch_power_btheta_approx(model=model,
                                                     index_set=branch_attrs['names'],
@@ -144,6 +170,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
                                           inlet_branches_by_bus=inlet_branches_by_bus,
                                           outlet_branches_by_bus=outlet_branches_by_bus,
                                           approximation_type=ApproximationType.BTHETA,
+                                          dc_inlet_branches_by_bus=dc_inlet_branches_by_bus,
+                                          dc_outlet_branches_by_bus=dc_outlet_branches_by_bus,
                                           **p_rhs_kwargs
                                           )
 
@@ -163,13 +191,19 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
                                                       coordinate_type=CoordinateType.POLAR
                                                       )
 
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
-
+    # declare the generator cost objective
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
@@ -177,7 +211,7 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
 
     return model, md
 
-def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None):
+def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None, pw_cost_model='delta'):
 
     ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
@@ -193,6 +227,8 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     branches = dict(md.elements(element_type='branch'))
     loads = dict(md.elements(element_type='load'))
     shunts = dict(md.elements(element_type='shunt'))
+
+    dc_branches = dict(md.elements(element_type='dc_branch'))
 
     gen_attrs = md.attributes(element_type='generator')
     ## to keep things in order
@@ -223,7 +259,27 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ### include the feasibility slack for the system balance
     p_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
+        p_marginal_slack_penalty = _validate_and_extract_slack_penalty(md)                
+        p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_p_loads, gen_attrs, p_marginal_slack_penalty)
+
+    if dc_branches:
+        dcpf_bounds = dict()
+        for k, k_dict in dc_branches.items():
+            kp_max = k_dict['rating_long_term']
+            if kp_max is None:
+                dcpf_bounds[k] = (None, None)
+            else:
+                dcpf_bounds[k] = (-kp_max, kp_max)
+        libbranch.declare_var_dcpf(model=model,
+                                   index_set=dc_branches.keys(),
+                                   initialize=0.,
+                                   bounds=dcpf_bounds,
+                                  )
+        dc_inlet_branches_by_bus, dc_outlet_branches_by_bus = \
+                tx_utils.inlet_outlet_branches_by_bus(dc_branches, buses)
+    else:
+        dc_inlet_branches_by_bus = None
+        dc_outlet_branches_by_bus = None
 
     ### declare the p balance
     libbus.declare_eq_p_balance_ed(model=model,
@@ -240,6 +296,8 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                               bus_p_loads=bus_p_loads,
                                               gens_by_bus=gens_by_bus,
                                               bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                              dc_inlet_branches_by_bus=dc_inlet_branches_by_bus,
+                                              dc_outlet_branches_by_bus=dc_outlet_branches_by_bus,
                                               )
     
     ### add "blank" power flow expressions
@@ -250,14 +308,10 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
 
-    PTDF = ptdf_utils.get_ptdf_potentially_from_file(ptdf_options, branches_idx, buses_idx)
-    if PTDF is None:
-        PTDF = ptdf_utils.PTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
+    PTDF = ptdf_utils.VirtualPTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options, branches_keys=branches_idx, buses_keys=buses_idx)
 
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
-
-    ptdf_utils.write_ptdf_potentially_to_file(ptdf_options, PTDF)
 
     if ptdf_options['lazy']:
 
@@ -273,7 +327,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
         lpu.add_monitored_flow_tracker(model)
 
         ### add initial branches to monitored set
-        lpu.add_initial_monitored_branches(model, branches, branches_idx, ptdf_options, PTDF)
+        lpu.add_initial_monitored_constraints(model, md, branches_idx, ptdf_options, PTDF)
 
     else:
         p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
@@ -294,13 +348,19 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                                      approximation_type=ApproximationType.PTDF,
                                                      )
 
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost']
-                                                  )
-
+    # declare the generator cost objective
+    p_costs = gen_attrs['p_cost']
+    pw_pg_cost_gens = list(libgen.pw_gen_generator(gen_attrs['names'], costs=p_costs))
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            libgen.declare_var_delta_pg(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_pg_delta_pg_con(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+        else:
+            libgen.declare_var_pg_cost(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+            libgen.declare_piecewise_pg_cost_cons(model=model, index_set=pw_pg_cost_gens, p_costs=p_costs)
+    libgen.declare_expression_pg_operating_cost(model=model, index_set=gen_attrs['names'], p_costs=p_costs, pw_formulation=pw_cost_model)
     obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
+
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
@@ -339,6 +399,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
 
     '''
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+    from egret.common.solver_interface import _solve_model
 
     PTDF = m._PTDF
 
@@ -348,7 +409,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
 
     for i in range(iteration_limit):
 
-        PFV, PFV_I, viol_num, mon_viol_num, viol_lazy, int_viol_lazy \
+        flows, viol_num, mon_viol_num, viol_lazy \
                 = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
 
         iter_status_str = "iteration {0}, found {1} violation(s)".format(i,viol_num)
@@ -370,15 +431,15 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
                 solver.load_duals()
             return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
 
-        lpu.add_violations(viol_lazy, int_viol_lazy, PFV, PFV_I, m, md, solver, ptdf_options, PTDF)
-        total_flow_constr_added = len(viol_lazy) + len(int_viol_lazy)
+        lpu.add_violations(viol_lazy, flows, m, md, solver, ptdf_options, PTDF)
+        total_flow_constr_added = len(viol_lazy)
         logger.info( "iteration {0}, added {1} flow constraint(s)".format(i,total_flow_constr_added))
 
         if persistent_solver:
-            solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+            m, results, solver = _solve_model(m, solver, solver_tee=solver_tee, return_solver=True, vars_to_load=[], set_instance=False)
             solver.load_vars()
         else:
-            solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
+            m, results, solver = _solve_model(m, solver, solver_tee=solver_tee, return_solver=True)
 
     else: # we hit the iteration limit
         logger.warning('WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
@@ -449,6 +510,8 @@ def solve_dcopf(model_data,
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
 
+    dc_branches = dict(md.elements(element_type='dc_branch'))
+
     md.data['system']['total_cost'] = value(m.obj)
 
     for g,g_dict in gens.items():
@@ -458,42 +521,39 @@ def solve_dcopf(model_data,
     ## calculate the LMPC (LMP congestion) using numpy
     if dcopf_model_generator == create_ptdf_dcopf_model:
         PTDF = m._PTDF
-        PTDFM = PTDF.PTDFM
+
+        PFV, _, VA = PTDF.calculate_PFV(m)
+
         branches_idx = PTDF.branches_keys
-
-        NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
-        NWV += PTDF.phi_adjust_array
-
-        PFV  = PTDFM.dot(NWV)
-        PFV += PTDF.phase_shift_array
-
-        PFD = np.zeros(len(branches_idx))
         for i,bn in enumerate(branches_idx):
             branches[bn]['pf'] = PFV[i]
-            if bn in m.ineq_pf_branch_thermal_bounds:
-                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_bounds[bn]])
-        ## TODO: PFD is likely to be sparse, implying we just need a few
-        ##       rows of the PTDF matrix (or columns in its transpose).
-        LMPC = -PTDFM.T.dot(PFD)
     else:
         for k, k_dict in branches.items():
             k_dict['pf'] = value(m.pf[k])
 
     if dcopf_model_generator == create_ptdf_dcopf_model:
+        if hasattr(m, 'p_load_shed'):
+            md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
         buses_idx = PTDF.buses_keys
-        LMPE = value(m.dual[m.eq_p_balance])
+        LMP = PTDF.calculate_LMP(m, m.dual, m.eq_p_balance)
         for i,b in enumerate(buses_idx):
             b_dict = buses[b]
-            b_dict['lmp'] = LMPE + LMPC[i]
+            b_dict['lmp'] = LMP[i]
             b_dict['pl'] = value(m.pl[b])
+            b_dict['va'] = degrees(VA[i])
     else:
         for b,b_dict in buses.items():
+            if hasattr(m, 'p_load_shed'):
+                b_dict['p_balance_violation'] = value(m.p_load_shed[b]) - value(m.p_over_generation[b])
             b_dict['pl'] = value(m.pl[b])
             if dcopf_model_generator == create_btheta_dcopf_model:
                 b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
-                b_dict['va'] = value(m.va[b])
+                b_dict['va'] = degrees(value(m.va[b]))
             else:
-                raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
+                raise Exception("Unrecognized dcopf_model_generator {}".format(dcopf_model_generator))
+
+    for k, k_dict in dc_branches.items():
+        k_dict['pf'] = value(m.dcpf[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
 

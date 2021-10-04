@@ -11,7 +11,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr 
+from .uc_utils import add_model_attr, get_linear_expr
 from .reserve_vars import check_reserve_requirement
 component_name = 'objective'
 
@@ -45,9 +45,14 @@ def _3bin_shutdown_costs(model, add_shutdown_cost_var=True):
     if add_shutdown_cost_var:
         model.ShutdownCost = Var(model.ThermalGenerators, model.TimePeriods, within=Reals)
     
+    linear_expr = get_linear_expr(model.UnitStop)
+
     def compute_shutdown_costs_rule(m, g, t):
-        return m.ShutdownCost[g,t] ==  m.ShutdownFixedCost[g] * (m.UnitStop[g, t])
-    
+        return (linear_expr(
+                    linear_vars=[m.ShutdownCost[g,t], m.UnitStop[g,t]],
+                    linear_coefs=[-1., m.ShutdownFixedCost[g]]),
+                0.)
+
     model.ComputeShutdownCosts = Constraint(model.ThermalGenerators, model.TimePeriods, rule=compute_shutdown_costs_rule)
 
 def _add_shutdown_costs(model, add_shutdown_cost_var=True):
@@ -124,7 +129,12 @@ def basic_objective(model):
               sum(m.ReserveShortfallCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.BranchViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
               sum(m.InterfaceViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
-              sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st])
+              sum(m.ContingencyViolationCost[t] for t in m.GenerationTimeInStage[st]) + \
+              sum(m.StorageCost[s,t] for s in m.Storage for t in m.GenerationTimeInStage[st]) + \
+              sum(m.PriceResponsiveLoadCost[l,t] for l in m.PriceResponsiveLoad
+                      for t in m.GenerationTimeInStage[st]) + \
+              sum(m.NondispatchableProductionCost[n,t] for n in m.AllNondispatchableGenerators
+                      for t in m.GenerationTimeInStage[st])
         if m.reactive_power:
             cc += sum(m.LoadMismatchCostReactive[t] for t in m.GenerationTimeInStage[st])
         if m.security_constraints:
@@ -155,8 +165,8 @@ def basic_objective(model):
     #
     
     def total_cost_objective_rule(m):
-       return sum(m.StageCost[st] for st in m.StageSet)	
-    
+       return sum(m.StageCost[st] for st in m.StageSet)
+
     model.TotalCostObjective = Objective(rule=total_cost_objective_rule, sense=minimize)
 
     return

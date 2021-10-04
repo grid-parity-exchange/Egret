@@ -97,7 +97,7 @@ def security_constraint_model(model):
                     raise Exception('Unrecognized generator {} for security constraint {} at time {}'.format(g,s,time_keys[i]))
 
             ## TODO: Make LinearExpression?
-            b.pgSecurityExpression[s] = sum( val*model.PowerGenerated[g,t] for g,val in thermal_gen_coefs.items() ) \
+            b.pgSecurityExpression[s] = sum( val*model.PowerGeneratedStartupShutdown[g,t] for g,val in thermal_gen_coefs.items() ) \
                                             + sum( val*model.NondispatchablePowerUsed[g,t] for g,val in renewable_gen_coefs.items() ) \
                                             + sum( val*(model.PowerOutputStorage[s,t]-model.PowerInputStorage[s,t]) for s,val in coefs['storage'].items())
 

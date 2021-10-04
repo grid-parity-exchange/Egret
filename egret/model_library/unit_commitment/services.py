@@ -90,6 +90,9 @@ def storage_services(model):
     #####################################
 
     def enforce_ramp_up_rates_power_output_storage_rule(m, s, t):
+        if value(m.ScaledNominalRampUpLimitStorageOutput[s]) >= \
+                value(m.MaximumPowerOutputStorage[s]-m.MinimumPowerOutputStorage[s]):
+            return Constraint.Skip
         if t == m.InitialTime:
             return m.PowerOutputStorage[s, t] <= m.StoragePowerOutputOnT0[s] + m.ScaledNominalRampUpLimitStorageOutput[s]
         else:
@@ -98,6 +101,9 @@ def storage_services(model):
     model.EnforceStorageOutputRampUpRates = Constraint(model.Storage, model.TimePeriods, rule=enforce_ramp_up_rates_power_output_storage_rule)
 
     def enforce_ramp_down_rates_power_output_storage_rule(m, s, t):
+        if value(m.ScaledNominalRampDownLimitStorageOutput[s]) >= \
+                value(m.MaximumPowerOutputStorage[s]-m.MinimumPowerOutputStorage[s]):
+            return Constraint.Skip
         if t == m.InitialTime:
             return m.PowerOutputStorage[s, t] >= m.StoragePowerOutputOnT0[s] - m.ScaledNominalRampDownLimitStorageOutput[s]
         else:
@@ -106,6 +112,9 @@ def storage_services(model):
     model.EnforceStorageOutputRampDownRates = Constraint(model.Storage, model.TimePeriods, rule=enforce_ramp_down_rates_power_output_storage_rule)
 
     def enforce_ramp_up_rates_power_input_storage_rule(m, s, t):
+        if value(m.ScaledNominalRampUpLimitStorageInput[s]) >= \
+                value(m.MaximumPowerInputStorage[s]-m.MinimumPowerInputStorage[s]):
+            return Constraint.Skip
         if t == m.InitialTime:
             return m.PowerInputStorage[s, t] <= m.StoragePowerInputOnT0[s] + m.ScaledNominalRampUpLimitStorageInput[s]
         else:
@@ -114,6 +123,9 @@ def storage_services(model):
     model.EnforceStorageInputRampUpRates = Constraint(model.Storage, model.TimePeriods, rule=enforce_ramp_up_rates_power_input_storage_rule)
 
     def enforce_ramp_down_rates_power_input_storage_rule(m, s, t):
+        if value(m.ScaledNominalRampDownLimitStorageInput[s]) >= \
+                value(m.MaximumPowerInputStorage[s]-m.MinimumPowerInputStorage[s]):
+            return Constraint.Skip
         if t == m.InitialTime:
             return m.PowerInputStorage[s, t] >= m.StoragePowerInputOnT0[s] - m.ScaledNominalRampDownLimitStorageInput[s]
         else:
@@ -141,7 +153,7 @@ def storage_services(model):
 
     def storage_end_point_soc_rule(m, s):
         # storage s, last time period
-        return m.SocStorage[s, value(m.NumTimePeriods)] == m.EndPointSocStorage[s]
+        return m.SocStorage[s, value(m.NumTimePeriods)] >= m.EndPointSocStorage[s]
     model.EnforceEndPointSocStorage = Constraint(model.Storage, rule=storage_end_point_soc_rule)
 
     def storage_cost_rule(m, s, t):
@@ -152,6 +164,23 @@ def storage_services(model):
     return
 ## end storage_services
 
+@add_model_attr('load_service', requires = {'data_loader': None})
+def load_services(model):
+    '''
+    For price-responsive load
+    '''
+
+    model.PriceResponsiveLoadServed = Var(model.PriceResponsiveLoad,
+                                          model.TimePeriods,
+                                          within=NonNegativeReals,
+                                          bounds=lambda m,l,t:(0, m.PriceResponsiveLoadDemand[l,t]))
+
+    def _price_responsive_load_cost_rule(m,l,t):
+        return -1*m.TimePeriodLengthHours*m.PriceResponsiveLoadPrice[l,t]*m.PriceResponsiveLoadServed[l,t]
+    model.PriceResponsiveLoadCost = Expression(model.PriceResponsiveLoad, model.TimePeriods,
+                                               rule=_price_responsive_load_cost_rule)
+
+    return
 
 ## NOTE: when moving to a Real-Time market, ramping limits need to be also considered
 ##       It seems MISO did not in its DA as of 2009 [1], but definitely does in RT as of 2016 [2].
@@ -373,6 +402,13 @@ def ancillary_services(model):
                 >= \
                     ((m.RegulationLowLimit[g,t] - m.MinimumPowerOutput[g,t])*m.RegulationOn[g,t] if reg else 0.)
     model.AncillaryServiceCapacityLimitLower = Constraint(model.ThermalGenerators, model.TimePeriods, rule=ancillary_service_capacity_limit_lower)
+
+    # What follows is shared ramping constraints for reserves
+    # We don't include these constraints unless explicitly told
+    # to do so. They are not universally used and can be
+    # computationally expensive.
+    if not system.get('reserve_ramping_constraints', False):
+        return
 
     ## NOTE: ScaledNominalRampUpLimit/ScaledNominalRampDownLimit and ScaledStartupRampLimit/ScaledShutdownRampLimit
     ##       are not appropriate in the ramp sharing constraints that follow.

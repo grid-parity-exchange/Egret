@@ -21,11 +21,17 @@ from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
 from collections import OrderedDict
 from pyomo.contrib.fbbt.fbbt import fbbt
+import warnings
+import logging
+from typing import List, Tuple, AbstractSet
 try:
     import coramin
     coramin_available = True
 except ImportError:
     coramin_available = False
+
+
+logger = logging.getLogger(__name__)
 
 
 def declare_var_dva(model, index_set, **kwargs):
@@ -104,6 +110,11 @@ def declare_var_pfi_slack_neg(model, index_set, **kwargs):
     """
     decl.declare_var('pfi_slack_neg', model=model, index_set=index_set, **kwargs)
 
+def declare_var_dcpf(model, index_set, **kwargs):
+    """
+    Create the variable for the real power flow through a HVDC line
+    """
+    decl.declare_var('dcpf', model=model, index_set=index_set, **kwargs)
 
 def declare_var_qf(model, index_set, **kwargs):
     """
@@ -291,6 +302,41 @@ def declare_eq_s(model, index_set, coordinate_type=CoordinateType.POLAR):
         raise ValueError('unexpected coordinate_type: {0}'.format(str(coordinate_type)))
 
 
+def declare_eq_dva_arctan(model, index_set):
+    m = model
+    con_set = decl.declare_set('_con_eq_dva_arctan', model, index_set)
+    m.eq_dva_arctan = pe.Constraint(con_set)
+
+    for from_bus, to_bus in con_set:
+        expr = m.dva[from_bus, to_bus] == pe.atan(m.s[from_bus, to_bus] / m.c[from_bus, to_bus])
+        m.eq_dva_arctan[from_bus, to_bus] = expr
+
+
+def declare_eq_dva_cycle_sum(model, cycle_basis: List[List], valid_bus_pairs: AbstractSet[Tuple]):
+    m = model
+    m.dva_cycle_sum_set = pe.Set(initialize=list(range(len(cycle_basis))))
+    m.eq_dva_cycle_sum = pe.Constraint(m.dva_cycle_sum_set)
+
+    for con_ndx, cycle in enumerate(cycle_basis):
+        expr = 0
+        for ndx in range(len(cycle) - 1):
+            b1 = cycle[ndx]
+            b2 = cycle[ndx + 1]
+            assert ((b1, b2) in valid_bus_pairs) != ((b2, b1) in valid_bus_pairs)  # exclusive or
+            if (b1, b2) in valid_bus_pairs:
+                expr += m.dva[b1, b2]
+            else:
+                expr -= m.dva[b2, b1]
+        b1 = cycle[-1]
+        b2 = cycle[0]
+        assert ((b1, b2) in valid_bus_pairs) != ((b2, b1) in valid_bus_pairs)
+        if (b1, b2) in valid_bus_pairs:
+            expr += m.dva[b1, b2]
+        else:
+            expr -= m.dva[b2, b1]
+        m.eq_dva_cycle_sum[con_ndx] = expr == 0
+
+
 def declare_eq_branch_current(model, index_set, branches, coordinate_type=CoordinateType.RECTANGULAR):
     """
     Create the equality constraints for the real and imaginary current
@@ -431,17 +477,18 @@ def declare_ineq_soc(model, index_set, use_outer_approximation=False):
         con_set = decl.declare_set("_con_ineq_soc", model, index_set)
         m.ineq_soc = pe.Constraint(con_set)
         for from_bus, to_bus in con_set:
-            m.ineq_soc[(from_bus, to_bus)] = m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 <= m.vmsq[from_bus] * m.vmsq[to_bus]
+            m.ineq_soc[(from_bus, to_bus)] = m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 <= m.vmsq[
+                from_bus] * m.vmsq[to_bus]
     else:
         if not coramin_available:
             raise ImportError('Cannot create SOC relaxation with outer approximation unless coramin is available.')
         """
         in order to use outer approximation, we have to reformulate 
-        
+
         c**2 + s**2 <= vmsq[from_bus] * vmsq[to_bus]
-        
+
         to
-        
+
         (c**2 + s**2 + z1**2) ** 0.5 <= z2
         z1 = 0.5 * (vmsq[from_bus] - vmsq[to_bus])
         z2 = 0.5 * (vmsq[from_bus] + vmsq[to_bus]) 
@@ -459,9 +506,21 @@ def declare_ineq_soc(model, index_set, use_outer_approximation=False):
             fbbt(m._eq_z2[from_bus, to_bus])
             m.ineq_soc_OA[from_bus, to_bus].build(aux_var=m._z2[from_bus, to_bus],
                                                   shape=coramin.utils.FunctionShape.CONVEX,
-                                                  f_x_expr=(m.c[from_bus, to_bus]**2 +
-                                                            m.s[from_bus, to_bus]**2 +
-                                                            m._z1[from_bus, to_bus]**2)**0.5)
+                                                  f_x_expr=(m.c[from_bus, to_bus] ** 2 +
+                                                            m.s[from_bus, to_bus] ** 2 +
+                                                            m._z1[from_bus, to_bus] ** 2) ** 0.5)
+
+
+def declare_ineq_soc_ub(model, index_set):
+    """
+    create the constraint for the second order cone
+    """
+    m = model
+    con_set = decl.declare_set("_con_ineq_soc_ub", model, index_set)
+    m.ineq_soc_ub = pe.Constraint(con_set)
+    for from_bus, to_bus in con_set:
+        m.ineq_soc_ub[(from_bus, to_bus)] = (m.c[from_bus, to_bus] ** 2 + m.s[from_bus, to_bus] ** 2 >=
+                                             m.vmsq[from_bus] * m.vmsq[to_bus])
 
 
 def declare_eq_branch_power_btheta_approx(model, index_set, branches, approximation_type=ApproximationType.BTHETA):
@@ -564,7 +623,7 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     if abs_ptdf_tol is None:
         abs_ptdf_tol = 0.
 
-    const = PTDF.get_branch_phase_shift(branch_name) + PTDF.get_branch_phi_adj(branch_name)
+    const = PTDF.get_branch_const(branch_name)
 
     max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
 
@@ -574,18 +633,17 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     m_p_nw = model.p_nw
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
-            if abs(coef) >= ptdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
+    coef_list = []
+    var_list = []
+    for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+        if abs(coef) >= ptdf_tol:
+            coef_list.append(coef)
+            var_list.append(m_p_nw[bus_name])
 
-        lin_expr_list = [const] + coef_list + var_list 
-        expr = LinearExpression(lin_expr_list)
+    if isinstance(m_p_nw, pe.Var):
+        expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+        expr = quicksum( (coef*var for coef, var in zip(coef_list, var_list)), start=const, linear=True)
 
     return expr
 
@@ -635,23 +693,20 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None
     max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
 
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
     m_p_nw = model.p_nw
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
-            if abs(coef) >= ptdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
+    coef_list = []
+    var_list = []
+    for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
+        if abs(coef) >= ptdf_tol:
+            coef_list.append(coef)
+            var_list.append(m_p_nw[bus_name])
 
-        lin_expr_list = [const] + coef_list + var_list 
-        expr = LinearExpression(lin_expr_list)
+    if isinstance(m_p_nw, pe.Var):
+        expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+        expr = quicksum( (coef*var for coef, var in zip(coef_list, var_list)), start=const, linear=True)
 
     return expr
 
@@ -682,6 +737,69 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None
             m.pfl[branch_name] = expr
 
 
+def get_contingency_power_flow_expr_ptdf_approx(model, contingency_name, branch_name, PTDF,
+                                                rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create a pyomo power flow expression from PTDF matrix for a contingency
+    """
+
+    if rel_ptdf_tol is None:
+        rel_ptdf_tol = 0.
+    if abs_ptdf_tol is None:
+        abs_ptdf_tol = 0.
+
+    const = PTDF.get_contingency_branch_const(contingency_name, branch_name)
+
+    max_coef = PTDF.get_contingency_branch_ptdf_abs_max(contingency_name, branch_name)
+
+    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
+    m_p_nw = model.p_nw
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    coef_list = []
+    var_list = []
+    for bus_name, coef in PTDF.get_contingency_branch_ptdf_iterator(contingency_name, branch_name):
+        if abs(coef) >= ptdf_tol:
+            coef_list.append(coef)
+            var_list.append(m_p_nw[bus_name])
+
+    if isinstance(m_p_nw, pe.Var):
+        expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
+    else:
+        expr = quicksum( (coef*var for coef, var in zip(coef_list, var_list)), start=const, linear=True)
+
+    return expr
+
+
+def declare_eq_contingency_branch_power_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+    """
+    Create the equality constraints or expressions for power (from PTDF
+    approximation) in the branch under contingency
+    """
+
+    m = model
+
+    con_set = decl.declare_set("_con_eq_contingency_branch_power_ptdf_approx_set", model, index_set)
+
+    pfc_is_var = isinstance(m.pfc, pe.Var)
+
+    if pfc_is_var:
+        m.eq_pfc_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.pf, pe.Expression):
+            raise Exception("Unrecognized type for m.pf", m.pf.pprint())
+
+    for contingency_name, branch_name in con_set:
+        expr = \
+            get_contingency_power_flow_expr_ptdf_approx(m, contingency_name, branch_name, PTDF, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
+
+        if pfc_is_var:
+            m.eq_pfc_branch[branch_name] = \
+                m.pfc[branch_name] == expr
+        else:
+            m.pfc[branch_name] = expr
+
+
 def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
     """
     Create a pyomo power flow expression from PTDF matrix for an interface
@@ -697,21 +815,19 @@ def get_power_flow_interface_expr_ptdf(model, interface_name, PTDF, rel_ptdf_tol
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
 
     m_p_nw = model.p_nw
-
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name):
-            if abs(coef) >= ptdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
+    coef_list = []
+    var_list = []
+    for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name):
+        if abs(coef) >= ptdf_tol:
+            coef_list.append(coef)
+            var_list.append(m_p_nw[bus_name])
 
-        lin_expr_list = [const] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
+    if isinstance(m_p_nw, pe.Var):
+        expr = LinearExpression(linear_vars=var_list, linear_coefs=coef_list, constant=const)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_interface_ptdf_iterator(interface_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+        expr = quicksum( (coef*var for coef, var in zip(coef_list, var_list)), start=const, linear=True)
 
     return expr
 
@@ -788,7 +904,7 @@ def declare_ineq_s_branch_thermal_limit(model, index_set,
 def declare_ineq_p_branch_thermal_lbub(model, index_set,
                                         branches, p_thermal_limits,
                                         approximation_type=ApproximationType.BTHETA,
-                                        slacks=False):
+                                        slacks=False, slack_cost_expr=None):
     """
     Create the inequality constraints for the branch thermal limits
     based on the power variables or expressions.
@@ -803,6 +919,8 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
             raise Exception('No positive slack branch variables on model, but slacks=True')
         if not hasattr(model, 'pf_slack_neg'):
             raise Exception('No negative slack branch variables on model, but slacks=True')
+        if slack_cost_expr is None:
+            raise Exception('No cost expression for slacks, but slacks=True')
 
     m.ineq_pf_branch_thermal_lb = pe.Constraint(con_set)
     m.ineq_pf_branch_thermal_ub = pe.Constraint(con_set)
@@ -813,36 +931,48 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
             if p_thermal_limits[branch_name] is None:
                 continue
 
-            if slacks and branch_name in m.pf_slack_neg:
+            if slacks and branch_name in m.pf_slack_neg.index_set():
+                assert branch_name in m.pf_slack_pos.index_set()
+                neg_slack = m.pf_slack_neg[branch_name]
+                pos_slack = m.pf_slack_pos[branch_name]
+                uc_model = slack_cost_expr.parent_block()
+                slack_cost_expr.expr += (uc_model.TimePeriodLengthHours*uc_model.BranchLimitPenalty[branch_name] *
+                                         (neg_slack + pos_slack) )
+                assert len(m.pf_slack_pos) == len(m.pf_slack_neg)
+            else:
+                neg_slack = None
+                pos_slack = None
+
+            if neg_slack is not None:
                 pf_bn = m.pf[branch_name]
                 if hasattr(pf_bn, 'expr') and isinstance(pf_bn.expr, LinearExpression):
                     ## create a copy
                     old_expr = pf_bn.expr
                     expr = LinearExpression(constant=old_expr.constant,
-                                            linear_vars = old_expr.linear_vars[:] + [m.pf_slack_neg[branch_name]],
+                                            linear_vars = old_expr.linear_vars[:] + [neg_slack],
                                             linear_coefs = old_expr.linear_coefs[:] + [1],
                                             )
 
                 else:
-                    expr = m.pf[branch_name] + m.pf_slack_neg[branch_name]
+                    expr = m.pf[branch_name] + neg_slack
                 m.ineq_pf_branch_thermal_lb[branch_name] = \
                     (-p_thermal_limits[branch_name], expr, None)
             else:
                 m.ineq_pf_branch_thermal_lb[branch_name] = \
                     (-p_thermal_limits[branch_name], m.pf[branch_name], None)
 
-            if slacks and branch_name in m.pf_slack_pos:
+            if pos_slack is not None:
                 pf_bn = m.pf[branch_name]
                 if hasattr(pf_bn, 'expr') and isinstance(pf_bn.expr, LinearExpression):
                     ## create a copy
                     old_expr = pf_bn.expr
                     expr = LinearExpression(constant=old_expr.constant,
-                                            linear_vars = old_expr.linear_vars[:] + [m.pf_slack_pos[branch_name]],
+                                            linear_vars = old_expr.linear_vars[:] + [pos_slack],
                                             linear_coefs = old_expr.linear_coefs[:] + [-1],
                                             )
                 else:
-                    expr = m.pf[branch_name] - m.pf_slack_pos[branch_name]
-                m.ineq_pf_branch_thermal_lb[branch_name] = \
+                    expr = m.pf[branch_name] - pos_slack
+                m.ineq_pf_branch_thermal_ub[branch_name] = \
                     (None, expr, p_thermal_limits[branch_name])
             else:
                 m.ineq_pf_branch_thermal_ub[branch_name] = \
@@ -886,13 +1016,13 @@ def generate_thermal_bounds(pf, llimit, ulimit, neg_slack=None, pos_slack=None):
 def declare_ineq_p_branch_thermal_bounds(model, index_set,
                                         branches, p_thermal_limits,
                                         approximation_type=ApproximationType.BTHETA,
-                                        slacks=False):
+                                        slacks=False, slack_cost_expr=None):
     """
     Create an inequality constraint for the branch thermal limits
     based on the power variables or expressions.
     """
     m = model
-    con_set = decl.declare_set('_con_ineq_p_branch_thermal_lbub',
+    con_set = decl.declare_set('_con_ineq_p_branch_thermal_bounds',
                                model=model, index_set=index_set)
     # flag for if slacks are on the model
     if slacks:
@@ -900,6 +1030,8 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
             raise Exception('No positive slack branch variables on model, but slacks=True')
         if not hasattr(model, 'pf_slack_neg'):
             raise Exception('No negative slack branch variables on model, but slacks=True')
+        if slack_cost_expr is None:
+            raise Exception('No cost expression for slacks, but slacks=True')
 
     m.ineq_pf_branch_thermal_bounds = pe.Constraint(con_set)
 
@@ -910,18 +1042,63 @@ def declare_ineq_p_branch_thermal_bounds(model, index_set,
             if limit is None:
                 continue
 
-            if slacks and branch_name in m.pf_slack_neg:
+            if slacks and branch_name in m.pf_slack_neg.index_set():
+                assert branch_name in m.pf_slack_pos.index_set()
                 neg_slack = m.pf_slack_neg[branch_name]
+                pos_slack = m.pf_slack_pos[branch_name]
+                uc_model = slack_cost_expr.parent_block()
+                slack_cost_expr.expr += (uc_model.TimePeriodLengthHours*uc_model.BranchLimitPenalty[branch_name] *
+                                    (neg_slack + pos_slack) )
+                assert len(m.pf_slack_pos) == len(m.pf_slack_neg)
             else:
                 neg_slack = None
-
-            if slacks and branch_name in m.pf_slack_pos:
-                pos_slack = m.pf_slack_pos[branch_name]
-            else:
                 pos_slack = None
 
             m.ineq_pf_branch_thermal_bounds[branch_name] = \
                     generate_thermal_bounds(m.pf[branch_name], -limit, limit, neg_slack, pos_slack)
+
+def declare_ineq_p_contingency_branch_thermal_bounds(model, index_set,
+                                                     pc_thermal_limits,
+                                                     approximation_type=ApproximationType.PTDF,
+                                                     slacks=False, slack_cost_expr=None):
+    """
+    Create an inequality constraint for the branch thermal limits
+    based on the power variables or expressions.
+    """
+    m = model
+    # flag for if slacks are on the model
+    if slacks:
+        if not hasattr(model, 'pfc_slack_pos'):
+            raise Exception('No positive slack branch variables on model, but slacks=True')
+        if not hasattr(model, 'pfc_slack_neg'):
+            raise Exception('No negative slack branch variables on model, but slacks=True')
+        if slack_cost_expr is None:
+            raise Exception('No cost expression for slacks, but slacks=True')
+
+    m.ineq_pf_contingency_branch_thermal_bounds = pe.Constraint(index_set)
+
+    if approximation_type == ApproximationType.BTHETA or \
+            approximation_type == ApproximationType.PTDF:
+        for (contingency_name, branch_name) in con_set:
+            limit = pc_thermal_limits[branch_name]
+            if limit is None:
+                continue
+
+            if slacks and (contingency_name, branch_name) in m.pfc_slack_neg.index_set():
+                assert (contingency_name, branch_name) in m.pfc_slack_pos.index_set()
+                neg_slack = m.pfc_slack_neg[contingency_name, branch_name]
+                pos_slack = m.pfc_slack_pos[contingency_name, branch_name]
+                uc_model = slack_cost_expr.parent_block()
+                slack_cost_expr.expr += (uc_model.TimePeriodLengthHours
+                                         * uc_model.SystemContingencyLimitPenalty
+                                         * (neg_slack + pos_slack) )
+                assert len(m.pfc_slack_pos) == len(m.pfc_slack_neg)
+            else:
+                neg_slack = None
+                pos_slack = None
+
+            m.ineq_pf_contingency_branch_thermal_bounds[contingency_name, branch_name] = \
+                    generate_thermal_bounds(m.pfc[contingency_name, branch_name], -limit, limit, neg_slack, pos_slack)
 
 def declare_ineq_angle_diff_branch_lbub_c_s(model, index_set, branches):
     """
@@ -939,11 +1116,21 @@ def declare_ineq_angle_diff_branch_lbub_c_s(model, index_set, branches):
         from_bus = branches[branch_name]['from_bus']
         to_bus = branches[branch_name]['to_bus']
 
-        m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
-                                                    m.c[(from_bus, to_bus)] <= m.s[(from_bus, to_bus)])
-        m.ineq_angle_diff_branch_ub[branch_name] = (m.s[(from_bus, to_bus)] <=
-                                                    math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
-                                                    m.c[(from_bus, to_bus)])
+        if branches[branch_name]['angle_diff_min'] > -90:
+            if branches[branch_name]['angle_diff_min'] < -89:
+                msg = 'angle difference limits larger than 89 will introduce large coefficients'
+                logger.warning(msg)
+                warnings.warn(msg)
+            m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
+                                                        m.c[(from_bus, to_bus)] <= m.s[(from_bus, to_bus)])
+        if branches[branch_name]['angle_diff_max'] < 90:
+            if branches[branch_name]['angle_diff_min'] > 89:
+                msg = 'angle difference limits larger than 89 will introduce large coefficients'
+                logger.warning(msg)
+                warnings.warn(msg)
+            m.ineq_angle_diff_branch_ub[branch_name] = (m.s[(from_bus, to_bus)] <=
+                                                        math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
+                                                        m.c[(from_bus, to_bus)])
 
 
 def declare_ineq_angle_diff_branch_lbub(model, index_set, branches, coordinate_type=CoordinateType.POLAR):
@@ -972,17 +1159,27 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set, branches, coordinate_t
             from_bus = branches[branch_name]['from_bus']
             to_bus = branches[branch_name]['to_bus']
 
-            m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
-                                                        (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]) <=
-                                                        m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
-            m.ineq_angle_diff_branch_ub[branch_name] = (m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus] <=
-                                                        math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
-                                                        (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]))
+            if branches[branch_name]['angle_diff_min'] > -90:
+                if branches[branch_name]['angle_diff_min'] < -89:
+                    msg = 'angle difference limits larger than 89 will introduce large coefficients'
+                    logger.warning(msg)
+                    warnings.warn(msg)
+                m.ineq_angle_diff_branch_lb[branch_name] = (math.tan(math.radians(branches[branch_name]['angle_diff_min'])) *
+                                                            (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]) <=
+                                                            m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus])
+            if branches[branch_name]['angle_diff_max'] < 90:
+                if branches[branch_name]['angle_diff_min'] > 89:
+                    msg = 'angle difference limits larger than 89 will introduce large coefficients'
+                    logger.warning(msg)
+                    warnings.warn(msg)
+                m.ineq_angle_diff_branch_ub[branch_name] = (m.vj[from_bus] * m.vr[to_bus] - m.vr[from_bus] * m.vj[to_bus] <=
+                                                            math.tan(math.radians(branches[branch_name]['angle_diff_max'])) *
+                                                            (m.vr[from_bus] * m.vr[to_bus] + m.vj[from_bus] * m.vj[to_bus]))
 
 
 def declare_ineq_p_interface_bounds(model, index_set, interfaces,
                                         approximation_type=ApproximationType.BTHETA,
-                                        slacks=False):
+                                        slacks=False, slack_cost_expr=None):
     """
     Create the inequality constraints for the interface limits
     based on the power variables or expressions.
@@ -1001,24 +1198,29 @@ def declare_ineq_p_interface_bounds(model, index_set, interfaces,
             raise Exception('No positive slack interface variables on model, but slacks=True')
         if not hasattr(model, 'pfi_slack_neg'):
             raise Exception('No negative slack interface variables on model, but slacks=True')
+        if slack_cost_expr is None:
+            raise Exception('No cost expression for slacks, but slacks=True')
 
     if approximation_type == ApproximationType.BTHETA or \
             approximation_type == ApproximationType.PTDF:
         for interface_name in con_set:
             interface = interfaces[interface_name]
-            if interface['minimum_limit'] is not None or \
-                    interface['maximum_limit'] is not None:
+            if interface['minimum_limit'] is None and \
+                    interface['maximum_limit'] is None:
+                continue
 
-                if slacks and interface_name in m.pfi_slack_neg:
-                    neg_slack = m.pfi_slack_neg[interface_name]
-                else:
-                    neg_slack = None
+            if slacks and interface_name in m.pfi_slack_neg.index_set():
+                assert interface_name in m.pfi_slack_pos.index_set()
+                neg_slack = m.pfi_slack_neg[interface_name]
+                pos_slack = m.pfi_slack_pos[interface_name]
+                uc_model = slack_cost_expr.parent_block()
+                slack_cost_expr.expr += (uc_model.TimePeriodLengthHours*uc_model.InterfaceLimitPenalty[interface_name] *
+                                    (neg_slack + pos_slack) )
+                assert len(m.pfi_slack_pos) == len(m.pfi_slack_neg)
+            else:
+                neg_slack = None
+                pos_slack = None
 
-                if slacks and interface_name in m.pfi_slack_pos:
-                    pos_slack = m.pfi_slack_pos[interface_name]
-                else:
-                    pos_slack = None
-
-                m.ineq_pf_interface_bounds[interface_name] = \
-                    generate_thermal_bounds(m.pfi[interface_name], interface['minimum_limit'], interface['maximum_limit'],
-                                            neg_slack, pos_slack)
+            m.ineq_pf_interface_bounds[interface_name] = \
+                generate_thermal_bounds(m.pfi[interface_name], interface['minimum_limit'], interface['maximum_limit'],
+                                        neg_slack, pos_slack)
