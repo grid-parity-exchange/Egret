@@ -146,8 +146,6 @@ class ParsedCache():
                         continue
                     yield (l_d, 'p_load')
                     yield (l_d, 'q_load')
-                    # Can more than one load have the same area?
-                    # If not, add a break here
 
             elif category == 'Reserve':
                 res_name = df.iat[i, obj_col]
