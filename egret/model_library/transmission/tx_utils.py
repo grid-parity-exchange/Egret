@@ -370,6 +370,8 @@ scaled_attributes = {
                                                     'pl',
                                                     'ql',
                                                  ],
+                       ('element_type', 'security_constraint', None) : [
+                                                                       ],
                        ('element_type', 'security_constraint', 'pg') : [ 'lower_bound',
                                                                          'upper_bound',
                                                                          'violation_penalty',
@@ -381,6 +383,10 @@ scaled_attributes = {
                                                                  'pf',
                                                                  'pf_violation',
                                                                ],
+                       ('element_type', 'fuel_supply', None) : [
+                                                               ],
+                       ('element_type', 'interchange', None) : [
+                                                               ],
                        ('system_attributes', None, None ) : [
                                                         'load_mismatch_cost',
                                                         'q_load_mismatch_cost',
@@ -389,6 +395,11 @@ scaled_attributes = {
                                                      ancillary_service_stack,
                    }
 
+def element_types():
+    ''' Get an iterable that yields each valid egret element type as a string
+    '''
+    return (key[1] for key in scaled_attributes.keys()
+            if key[0] == 'element_type' and key[2] is None)
 
 def scale_ModelData_to_pu(model_data, inplace=False):
     return _convert_modeldata_pu(model_data, _divide_by_baseMVA, inplace)

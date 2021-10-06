@@ -94,6 +94,72 @@ class ParsedCache():
         self._process_timeseries_data(skeleton_dict, simulation_type, begin_time, end_time)
         self._insert_system_data(skeleton_dict, simulation_type, begin_time, end_time)
 
+    def get_timeseries_locations(self, simulation_type:str, md:dict) -> Iterable[Tuple[dict, str]]:
+        ''' Get all locations in the provided model with a defined time series.
+        
+        Returns
+        -------
+        Each location is returned as a dict and the name of a key within the dict.
+
+        Remarks
+        -------
+        This method returns time series locations as specified in the RTS-GMLC input that created
+        this cache. It only returns locations the rts_gmlc parser knows how to map from the input
+        to a location in the Egret model; other time series, if any, are skipped.
+        '''
+
+        df = self.timeseries_df
+
+        system = md.data['system']
+        loads = md.data['elements']['load']
+        generators = md.data['elements']['generator']
+        areas = md.data['elements']['area']
+
+        sim_col = df.columns.get_loc('Simulation')
+        cat_col = df.columns.get_loc('Category')
+        obj_col = df.columns.get_loc('Object')
+        param_col = df.columns.get_loc('Parameter')
+
+        # Go through each timeseries value for this simulation type
+        for i in range(self._first_indices[simulation_type], len(df)):
+            if df.iat[i, sim_col] != simulation_type:
+                break
+
+            category = df.iat[i, cat_col]
+
+            if category == 'Generator':
+                gen_name = df.iat[i, obj_col]
+                param = df.iat[i, param_col]
+
+                if param == 'PMin MW':
+                    yield (generators[gen_name], 'p_min')
+                elif param == 'PMax MW':
+                    yield (generators[gen_name], 'p_max')
+
+            elif category == 'Area':
+                area_name = df.iat[i, obj_col]
+                param = df.iat[i, param_col]
+                assert(param == "MW Load")
+                for l_d in loads.values():
+                    # Skip loads from other areas
+                    if l_d['area'] != area_name:
+                        continue
+                    yield (l_d, 'p_load')
+                    yield (l_d, 'q_load')
+                    # Can more than one load have the same area?
+                    # If not, add a break here
+
+            elif category == 'Reserve':
+                res_name = df.iat[i, obj_col]
+                if res_name in reserve_name_map:
+                    yield (system, reserve_name_map[res_name])
+                else:
+                    # reserve name must be <type>_R<area>,
+                    # split into type and area
+                    res_name, area_name = res_name.split("_R", 1)
+                    yield (areas[area_name], reserve_name_map[res_name])
+
+
     def _process_timeseries_data(self, md:dict, simulation_type:str, 
                                  begin_time:datetime, end_time:datetime) -> None:
         df = self.timeseries_df
