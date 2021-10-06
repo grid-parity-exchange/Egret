@@ -385,8 +385,6 @@ scaled_attributes = {
                                                                ],
                        ('element_type', 'fuel_supply', None) : [
                                                                ],
-                       ('element_type', 'interchange', None) : [
-                                                               ],
                        ('system_attributes', None, None ) : [
                                                         'load_mismatch_cost',
                                                         'q_load_mismatch_cost',
