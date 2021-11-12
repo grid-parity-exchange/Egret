@@ -342,14 +342,15 @@ def load_params(model, model_data, slack_type):
     
     model.ThermalGeneratorType = Param(model.ThermalGenerators, within=Any, default='C', initialize=thermal_gen_attrs.get('fuel', dict()))
     
-    def verify_thermal_generator_buses_rule(m, g):
-       for b in m.Buses:
-          if g in m.ThermalGeneratorsAtBus[b]:
-             return 
-       print("DATA ERROR: No bus assigned for thermal generator=%s" % g)
-       assert(False)
+    def verify_thermal_generators_assigned_to_buses_rule(m):
+       generators_at_buses = set(g for b in m.Buses for g in m.ThermalGeneratorsAtBus[b])
+       all_generators = set(m.ThermalGenerators)
+       unassigned_generators = all_generators.difference(generators_at_buses)
+       if len(unassigned_generators) > 0:
+           print("Encountered thermal generators unassigned to a bus: "+str(unassigned_generators))
+       assert(len(unassigned_generators)==0)
     
-    model.VerifyThermalGeneratorBuses = BuildAction(model.ThermalGenerators, rule=verify_thermal_generator_buses_rule)
+    model.VerifyThermalGeneratorsAssignedToBuses = BuildAction(rule=verify_thermal_generators_assigned_to_buses_rule)
     
     model.QuickStart = Param(model.ThermalGenerators, within=Boolean, default=False, initialize=thermal_gen_attrs.get('fast_start', dict()))
     
