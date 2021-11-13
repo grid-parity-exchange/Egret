@@ -41,7 +41,7 @@ class ParsedCache():
         self.load_participation_factors = load_participation_factors
 
         # Find and save the index of the first row of each sim type in timeseries_df
-        cur_sim = self.timeseries_df['Simulation'][0]
+        cur_sim = self.timeseries_df['Simulation'].iat[0]
         self._first_indices = {cur_sim:0}
         for i in range(1,len(self.timeseries_df)):
             if self.timeseries_df['Simulation'].iat[i] != cur_sim:
