@@ -275,23 +275,28 @@ def ancillary_services(model):
     default_reg_pen = value(model.LoadMismatchPenalty+model.ReserveShortfallPenalty)/2.
     ## set these penalties in relation to each other, from higher quality service to lower
     model.RegulationPenalty = Param(within=NonNegativeReals,
-                                    initialize=system.get('regulation_penalty_price', default_reg_pen))
+            initialize=system.get('regulation_penalty_price', default_reg_pen),
+            mutable=True)
 
     default_spin_pen = value(model.RegulationPenalty+model.ReserveShortfallPenalty)/2.
     model.SpinningReservePenalty = Param(within=NonNegativeReals, 
-                                         initialize=system.get('spinning_reserve_penalty_price', default_spin_pen))
+            initialize=system.get('spinning_reserve_penalty_price', default_spin_pen),
+            mutable=True)
 
     default_nspin_pen = value(model.SpinningReservePenalty+model.ReserveShortfallPenalty)/2.
     model.NonSpinningReservePenalty = Param(within=NonNegativeReals,
-                                            initialize=system.get('non_spinning_reserve_penalty_price', default_nspin_pen))
+            initialize=system.get('non_spinning_reserve_penalty_price', default_nspin_pen),
+            mutable=True)
 
     default_supp_pen = value(model.NonSpinningReservePenalty+model.ReserveShortfallPenalty)/2.
     model.SupplementalReservePenalty = Param(within=NonNegativeReals,
-                                             initialize=system.get('supplemental_reserve_penalty_price', default_supp_pen))
+            initialize=system.get('supplemental_reserve_penalty_price', default_supp_pen),
+            mutable=True)
 
     default_flex_pen = value(model.NonSpinningReservePenalty+model.SpinningReservePenalty)/2.
     model.FlexRampPenalty = Param(within=NonNegativeReals,
-                                  initialize=system.get('flexible_ramp_penalty_price', default_flex_pen))
+            initialize=system.get('flexible_ramp_penalty_price', default_flex_pen),
+            mutable=True)
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
     
