@@ -457,3 +457,10 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                     p_max=85,
                                                                     gen_name='foo',
                                                                     t=None)
+
+class TestTxUtils(unittest.TestCase):
+
+    def test_element_types(self):
+        etypes = list(tx_utils.element_types())
+        self.assertNotEqual(len(etypes), 0)
+        self.assertEqual(len(etypes), len(set(etypes)))
