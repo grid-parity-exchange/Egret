@@ -11,11 +11,10 @@ from setuptools import setup, find_packages
 from distutils.core import Extension
 
 DISTNAME = 'gridx-egret'
-VERSION = '0.5.0'
+VERSION = '0.5.1'
 PACKAGES = find_packages()
 EXTENSIONS = []
 DESCRIPTION = 'EGRET: Electrical Grid Research and Engineering Tools.'
-LONG_DESCRIPTION = open('README.md').read()
 AUTHOR = 'Michael Bynum, Anya Castillo, Carl Laird, Bernard Knueven and Jean-Paul Watson'
 MAINTAINER_EMAIL = 'carldlaird@users.noreply.github.com'
 LICENSE = 'Revised BSD'
@@ -36,7 +35,6 @@ setup(name=DISTNAME,
       packages=PACKAGES,
       ext_modules=EXTENSIONS,
       description=DESCRIPTION,
-      long_description=LONG_DESCRIPTION,
       author=AUTHOR,
       maintainer_email=MAINTAINER_EMAIL,
       license=LICENSE,
