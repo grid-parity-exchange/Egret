@@ -11,7 +11,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr, uc_time_helper 
+from .uc_utils import add_model_attr, uc_time_helper, make_penalty_rule
 from .status_vars import _is_relaxed
 
 @add_model_attr('storage_service', requires = {'data_loader': None,
@@ -272,30 +272,25 @@ def ancillary_services(model):
         raise Exception('Exception adding ancillary_services! ancillary_services requires one of: garver_3bin_vars, garver_2bin_vars, garver_3bin_relaxed_stop_vars, ALS_state_transition_vars, to be used for the status_vars.')
 
     ## set some penalties by default based on the other model penalties
-    default_reg_pen = value(model.LoadMismatchPenalty+model.ReserveShortfallPenalty)/2.
     ## set these penalties in relation to each other, from higher quality service to lower
     model.RegulationPenalty = Param(within=NonNegativeReals,
-            initialize=system.get('regulation_penalty_price', default_reg_pen),
+            rule=make_penalty_rule(model, 'regulation_penalty_price', 4.),
             mutable=True)
 
-    default_spin_pen = value(model.RegulationPenalty+model.ReserveShortfallPenalty)/2.
     model.SpinningReservePenalty = Param(within=NonNegativeReals, 
-            initialize=system.get('spinning_reserve_penalty_price', default_spin_pen),
+            rule=make_penalty_rule(model, 'spinning_reserve_penalty_price', 5.),
             mutable=True)
 
-    default_nspin_pen = value(model.SpinningReservePenalty+model.ReserveShortfallPenalty)/2.
     model.NonSpinningReservePenalty = Param(within=NonNegativeReals,
-            initialize=system.get('non_spinning_reserve_penalty_price', default_nspin_pen),
+            rule=make_penalty_rule(model, 'non_spinning_reserve_penalty_price', (20/3.)), #6.667
             mutable=True)
 
-    default_supp_pen = value(model.NonSpinningReservePenalty+model.ReserveShortfallPenalty)/2.
     model.SupplementalReservePenalty = Param(within=NonNegativeReals,
-            initialize=system.get('supplemental_reserve_penalty_price', default_supp_pen),
+            rule=make_penalty_rule(model, 'supplemental_reserve_penalty_price', 8.),
             mutable=True)
 
-    default_flex_pen = value(model.NonSpinningReservePenalty+model.SpinningReservePenalty)/2.
     model.FlexRampPenalty = Param(within=NonNegativeReals,
-            initialize=system.get('flexible_ramp_penalty_price', default_flex_pen),
+            rule=make_penalty_rule(model, 'flexible_ramp_penalty_price', (100/11.)), #9.09
             mutable=True)
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')

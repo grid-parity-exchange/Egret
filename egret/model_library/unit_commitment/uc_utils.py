@@ -124,3 +124,8 @@ def get_linear_expr(*args):
         if not is_var(arg):
             return linear_summation
     return _linear_expression
+
+def make_penalty_rule(m, penalty_key, divisor):
+    def penalty_rule(m):
+        return m.model_data.data['system'].get(penalty_key, m.LoadMismatchPenalty/divisor)
+    return penalty_rule

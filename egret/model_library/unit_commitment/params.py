@@ -14,7 +14,7 @@ from egret.data.data_utils import map_items, zip_items
 from egret.model_library.transmission import tx_utils
 from egret.common.log import logger
     
-from .uc_utils import add_model_attr, uc_time_helper, SlackType
+from .uc_utils import add_model_attr, uc_time_helper, SlackType, make_penalty_rule
 
 component_name = 'data_loader'
 
@@ -194,28 +194,26 @@ def load_params(model, model_data, slack_type):
     # penalty costs for constraint violation #
     ##########################################
 
-    ModeratelyBigPenalty = 1e3*system['baseMVA']
-
-    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
-
-    BigPenalty = 1e4*system['baseMVA']
+    BigPenalty = 1e6*system['baseMVA']
 
     model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
-    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule(model, 'q_load_mismatch_cost', 2.))
+
+    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule(model, 'reserve_shortfall_cost', 10.))
 
     model.Contingencies = Set(initialize=contingencies.keys())
 
     # leaving this unindexed for now for simpility
     model.SystemContingencyLimitPenalty = Param(within=NonNegativeReals,
-                                          initialize=system.get('contingency_flow_violation_cost', BigPenalty/2.),
+                                          rule=make_penalty_rule(model, 'contingency_flow_violation_cost', 2.),
                                           mutable=True)
 
     model.SystemTransmissionLimitPenalty = Param(within=NonNegativeReals,
-                                           initialize=system.get('transmission_flow_violation_cost', BigPenalty/2.),
+                                           rule=make_penalty_rule(model, 'transmission_flow_violation_cost', 2.),
                                            mutable=True)
 
     model.SystemInterfaceLimitPenalty = Param(within=NonNegativeReals,
-                                        initialize=system.get('interface_flow_violation_cost', BigPenalty/4.),
+                                        rule=make_penalty_rule(model, 'interface_flow_violation_cost', (10/3.)), #3.333
                                         mutable=True)
     
     ##############################################
@@ -258,7 +256,6 @@ def load_params(model, model_data, slack_type):
     model.HVDCLineOutOfService = Param(model.HVDCLines, model.TimePeriods, within=Boolean, default=False,
                                        initialize=TimeMapper(dc_branch_attrs.get('planned_outage', dict())))
 
-    _branch_penalties = {}
     _branches_with_slack = []
     for bn, branch in branches.items():
         if 'violation_penalty' in branch:
@@ -269,7 +266,6 @@ def load_params(model, model_data, slack_type):
                 if slack_type == SlackType.NONE:
                     logger.warning("Ignoring slacks on individual transmission constraints because SlackType.NONE was specified")
                     break
-                _branch_penalties[bn] = val
                 _branches_with_slack.append(bn)
                 if val <= 0:
                     logger.warning("Branch {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(bn,val))
@@ -278,11 +274,13 @@ def load_params(model, model_data, slack_type):
 
     model.BranchesWithSlack = Set(within=model.TransmissionLines, initialize=_branches_with_slack)
 
+    def _make_branch_penalites(m,bn):
+        return m.model_data.data['elements']['branch'][bn].get('violation_penalty', m.SystemTransmissionLimitPenalty._rule(m, None))
+
     model.BranchLimitPenalty = Param(model.BranchesWithSlack,
                                      within=NonNegativeReals,
-                                     default=value(model.SystemTransmissionLimitPenalty),
-                                     mutable=True,
-                                     initialize=_branch_penalties)
+                                     rule=_make_branch_penalites,
+                                     mutable=True)
 
     ## Interfaces
     model.Interfaces = Set(initialize=interface_attrs['names'])
@@ -311,13 +309,11 @@ def load_params(model, model_data, slack_type):
 
     model.InterfaceLineOrientation = Param(model.InterfaceLinePairs, initialize=_interface_line_orientation_dict, within=set([-1,0,1]))
 
-    _interface_penalties = {}
     _interfaces_with_slack = []
     for i_n, interface in interfaces.items():
         if 'violation_penalty' in interface:
             val = interface['violation_penalty']
             if val is not None:
-                _interface_penalties[i_n] = val
                 _interfaces_with_slack.append(i_n)
                 if val <= 0:
                     logger.warning("Interface {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i_n,val))
@@ -326,11 +322,13 @@ def load_params(model, model_data, slack_type):
 
     model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_interfaces_with_slack)
 
+    def _make_interface_penalites(m,i_n):
+        return m.model_data.data['elements']['interface'][i_n].get('violation_penalty', m.SystemContingencyLimitPenalty._rule(m, None))
+
     model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack,
                                         within=NonNegativeReals,
-                                        default=value(model.SystemInterfaceLimitPenalty),
                                         mutable=True,
-                                        initialize=_interface_penalties)
+                                        rule=_make_interface_penalites)
   
     ##########################################################
     # string indentifiers for the set of thermal generators. #
