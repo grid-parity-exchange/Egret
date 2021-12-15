@@ -16,7 +16,7 @@ working with unit commitment models
 ## some useful functions and function decorators for building these dynamic models
 from enum import Enum
 from functools import wraps
-from pyomo.environ import Param, Var, quicksum
+from pyomo.environ import Param, Var, quicksum, value
 from pyomo.core.expr.numeric_expr import LinearExpression
 from pyomo.core.base.initializer import ScalarCallInitializer, IndexedCallInitializer
 
@@ -133,7 +133,7 @@ def get_linear_expr(*args):
 # automatically if not directly specified
 def make_penalty_rule(penalty_key, divisor):
     def penalty_rule(m):
-        return m.model_data.data['system'].get(penalty_key, m.LoadMismatchPenalty/divisor)
+        return m.model_data.data['system'].get(penalty_key, value(m.LoadMismatchPenalty/divisor))
     return penalty_rule
 
 def make_indexed_penalty_rule(element_key, base_penalty):
