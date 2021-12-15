@@ -16,13 +16,15 @@ working with unit commitment models
 ## some useful functions and function decorators for building these dynamic models
 from enum import Enum
 from functools import wraps
-from pyomo.environ import Var, quicksum
+from pyomo.environ import Param, Var, quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
 
 import warnings
 
 import logging
 logger = logging.getLogger('egret.model_library.unit_commitment.uc_utils')
+
+from egret.model_library.transmission.tx_utils import scale_ModelData_to_pu, unscale_ModelData_to_pu
 
 class SlackType(Enum):
     '''
@@ -129,3 +131,22 @@ def make_penalty_rule(m, penalty_key, divisor):
     def penalty_rule(m):
         return m.model_data.data['system'].get(penalty_key, m.LoadMismatchPenalty/divisor)
     return penalty_rule
+
+def make_indexed_penalty_rule(m, element_key, base_penalty):
+    def penalty_rule(m, idx):
+        return m.model_data.data['elements'][element_key][idx].get('violation_penalty', base_penalty._rule(m, None))
+    return penalty_rule
+
+def _reconstruct_pyomo_component(component):
+    component.clear()
+    component._constructed = False
+    component.construct()
+
+def reset_unit_commitment_penalties(m):
+    scale_ModelData_to_pu(m.model_data, inplace=True)
+    _reconstruct_pyomo_component(m.LoadMismatchPenalty)
+    for param in m.component_objects(Param):
+        if param.mutable and param._rule and \
+                hasattr(param._rule, '_fcn') and (param._rule._fcn.__name__ == 'penalty_rule'):
+            _reconstruct_pyomo_component(param)
+    unscale_ModelData_to_pu(m.model_data, inplace=True)

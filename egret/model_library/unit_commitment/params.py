@@ -14,7 +14,7 @@ from egret.data.data_utils import map_items, zip_items
 from egret.model_library.transmission import tx_utils
 from egret.common.log import logger
     
-from .uc_utils import add_model_attr, uc_time_helper, SlackType, make_penalty_rule
+from .uc_utils import add_model_attr, uc_time_helper, SlackType, make_penalty_rule, make_indexed_penalty_rule
 
 component_name = 'data_loader'
 
@@ -196,7 +196,7 @@ def load_params(model, model_data, slack_type):
 
     BigPenalty = 1e6*system['baseMVA']
 
-    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
+    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, rule=lambda m : m.model_data.data['system'].get('load_mismatch_cost', BigPenalty))
     model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule(model, 'q_load_mismatch_cost', 2.))
 
     model.ReserveShortfallPenalty = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule(model, 'reserve_shortfall_cost', 10.))
@@ -274,12 +274,9 @@ def load_params(model, model_data, slack_type):
 
     model.BranchesWithSlack = Set(within=model.TransmissionLines, initialize=_branches_with_slack)
 
-    def _make_branch_penalites(m,bn):
-        return m.model_data.data['elements']['branch'][bn].get('violation_penalty', m.SystemTransmissionLimitPenalty._rule(m, None))
-
     model.BranchLimitPenalty = Param(model.BranchesWithSlack,
                                      within=NonNegativeReals,
-                                     rule=_make_branch_penalites,
+                                     rule=make_indexed_penalty_rule(model, 'branch', model.SystemTransmissionLimitPenalty),
                                      mutable=True)
 
     ## Interfaces
@@ -322,13 +319,10 @@ def load_params(model, model_data, slack_type):
 
     model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_interfaces_with_slack)
 
-    def _make_interface_penalites(m,i_n):
-        return m.model_data.data['elements']['interface'][i_n].get('violation_penalty', m.SystemContingencyLimitPenalty._rule(m, None))
-
     model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack,
                                         within=NonNegativeReals,
                                         mutable=True,
-                                        rule=_make_interface_penalites)
+                                        rule=make_indexed_penalty_rule(model, 'interface', model.SystemInterfaceLimitPenalty))
   
     ##########################################################
     # string indentifiers for the set of thermal generators. #
