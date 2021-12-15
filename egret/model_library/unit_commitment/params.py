@@ -197,23 +197,23 @@ def load_params(model, model_data, slack_type):
     BigPenalty = 1e6*system['baseMVA']
 
     model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, rule=lambda m : m.model_data.data['system'].get('load_mismatch_cost', BigPenalty))
-    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule(model, 'q_load_mismatch_cost', 2.))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule('q_load_mismatch_cost', 2.))
 
-    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule(model, 'reserve_shortfall_cost', 10.))
+    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule('reserve_shortfall_cost', 10.))
 
     model.Contingencies = Set(initialize=contingencies.keys())
 
     # leaving this unindexed for now for simpility
     model.SystemContingencyLimitPenalty = Param(within=NonNegativeReals,
-                                          rule=make_penalty_rule(model, 'contingency_flow_violation_cost', 2.),
+                                          rule=make_penalty_rule('contingency_flow_violation_cost', 2.),
                                           mutable=True)
 
     model.SystemTransmissionLimitPenalty = Param(within=NonNegativeReals,
-                                           rule=make_penalty_rule(model, 'transmission_flow_violation_cost', 2.),
+                                           rule=make_penalty_rule('transmission_flow_violation_cost', 2.),
                                            mutable=True)
 
     model.SystemInterfaceLimitPenalty = Param(within=NonNegativeReals,
-                                        rule=make_penalty_rule(model, 'interface_flow_violation_cost', (10/3.)), #3.333
+                                        rule=make_penalty_rule('interface_flow_violation_cost', (10/3.)), #3.333
                                         mutable=True)
     
     ##############################################
@@ -276,7 +276,7 @@ def load_params(model, model_data, slack_type):
 
     model.BranchLimitPenalty = Param(model.BranchesWithSlack,
                                      within=NonNegativeReals,
-                                     rule=make_indexed_penalty_rule(model, 'branch', model.SystemTransmissionLimitPenalty),
+                                     rule=make_indexed_penalty_rule('branch', model.SystemTransmissionLimitPenalty),
                                      mutable=True)
 
     ## Interfaces
@@ -322,7 +322,7 @@ def load_params(model, model_data, slack_type):
     model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack,
                                         within=NonNegativeReals,
                                         mutable=True,
-                                        rule=make_indexed_penalty_rule(model, 'interface', model.SystemInterfaceLimitPenalty))
+                                        rule=make_indexed_penalty_rule('interface', model.SystemInterfaceLimitPenalty))
   
     ##########################################################
     # string indentifiers for the set of thermal generators. #

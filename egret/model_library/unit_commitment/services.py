@@ -274,23 +274,23 @@ def ancillary_services(model):
     ## set some penalties by default based on the other model penalties
     ## set these penalties in relation to each other, from higher quality service to lower
     model.RegulationPenalty = Param(within=NonNegativeReals,
-            rule=make_penalty_rule(model, 'regulation_penalty_price', 4.),
+            rule=make_penalty_rule('regulation_penalty_price', 4.),
             mutable=True)
 
     model.SpinningReservePenalty = Param(within=NonNegativeReals, 
-            rule=make_penalty_rule(model, 'spinning_reserve_penalty_price', 5.),
+            rule=make_penalty_rule('spinning_reserve_penalty_price', 5.),
             mutable=True)
 
     model.NonSpinningReservePenalty = Param(within=NonNegativeReals,
-            rule=make_penalty_rule(model, 'non_spinning_reserve_penalty_price', (20/3.)), #6.667
+            rule=make_penalty_rule('non_spinning_reserve_penalty_price', (20/3.)), #6.667
             mutable=True)
 
     model.SupplementalReservePenalty = Param(within=NonNegativeReals,
-            rule=make_penalty_rule(model, 'supplemental_reserve_penalty_price', 8.),
+            rule=make_penalty_rule('supplemental_reserve_penalty_price', 8.),
             mutable=True)
 
     model.FlexRampPenalty = Param(within=NonNegativeReals,
-            rule=make_penalty_rule(model, 'flexible_ramp_penalty_price', (100/11.)), #9.09
+            rule=make_penalty_rule('flexible_ramp_penalty_price', (100/11.)), #9.09
             mutable=True)
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')

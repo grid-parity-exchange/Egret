@@ -18,6 +18,7 @@ from enum import Enum
 from functools import wraps
 from pyomo.environ import Param, Var, quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
+from pyomo.core.base.initializer import ScalarCallInitializer, IndexedCallInitializer
 
 import warnings
 
@@ -127,12 +128,15 @@ def get_linear_expr(*args):
             return linear_summation
     return _linear_expression
 
-def make_penalty_rule(m, penalty_key, divisor):
+# Helpers for making penalty factors "commonly" mutable.
+# E.g., change LoadMismatchPenalty and the rest adjust
+# automatically if not directly specified
+def make_penalty_rule(penalty_key, divisor):
     def penalty_rule(m):
         return m.model_data.data['system'].get(penalty_key, m.LoadMismatchPenalty/divisor)
     return penalty_rule
 
-def make_indexed_penalty_rule(m, element_key, base_penalty):
+def make_indexed_penalty_rule(element_key, base_penalty):
     def penalty_rule(m, idx):
         return m.model_data.data['elements'][element_key][idx].get('violation_penalty', base_penalty._rule(m, None))
     return penalty_rule
@@ -146,7 +150,7 @@ def reset_unit_commitment_penalties(m):
     scale_ModelData_to_pu(m.model_data, inplace=True)
     _reconstruct_pyomo_component(m.LoadMismatchPenalty)
     for param in m.component_objects(Param):
-        if param.mutable and param._rule and \
-                hasattr(param._rule, '_fcn') and (param._rule._fcn.__name__ == 'penalty_rule'):
+        if param.mutable and isinstance(param._rule, (ScalarCallInitializer, IndexedCallInitializer)) \
+                and (param._rule._fcn.__name__ == 'penalty_rule'):
             _reconstruct_pyomo_component(param)
     unscale_ModelData_to_pu(m.model_data, inplace=True)
