@@ -239,6 +239,11 @@ ancillary_service_stack = [
                             'flexible_ramp_up_price',
                             'flexible_ramp_down_price',
                             'supplemental_price',
+                            'regulation_penalty_price',
+                            'spinning_reserve_penalty_price',
+                            'non_spinning_reserve_penalty_price',
+                            'supplemental_reserve_penalty_price',
+                            'flexible_ramp_penalty_price',
                         ]
 
 ## TODO?: break apart by data that needed to be scaled down (capacity limits, power),
@@ -388,6 +393,9 @@ scaled_attributes = {
                        ('system_attributes', None, None ) : [
                                                         'load_mismatch_cost',
                                                         'q_load_mismatch_cost',
+                                                        'transmission_flow_violation_cost',
+                                                        'contingency_flow_violation_cost',
+                                                        'interface_flow_violation_cost',
                                                         'reserve_shortfall_cost',
                                                      ] + \
                                                      ancillary_service_stack,
