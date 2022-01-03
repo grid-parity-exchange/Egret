@@ -273,6 +273,31 @@ def ancillary_services(model):
 
     ## set some penalties by default based on the other model penalties
     ## set these penalties in relation to each other, from higher quality service to lower
+    #################################################################################
+    # penalty costs for constraint violation
+    #
+    # While the user can specify these, by default we base all penalties
+    # off the "load_mismatch_cost", which always has the highest penalty
+    # value (default $1M/MWh). If the user sets "load_mismatch_cost"
+    # at $1000/MWh, the following penalties will be used:
+    #
+    # (defined in params.py)
+    # "q_load_mismatch_cost"              : $500/MVh ("load_mismatch_cost"/2)
+    # "transmission_flow_violation_cost"  : $500/MWh ("load_mismatch_cost"/2)
+    # "contingency_flow_violation_cost"   : $500/MWh ("load_mismatch_cost"/2)
+    # "interface_flow_violation_cost"     : $300/MWh ("load_mismatch_cost"/(10/3))
+    # "reserve_shortfall_cost"            : $100/MWh ("load_mismatch_cost"/10)
+    #
+    # (defined here in services.py)
+    # "regulation_penalty_price"          : $250/MWh ("load_mismatch_cost"/4)
+    # "spinning_reserve_penalty_price"    : $200/MWh ("load_mismatch_cost"/5)
+    # "non_spinning_reserve_penalty_price": $150/MWh ("load_mismatch_cost"/(20/3))
+    # "supplemental_reserve_penalty_price": $125/MWh ("load_mismatch_cost"/8)
+    # "flexible_ramp_penalty_price"       : $110/MWh ("load_mismatch_cost"/(100/11))
+    #
+    # Note these can be overridden by the user specifying the values themselves.
+    # Further, penalties on branch flows and interfaces can be set per-element.
+    ################################################################################
     model.RegulationPenalty = Param(within=NonNegativeReals,
             rule=make_penalty_rule('regulation_penalty_price', 4.),
             mutable=True)
