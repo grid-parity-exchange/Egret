@@ -56,7 +56,7 @@ def _add_initial_time_periods_on_off_line(model):
           return 0
        else:
           return int(min(value(m.NumTimePeriods),
-                 round(max(0, value(m.MinimumUpTime[g]) - value(m.UnitOnT0State[g])) / value(m.TimePeriodLengthHours))))
+                 math.ceil(max(0, value(m.MinimumUpTime[g]) - value(m.UnitOnT0State[g])) / value(m.TimePeriodLengthHours))))
     
     model.InitialTimePeriodsOnLine = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=initial_time_periods_online_rule, mutable=True)
     
@@ -65,7 +65,7 @@ def _add_initial_time_periods_on_off_line(model):
           return 0
        else:
           return int(min(value(m.NumTimePeriods),
-                 round(max(0, value(m.MinimumDownTime[g]) + value(m.UnitOnT0State[g])) / value(m.TimePeriodLengthHours)))) # m.UnitOnT0State is negative if unit is off
+                 math.ceil(max(0, value(m.MinimumDownTime[g]) + value(m.UnitOnT0State[g])) / value(m.TimePeriodLengthHours)))) # m.UnitOnT0State is negative if unit is off
     
     model.InitialTimePeriodsOffLine = Param(model.ThermalGenerators, within=NonNegativeIntegers, initialize=initial_time_periods_offline_rule, mutable=True)
 
