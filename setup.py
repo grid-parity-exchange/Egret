@@ -26,7 +26,7 @@ setuptools_kwargs = {
     'include_package_data': True,
     'install_requires': ['pyomo>=6.1.2', 'numpy', 'pytest', 'pandas',
                          'matplotlib', 'seaborn', 'scipy', 'networkx',
-                         'coramin==0.1.0'],
+                         'coramin==0.1.1'],
     'python_requires' : '>=3.7, <4',
 }
 
