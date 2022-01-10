@@ -14,7 +14,7 @@ from egret.data.data_utils import map_items, zip_items
 from egret.model_library.transmission import tx_utils
 from egret.common.log import logger
     
-from .uc_utils import add_model_attr, uc_time_helper, SlackType
+from .uc_utils import add_model_attr, uc_time_helper, SlackType, make_penalty_rule, make_indexed_penalty_rule
 
 component_name = 'data_loader'
 
@@ -190,32 +190,52 @@ def load_params(model, model_data, slack_type):
     model.GenerationTimeInStage = Set(model.StageSet, within=model.TimePeriods,
                                         initialize={'Stage_1': list(), 'Stage_2': model.TimePeriods } )
 
-    ##########################################
-    # penalty costs for constraint violation #
-    ##########################################
+    #################################################################################
+    # penalty costs for constraint violation
+    #
+    # While the user can specify these, by default we base all penalties
+    # off the "load_mismatch_cost", which always has the highest penalty
+    # value (default $1M/MWh). If the user sets "load_mismatch_cost"
+    # at $1000/MWh, the following penalties will be used:
+    #
+    # (defined here in params.py)
+    # "q_load_mismatch_cost"              : $500/MVh ("load_mismatch_cost"/2)
+    # "transmission_flow_violation_cost"  : $500/MWh ("load_mismatch_cost"/2)
+    # "contingency_flow_violation_cost"   : $500/MWh ("load_mismatch_cost"/2)
+    # "interface_flow_violation_cost"     : $300/MWh ("load_mismatch_cost"/(10/3))
+    # "reserve_shortfall_cost"            : $100/MWh ("load_mismatch_cost"/10)
+    #
+    # (defined in services.py)
+    # "regulation_penalty_price"          : $250/MWh ("load_mismatch_cost"/4)
+    # "spinning_reserve_penalty_price"    : $200/MWh ("load_mismatch_cost"/5)
+    # "non_spinning_reserve_penalty_price": $150/MWh ("load_mismatch_cost"/(20/3))
+    # "supplemental_reserve_penalty_price": $125/MWh ("load_mismatch_cost"/8)
+    # "flexible_ramp_penalty_price"       : $110/MWh ("load_mismatch_cost"/(100/11))
+    #
+    # Note these can be overridden by the user specifying the values themselves.
+    # Further, penalties on branch flows and interfaces can be set per-element.
+    ################################################################################
 
-    ModeratelyBigPenalty = 1e3*system['baseMVA']
+    BigPenalty = 1e6*system['baseMVA']
 
-    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, default=ModeratelyBigPenalty, mutable=True, initialize=system.get('reserve_shortfall_cost', ModeratelyBigPenalty))
+    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, rule=lambda m : m.model_data.data['system'].get('load_mismatch_cost', BigPenalty))
+    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule('q_load_mismatch_cost', 2.))
 
-    BigPenalty = 1e4*system['baseMVA']
-
-    model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
-    model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
+    model.ReserveShortfallPenalty = Param(within=NonNegativeReals, mutable=True, rule=make_penalty_rule('reserve_shortfall_cost', 10.))
 
     model.Contingencies = Set(initialize=contingencies.keys())
 
     # leaving this unindexed for now for simpility
     model.SystemContingencyLimitPenalty = Param(within=NonNegativeReals,
-                                          initialize=system.get('contingency_flow_violation_cost', BigPenalty/2.),
+                                          rule=make_penalty_rule('contingency_flow_violation_cost', 2.),
                                           mutable=True)
 
     model.SystemTransmissionLimitPenalty = Param(within=NonNegativeReals,
-                                           initialize=system.get('transmission_flow_violation_cost', BigPenalty/2.),
+                                           rule=make_penalty_rule('transmission_flow_violation_cost', 2.),
                                            mutable=True)
 
     model.SystemInterfaceLimitPenalty = Param(within=NonNegativeReals,
-                                        initialize=system.get('interface_flow_violation_cost', BigPenalty/4.),
+                                        rule=make_penalty_rule('interface_flow_violation_cost', (10/3.)), #3.333
                                         mutable=True)
     
     ##############################################
@@ -258,7 +278,6 @@ def load_params(model, model_data, slack_type):
     model.HVDCLineOutOfService = Param(model.HVDCLines, model.TimePeriods, within=Boolean, default=False,
                                        initialize=TimeMapper(dc_branch_attrs.get('planned_outage', dict())))
 
-    _branch_penalties = {}
     _branches_with_slack = []
     for bn, branch in branches.items():
         if 'violation_penalty' in branch:
@@ -269,7 +288,6 @@ def load_params(model, model_data, slack_type):
                 if slack_type == SlackType.NONE:
                     logger.warning("Ignoring slacks on individual transmission constraints because SlackType.NONE was specified")
                     break
-                _branch_penalties[bn] = val
                 _branches_with_slack.append(bn)
                 if val <= 0:
                     logger.warning("Branch {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(bn,val))
@@ -280,9 +298,8 @@ def load_params(model, model_data, slack_type):
 
     model.BranchLimitPenalty = Param(model.BranchesWithSlack,
                                      within=NonNegativeReals,
-                                     default=value(model.SystemTransmissionLimitPenalty),
-                                     mutable=True,
-                                     initialize=_branch_penalties)
+                                     rule=make_indexed_penalty_rule('branch', model.SystemTransmissionLimitPenalty),
+                                     mutable=True)
 
     ## Interfaces
     model.Interfaces = Set(initialize=interface_attrs['names'])
@@ -311,13 +328,11 @@ def load_params(model, model_data, slack_type):
 
     model.InterfaceLineOrientation = Param(model.InterfaceLinePairs, initialize=_interface_line_orientation_dict, within=set([-1,0,1]))
 
-    _interface_penalties = {}
     _interfaces_with_slack = []
     for i_n, interface in interfaces.items():
         if 'violation_penalty' in interface:
             val = interface['violation_penalty']
             if val is not None:
-                _interface_penalties[i_n] = val
                 _interfaces_with_slack.append(i_n)
                 if val <= 0:
                     logger.warning("Interface {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i_n,val))
@@ -328,9 +343,8 @@ def load_params(model, model_data, slack_type):
 
     model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack,
                                         within=NonNegativeReals,
-                                        default=value(model.SystemInterfaceLimitPenalty),
                                         mutable=True,
-                                        initialize=_interface_penalties)
+                                        rule=make_indexed_penalty_rule('interface', model.SystemInterfaceLimitPenalty))
   
     ##########################################################
     # string indentifiers for the set of thermal generators. #
