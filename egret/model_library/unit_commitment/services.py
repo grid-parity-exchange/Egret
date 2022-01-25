@@ -14,6 +14,17 @@ import math
 from .uc_utils import add_model_attr, uc_time_helper, make_penalty_rule
 from .status_vars import _is_relaxed
 
+## list of supported ancillary services, as named in model data
+ancillary_service_list = (
+    'spinning_reserve_requirement',
+    'non_spinning_reserve_requirement',
+    'regulation_up_requirement',
+    'regulation_down_requirement',
+    'supplemental_reserve_requirement',
+    'flexible_ramp_up_requirement',
+    'flexible_ramp_down_requirement',
+    )
+
 @add_model_attr('storage_service', requires = {'data_loader': None,
                                             })
 def storage_services(model):
@@ -203,7 +214,7 @@ def ancillary_services(model):
     '''
     Defines ancillary services: regulation, spinning reserve, nonspinning reserve, operational reserve, flexible ramp
     ## NOTE: As in most markets, the value of ancillary services from high to low is regulation, spinning reserve, nonspinning reserve, and supplemental reserve.
-    ##       We allow for a higher-quality ancillary service to be subtituted for a lower-quality one
+    ##       We allow for a higher-quality ancillary service to be substituted for a lower-quality one
     ##       Flexible ramp is treated differently, again as it is in most markets. There is no bid for flexible ramp, and it is priced at opportunity cost
     '''
     md = model.model_data
@@ -212,18 +223,6 @@ def ancillary_services(model):
     elements = md.data['elements']
 
     TimeMapper = uc_time_helper(model.TimePeriods)
-
-
-    ## list of possible ancillary services coming
-    ## from model_data
-    ancillary_service_list = [ 'spinning_reserve_requirement',
-                               'non_spinning_reserve_requirement',
-                               'regulation_up_requirement',
-                               'regulation_down_requirement',
-                               'supplemental_reserve_requirement',
-                               'flexible_ramp_up_requirement',
-                               'flexible_ramp_down_requirement',
-                             ]
 
     if 'zone' not in elements:
         elements['zone'] = dict()
@@ -255,7 +254,7 @@ def ancillary_services(model):
     ## check here and break if there's nothing to do
     no_reserves = not (add_spinning_reserve or add_non_spinning_reserve or add_regulation_reserve or add_supplemental_reserve or add_flexi_ramp_reserve)
 
-    ## add a flag for which brach we took here
+    ## add a flag for which branch we took here
     if no_reserves:
         model.nonbasic_reserves = False
         model.regulation_service = None
