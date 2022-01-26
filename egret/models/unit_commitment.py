@@ -1515,14 +1515,14 @@ def _save_uc_results(m, relaxed):
                                                                  'balance_m' : m.SystemFlexDnRequirementConstr,
                                                                 }
     if supp:
-        _zonal_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_shortfall',
-                                                                 'price' : 'supplemental_price',
+        _zonal_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_reserve_shortfall',
+                                                                 'price' : 'supplemental_reserve_price',
                                                                  'shortfall_m' : m.ZonalSupplementalReserveShortfall,
                                                                  'balance_m' : m.EnforceZonalSupplementalReserveRequirement,
                                                                  }
 
-        _system_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_shortfall',
-                                                                   'price' : 'supplemental_price',
+        _system_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_reserve_shortfall',
+                                                                   'price' : 'supplemental_reserve_price',
                                                                    'shortfall_m' : m.SystemSupplementalReserveShortfall,
                                                                    'balance_m' : m.EnforceSystemSupplementalReserveRequirement,
                                                                    }

@@ -214,37 +214,35 @@ def load_shed_limit(load, gens, gen_mins):
     return max_load_shed
 
 ## attributes which are scaled for power flow models
+## tuple of supported ancillary services, as named in model data
+ancillary_services = (
+    'reserve',
+    'spinning_reserve',
+    'non_spinning_reserve',
+    'regulation_up',
+    'regulation_down',
+    'supplemental_reserve',
+    'flexible_ramp_up',
+    'flexible_ramp_down',
+)
+
+## tuple of penalty prices (up/down reserves have the same penalty price)
+penalty_prices = (
+    'regulation_penalty_price',
+    'spinning_reserve_penalty_price',
+    'non_spinning_reserve_penalty_price',
+    'supplemental_reserve_penalty_price',
+    'flexible_ramp_penalty_price',
+)
+
+# construct this from the above items
 ancillary_service_stack = [
-                            'reserve_requirement',
-                            'spinning_reserve_requirement',
-                            'non_spinning_reserve_requirement',
-                            'regulation_up_requirement',
-                            'regulation_down_requirement',
-                            'flexible_ramp_up_requirement',
-                            'flexible_ramp_down_requirement',
-                            'supplemental_reserve_requirement',
-                            'reserve_shortfall',
-                            'spinning_reserve_shortfall',
-                            'non_spinning_reserve_shortfall',
-                            'regulation_up_shortfall',
-                            'regulation_down_shortfall',
-                            'flexible_ramp_up_shortfall',
-                            'flexible_ramp_down_shortfall',
-                            'supplemental_shortfall',
-                            'reserve_price',
-                            'spinning_reserve_price',
-                            'non_spinning_reserve_price',
-                            'regulation_up_price',
-                            'regulation_down_price',
-                            'flexible_ramp_up_price',
-                            'flexible_ramp_down_price',
-                            'supplemental_price',
-                            'regulation_penalty_price',
-                            'spinning_reserve_penalty_price',
-                            'non_spinning_reserve_penalty_price',
-                            'supplemental_reserve_penalty_price',
-                            'flexible_ramp_penalty_price',
-                        ]
+        *(name+'_requirement' for name in ancillary_services),
+        *(name+'_shortfall' for name in ancillary_services),
+        *(name+'_price' for name in ancillary_services),
+        *penalty_prices,
+]
+
 
 ## TODO?: break apart by data that needed to be scaled down (capacity limits, power),
 ## vs. scaled up (costs, prices, etc)
