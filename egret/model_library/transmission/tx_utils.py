@@ -235,9 +235,6 @@ penalty_prices = (
     'flexible_ramp_penalty_price',
 )
 
-# for ../unit_commitment/services.py -- tuple for safety, name for compatability
-ancillary_service_list = ( name+'_requirement' for name in ancillary_services[1:] )
-
 # construct this from the above items
 ancillary_service_stack = [
         *(name+'_requirement' for name in ancillary_services),

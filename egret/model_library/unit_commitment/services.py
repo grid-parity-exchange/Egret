@@ -11,7 +11,6 @@
 from pyomo.environ import *
 import math
 
-from egret.model_library.transmission.tx_utils import ancillary_service_list
 from .uc_utils import add_model_attr, uc_time_helper, make_penalty_rule
 from .status_vars import _is_relaxed
 
