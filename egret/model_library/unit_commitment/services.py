@@ -11,19 +11,9 @@
 from pyomo.environ import *
 import math
 
+from egret.model_library.transmission.tx_utils import ancillary_service_list
 from .uc_utils import add_model_attr, uc_time_helper, make_penalty_rule
 from .status_vars import _is_relaxed
-
-## list of supported ancillary services, as named in model data
-ancillary_service_list = (
-    'spinning_reserve_requirement',
-    'non_spinning_reserve_requirement',
-    'regulation_up_requirement',
-    'regulation_down_requirement',
-    'supplemental_reserve_requirement',
-    'flexible_ramp_up_requirement',
-    'flexible_ramp_down_requirement',
-    )
 
 @add_model_attr('storage_service', requires = {'data_loader': None,
                                             })
