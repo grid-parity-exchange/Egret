@@ -11,7 +11,7 @@ from setuptools import setup, find_packages
 from distutils.core import Extension
 
 DISTNAME = 'gridx-egret'
-VERSION = '0.5.2-dev'
+VERSION = '0.5.2.dev0'
 PACKAGES = find_packages()
 EXTENSIONS = []
 DESCRIPTION = 'EGRET: Electrical Grid Research and Engineering Tools.'
