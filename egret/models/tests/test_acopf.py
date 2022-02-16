@@ -211,5 +211,31 @@ class TestPWCost(unittest.TestCase):
         self.assertAlmostEqual(pw_obj, 803.56080829371604, places=2)
 
 
+class TestDeltaThetaBounds(unittest.TestCase):
+    def test_0_delta_theta_bounds(self):
+        md = ModelData.read(os.path.join(current_dir, 'transmission_test_instances', 'test_instances', 'delta_theta_bounds_0.m'))
+        m, _ = create_psv_acopf_model(md)
+        self.assertAlmostEqual(m.s['1','2'].lb, -1.21)
+        self.assertAlmostEqual(m.s['1','2'].ub, 1.21)
+        self.assertAlmostEqual(m.c['1','2'].lb, -1.21)
+        self.assertAlmostEqual(m.c['1','2'].ub, 1.21)
+
+    def test_minus_10_to_10_delta_theta_bounds(self):
+        md = ModelData.read(os.path.join(current_dir, 'transmission_test_instances', 'test_instances', 'delta_theta_bounds_minus_10_to_10.m'))
+        m, _ = create_psv_acopf_model(md)
+        self.assertAlmostEqual(m.s['1','2'].lb, 1.21 * math.sin(math.radians(-10)))
+        self.assertAlmostEqual(m.s['1','2'].ub, 1.21 * math.sin(math.radians(10)))
+        self.assertAlmostEqual(m.c['1','2'].lb, 0.81 * math.cos(math.radians(-10)))
+        self.assertAlmostEqual(m.c['1','2'].ub, 1.21)
+
+    def test_10_to_20_delta_theta_bounds(self):
+        md = ModelData.read(os.path.join(current_dir, 'transmission_test_instances', 'test_instances', 'delta_theta_bounds_10_to_20.m'))
+        m, _ = create_psv_acopf_model(md)
+        self.assertAlmostEqual(m.s['1','2'].lb, 0.81 * math.sin(math.radians(10)))
+        self.assertAlmostEqual(m.s['1','2'].ub, 1.21 * math.sin(math.radians(20)))
+        self.assertAlmostEqual(m.c['1','2'].ub, 1.21 * math.cos(math.radians(10)))
+        self.assertAlmostEqual(m.c['1','2'].lb, 0.81 * math.cos(math.radians(20)))
+
+
 if __name__ == '__main__':
     unittest.main()
