@@ -26,6 +26,7 @@ from collections import OrderedDict
 from egret.data.networkx_utils import get_networkx_graph
 import networkx
 from pyomo.common.collections.orderedset import OrderedSet
+from pyomo.contrib.fbbt import interval
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
                                gens_by_bus, gen_attrs,
@@ -111,20 +112,14 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
 
     def _c_bounds_rule(m, from_bus, to_bus):
         bdat = branch_w_index[(from_bus, to_bus)]
-        if bdat['angle_diff_max'] < 0:
-            the_mid = bdat['angle_diff_max']
-        elif bdat['angle_diff_min'] > 0:
-            the_mid = bdat['angle_diff_min']
-        else:
-            the_mid = 0
-        lb = (bus_attrs['v_min'][from_bus]
-              * bus_attrs['v_min'][to_bus]
-              * cos(max(abs(bdat['angle_diff_min']),
-                        abs(bdat['angle_diff_max']))*pi/180))
-        ub = (bus_attrs['v_max'][from_bus]
-              *  bus_attrs['v_max'][to_bus]
-              *  cos(the_mid*pi/180))
-        return lb, ub
+
+        theta_bounds = (bdat['angle_diff_min']*pi/180, bdat['angle_diff_max']*pi/180)
+        vf_bounds = (bus_attrs['v_min'][from_bus], bus_attrs['v_max'][from_bus])
+        vt_bounds = (bus_attrs['v_min'][to_bus], bus_attrs['v_max'][to_bus])
+        c_bounds = interval.cos(*theta_bounds)
+        c_bounds = interval.mul(*vf_bounds, *c_bounds)
+        c_bounds = interval.mul(*vt_bounds, *c_bounds)
+        return c_bounds
     libbranch.declare_var_c(model=model,
                             index_set=unique_bus_pairs,
                             initialize=1,
@@ -133,23 +128,13 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
     def _s_bounds_rule(m, from_bus, to_bus):
         bdat = branch_w_index[(from_bus, to_bus)]
 
-        if bdat['angle_diff_min'] >= 0:
-            lb = (bus_attrs['v_min'][from_bus]
-                  * bus_attrs['v_min'][to_bus]
-                  * sin(bdat['angle_diff_min']*pi/180))
-        else:
-            lb = (bus_attrs['v_max'][from_bus]
-                  * bus_attrs['v_max'][to_bus]
-                  * sin(bdat['angle_diff_min']*pi/180))
-        if bdat['angle_diff_max'] >= 0:
-            ub = (bus_attrs['v_max'][from_bus]
-                  * bus_attrs['v_max'][to_bus]
-                  * sin(bdat['angle_diff_max']*pi/180))
-        else:
-            ub = (bus_attrs['v_min'][from_bus]
-                  * bus_attrs['v_min'][to_bus]
-                  * sin(bdat['angle_diff_max']*pi/180))
-        return lb, ub
+        theta_bounds = (bdat['angle_diff_min']*pi/180, bdat['angle_diff_max']*pi/180)
+        vf_bounds = (bus_attrs['v_min'][from_bus], bus_attrs['v_max'][from_bus])
+        vt_bounds = (bus_attrs['v_min'][to_bus], bus_attrs['v_max'][to_bus])
+        s_bounds = interval.sin(*theta_bounds)
+        s_bounds = interval.mul(*vf_bounds, *s_bounds)
+        s_bounds = interval.mul(*vt_bounds, *s_bounds)
+        return s_bounds
     libbranch.declare_var_s(model=model, index_set=unique_bus_pairs, initialize=0,
                             bounds=_s_bounds_rule)
 
