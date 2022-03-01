@@ -2,7 +2,7 @@ name: EGRET Prescient CI
 
 on:
     # Trigger the workflow on push or pull request,
-    # but only for the master branch
+    # but only for the main branch
     push:
         branches:
             - main
@@ -73,4 +73,4 @@ jobs:
           - name: Run Prescient Tests
             run: |
               cd ../Prescient
-              python tests/simulator_tests/test_sim_rts_mod.py
+              pytest -v prescient/simulator/tests/test_simulator.py
