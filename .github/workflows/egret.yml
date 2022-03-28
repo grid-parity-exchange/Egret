@@ -66,43 +66,8 @@ jobs:
               cbc -quit
           - name: Install IPOPT
             run: |
-              if [ ${{ matrix.os }} = windows-latest ]
-              then
-                IPOPT_DIR="${GITHUB_WORKSPACE}/cache/ipopt"
-                mkdir -p "$IPOPT_DIR"
-                echo "$IPOPT_DIR" >> $GITHUB_PATH
-                DOWNLOAD_DIR="${GITHUB_WORKSPACE}/cache/download"
-                mkdir -p "$DOWNLOAD_DIR"
-                IPOPT_TAR=${DOWNLOAD_DIR}/ipopt.tar.gz
-
-                URL=https://github.com/IDAES/idaes-ext
-                RELEASE=$(curl --max-time 150 --retry 8 \
-                    -L -s -H 'Accept: application/json' ${URL}/releases/latest)
-                VER=$(echo $RELEASE | sed -e 's/.*"tag_name":"\([^"]*\)".*/\1/')
-                URL=${URL}/releases/download/$VER
-
-                if [ ${{ matrix.os }} = ubuntu-latest ]
-                then
-                  #  - ipopt needs: libopenblas-dev gfortran liblapack-dev
-                  sudo apt-get install libopenblas-dev libgfortran4 libgomp1 gfortran liblapack-dev
-                  curl --max-time 150 --retry 8 \
-                    -L $URL/idaes-solvers-ubuntu1804-64.tar.gz \
-                    > $IPOPT_TAR
-                else
-                  # windows
-                   curl --max-time 150 --retry 8 \
-                    -L $URL/idaes-solvers-windows-64.tar.gz \
-                    $URL/idaes-lib-windows-64.tar.gz > $IPOPT_TAR
-                fi
-                cd $IPOPT_DIR
-                tar -xzi < $IPOPT_TAR
-                echo ""
-                echo "$IPOPT_DIR"
-                ls -l $IPOPT_DIR
-              else
-                # download IPOPT from conda-forge
-                conda install -c conda-forge ipopt
-              fi
+              # download IPOPT from conda-forge
+              conda install -c conda-forge ipopt
           - name: Install Nose/Parameterized/Pytest
             run: |
               pip install nose parameterized pytest coveralls
