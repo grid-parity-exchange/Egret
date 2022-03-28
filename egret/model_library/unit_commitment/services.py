@@ -958,7 +958,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return m.SupplementalZonalReservesProvided[rz,t] \
                   + (m.NonSpinningZonalReservesProvided[rz,t] if nspin else 0.) \
                   + (m.ZonalSpinningReserveProvided[rz,t] if spin else 0.) \
-                  + (m.ZonalRegulationUpRequirement[rz,t] if reg_up else 0.) \
+                  + (m.ZonalRegulationUpProvided[rz,t] if reg_up else 0.) \
                 >= m.ZonalSupplementalReserveRequirement[rz,t] \
                   + (m.ZonalNonSpinningReserveRequirement[rz,t] if nspin else 0.) \
                   + (m.ZonalSpinningReserveRequirement[rz,t] if spin else 0.)\
@@ -975,7 +975,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return m.SystemSupplementalReserveProvided[t] \
                     + (m.SystemNonSpinningReserveProvided[t] if nspin_reserves else 0.) \
                     + (m.SystemSpinningReserveProvided[t] if spin_reserves else 0.) \
-                    + (m.SystemRegulationUpRequirement[t] if regup_reserves else 0.)\
+                    + (m.SystemRegulationUpProvided[t] if regup_reserves else 0.)\
                 >= m.SystemSupplementalReserveRequirement[t] \
                     + (m.SystemNonSpinningReserveRequirement[t] if nspin_reserves else 0.) \
                     + (m.SystemSpinningReserveRequirement[t] if spin_reserves else 0.)\

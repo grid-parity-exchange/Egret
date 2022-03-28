@@ -1560,6 +1560,30 @@ def _save_uc_results(m, relaxed):
 
     _populate_system_reserves(md.data['system'])
 
+    if relaxed:
+        _reserve_stacking = { # NOTE: need to maintain this order to avoid double-counting
+                              'regulation_up_price' : ('spinning_reserve_price', 'non_spinning_reserve_price', 'supplemental_reserve_price'),
+                              'spinning_reserve_price' : ('non_spinning_reserve_price', 'supplemental_reserve_price'),
+                              'non_spinning_reserve_price' : ('supplemental_reserve_price',),
+                            }
+
+        def _stack_reserves_zones(elements_dict):
+            for e_dict in elements_dict.values():
+                _stack_reserves(e_dict)
+
+        def _stack_reserves(e_dict):
+            for price_name, stack in _reserve_stacking.items():
+                if price_name in e_dict:
+                    vals = e_dict[price_name]['values']
+                    for stacked_name in stack:
+                        if stacked_name in e_dict:
+                            for idx, v in enumerate(e_dict[stacked_name]['values']):
+                                vals[idx] += v
+
+        _stack_reserves_zones(areas)
+        _stack_reserves_zones(zones)
+        _stack_reserves(md.data['system'])
+
     if fs:
         fuel_supplies = dict(md.elements(element_type='fuel_supply'))
         for f, f_dict in fuel_supplies.items():
