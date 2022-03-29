@@ -82,7 +82,7 @@ class TestRelaxations(unittest.TestCase):
         rel, scaled_md = create_soc_relaxation(md, use_linear_relaxation=False)
 
         opt = SolverFactory('ipopt')
-        opt.options['linear_solver'] = 'mumps'
+        #opt.options['linear_solver'] = 'mumps'
 
         res = opt.solve(nlp, tee=False)
         self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
@@ -112,7 +112,7 @@ class TestRelaxations(unittest.TestCase):
             b.rebuild(build_nonlinear_constraint=True)
 
         opt = SolverFactory('ipopt')
-        opt.options['linear_solver'] = 'mumps'
+        #opt.options['linear_solver'] = 'mumps'
 
         res = opt.solve(nlp, tee=False)
         self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
@@ -130,7 +130,7 @@ class TestRelaxations(unittest.TestCase):
             b.rebuild(build_nonlinear_constraint=True)
 
         opt = SolverFactory('ipopt')
-        opt.options['linear_solver'] = 'mumps'
+        #opt.options['linear_solver'] = 'mumps'
 
         res = opt.solve(nlp, tee=False)
         self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
@@ -148,7 +148,7 @@ class TestRelaxations(unittest.TestCase):
             b.rebuild(build_nonlinear_constraint=True)
 
         opt = SolverFactory('ipopt')
-        opt.options['linear_solver'] = 'mumps'
+        #opt.options['linear_solver'] = 'mumps'
 
         res = opt.solve(nlp, tee=False)
         self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
@@ -166,7 +166,7 @@ class TestRelaxations(unittest.TestCase):
             b.rebuild(build_nonlinear_constraint=True)
 
         opt = SolverFactory('ipopt')
-        opt.options['linear_solver'] = 'mumps'
+        #opt.options['linear_solver'] = 'mumps'
 
         res = opt.solve(nlp, tee=False)
         self.assertTrue(res.solver.termination_condition == TerminationCondition.optimal)
