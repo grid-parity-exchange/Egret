@@ -1148,23 +1148,23 @@ def _save_uc_results(m, relaxed):
 
         g_dict['pg'] = _time_series_dict(pg_dict)
         if reserve_requirement:
-            g_dict['rg'] = _time_series_dict(rg_dict)
+            g_dict['reserve_supplied'] = _time_series_dict(rg_dict)
         g_dict['commitment'] = _time_series_dict(commitment_dict)
         g_dict['commitment_cost'] = _time_series_dict(commitment_cost_dict)
         g_dict['production_cost'] = _time_series_dict(production_cost_dict)
         if regulation:
             g_dict['reg_provider'] = _time_series_dict(reg_prov)
-            g_dict['reg_up_supplied'] = _time_series_dict(reg_up_supp)
-            g_dict['reg_down_supplied'] = _time_series_dict(reg_dn_supp)
+            g_dict['regulation_up_supplied'] = _time_series_dict(reg_up_supp)
+            g_dict['regulation_down_supplied'] = _time_series_dict(reg_dn_supp)
         if spin:
-            g_dict['spinning_supplied'] = _time_series_dict(spin_supp)
+            g_dict['spinning_reserve_supplied'] = _time_series_dict(spin_supp)
         if nspin:
-            g_dict['non_spinning_supplied'] = _time_series_dict(nspin_supp)
+            g_dict['non_spinning_reserve_supplied'] = _time_series_dict(nspin_supp)
         if supp:
-            g_dict['supplemental_supplied'] = _time_series_dict(supp_supp)
+            g_dict['supplemental_reserve_supplied'] = _time_series_dict(supp_supp)
         if flex:
-            g_dict['flex_up_supplied'] = _time_series_dict(flex_up_supp)
-            g_dict['flex_down_supplied'] = _time_series_dict(flex_dn_supp)
+            g_dict['flexible_ramp_up_supplied'] = _time_series_dict(flex_up_supp)
+            g_dict['flexible_ramp_down_supplied'] = _time_series_dict(flex_dn_supp)
         if gfs:
             g_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
         if gdsf:
