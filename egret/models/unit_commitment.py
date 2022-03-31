@@ -1153,7 +1153,7 @@ def _save_uc_results(m, relaxed):
         g_dict['commitment_cost'] = _time_series_dict(commitment_cost_dict)
         g_dict['production_cost'] = _time_series_dict(production_cost_dict)
         if regulation:
-            g_dict['reg_provider'] = _time_series_dict(reg_prov)
+            g_dict['regulation_provider'] = _time_series_dict(reg_prov)
             g_dict['regulation_up_supplied'] = _time_series_dict(reg_up_supp)
             g_dict['regulation_down_supplied'] = _time_series_dict(reg_dn_supp)
         if spin:
