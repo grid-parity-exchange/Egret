@@ -73,6 +73,28 @@ class TestDCOPF(unittest.TestCase):
         comparison = math.isclose(md.data['system']['total_cost'], md_soln.data['system']['total_cost'], rel_tol=1e-6)
         self.assertTrue(comparison)
 
+    def test_keep_vars(self):
+        fname = os.path.join(current_dir, 'transmission_test_instances/pglib-opf-master/pglib_opf_case5_pjm.m')
+        md = ModelData.read(fname)
+        md.data["elements"]["generator"]["1"]["in_service"] = False
+        md.data["elements"]["branch"]["2"]["in_service"] = False
+
+        m1, _ = create_btheta_dcopf_model(md, keep_vars_for_out_of_service_elements=False)
+        m2, _ = create_btheta_dcopf_model(md, keep_vars_for_out_of_service_elements=True)
+
+        opt = SolverFactory('ipopt')
+        res1 = opt.solve(m1)
+        res2 = opt.solve(m2)
+
+        self.assertEqual(res1.solver.termination_condition, TerminationCondition.optimal)
+        self.assertEqual(res2.solver.termination_condition, TerminationCondition.optimal)
+
+        obj1 = pe.value(m1.obj)
+        obj2 = pe.value(m2.obj)
+
+        self.assertAlmostEqual(obj1, obj2)
+        self.assertTrue(m2.pg["1"].fixed)
+
 
 def poly_cost_to_pw_cost(md: ModelData, num_points=10):
     gen_attrs = md.attributes(element_type='generator')

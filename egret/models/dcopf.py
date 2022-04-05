@@ -29,6 +29,7 @@ from egret.models.copperplate_dispatch import (_include_system_feasibility_slack
                                                create_copperplate_dispatch_approx_model)
 from egret.common.log import logger
 from math import pi, radians, degrees
+from ._utils import get_unique_bus_pairs, get_out_of_service_gens, get_out_of_service_branches
 
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_attrs, p_marginal_slack_penalty):
@@ -49,7 +50,15 @@ def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_a
                     for bus_name in bus_names)
     return p_rhs_kwargs, penalty_expr
 
-def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False, pw_cost_model='delta'):
+def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False, pw_cost_model='delta',
+                              keep_vars_for_out_of_service_elements=False):
+    if keep_vars_for_out_of_service_elements:
+        out_of_service_gens = get_out_of_service_gens(model_data)
+        out_of_service_branches = get_out_of_service_branches(model_data)
+    else:
+        out_of_service_gens = list()
+        out_of_service_branches = list()
+
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -208,6 +217,21 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
         obj_expr += penalty_expr
 
     model.obj = pe.Objective(expr=obj_expr)
+
+    for gen_name in out_of_service_gens:
+        model.pg[gen_name].fix(0)
+        model_data.data['elements']['generator'][gen_name]['in_service'] = False
+        md.data['elements']['generator'][gen_name]['in_service'] = False
+    for branch_name in out_of_service_branches:
+        model.pf[branch_name].fix(0)
+        model.eq_pf_branch[branch_name].deactivate()
+        model.ineq_pf_branch_thermal_lb[branch_name].deactivate()
+        model.ineq_pf_branch_thermal_ub[branch_name].deactivate()
+        if include_angle_diff_limits:
+            model.ineq_angle_diff_branch_lb[branch_name].deactivate()
+            model.ineq_angle_diff_branch_ub[branch_name].deactivate()
+        model_data.data['elements']['branch'][branch_name]['in_service'] = False
+        md.data['elements']['branch'][branch_name]['in_service'] = False        
 
     return model, md
 
