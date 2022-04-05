@@ -27,7 +27,7 @@ from egret.data.networkx_utils import get_networkx_graph
 import networkx
 from pyomo.common.collections.orderedset import OrderedSet
 from pyomo.contrib.fbbt import interval
-from tx_utils import get_unique_bus_pairs, get_out_of_service_gens, get_out_of_service_branches
+from egret.model_library.transmission.tx_utils import get_unique_bus_pairs, get_out_of_service_gens, get_out_of_service_branches
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
                                gens_by_bus, gen_attrs,
