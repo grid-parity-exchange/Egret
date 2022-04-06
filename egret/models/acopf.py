@@ -27,7 +27,6 @@ from egret.data.networkx_utils import get_networkx_graph
 import networkx
 from pyomo.common.collections.orderedset import OrderedSet
 from pyomo.contrib.fbbt import interval
-from ._utils import get_unique_bus_pairs, get_out_of_service_gens, get_out_of_service_branches
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
                                gens_by_bus, gen_attrs,
@@ -71,8 +70,8 @@ def _validate_and_extract_slack_penalties(model_data):
 
 def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_cost_model='delta', keep_vars_for_out_of_service_elements=False):
     if keep_vars_for_out_of_service_elements:
-        out_of_service_gens = get_out_of_service_gens(model_data)
-        out_of_service_branches = get_out_of_service_branches(model_data)
+        out_of_service_gens = tx_utils._get_out_of_service_gens(model_data)
+        out_of_service_branches = tx_utils._get_out_of_service_branches(model_data)
     else:
         out_of_service_gens = list()
         out_of_service_branches = list()
@@ -94,7 +93,7 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
-    unique_bus_pairs = get_unique_bus_pairs(md)
+    unique_bus_pairs = tx_utils.get_unique_bus_pairs(md)
 
     model = pe.ConcreteModel()
 
@@ -316,7 +315,7 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
         md.data['elements']['branch'][branch_name]['in_service'] = False
 
     unique_bus_pairs_set = set(unique_bus_pairs)
-    ubp = set(get_unique_bus_pairs(md))
+    ubp = set(tx_utils.get_unique_bus_pairs(md))
     ubp_diff = unique_bus_pairs_set - ubp
     for from_bus, to_bus in ubp_diff:
         model.c[from_bus, to_bus].setlb(None)
@@ -331,7 +330,7 @@ def create_atan_acopf_model(model_data, include_feasibility_slack=False, pw_cost
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
                                             pw_cost_model=pw_cost_model, keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
 
-    unique_bus_pairs = get_unique_bus_pairs(md)
+    unique_bus_pairs = tx_utils.get_unique_bus_pairs(md)
     for fb, tb in unique_bus_pairs:
         assert (tb, fb) not in unique_bus_pairs
 
@@ -378,7 +377,7 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
                                             pw_cost_model=pw_cost_model, keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
     bus_attrs = md.attributes(element_type='bus')
-    unique_bus_pairs = get_unique_bus_pairs(md)
+    unique_bus_pairs = tx_utils.get_unique_bus_pairs(md)
 
     # declare the polar voltages
     libbranch.declare_var_dva(model=model,
@@ -421,7 +420,7 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
                                             pw_cost_model=pw_cost_model, keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
     bus_attrs = md.attributes(element_type='bus')
-    unique_bus_pairs = get_unique_bus_pairs(md)
+    unique_bus_pairs = tx_utils.get_unique_bus_pairs(md)
 
     # declare the rectangular voltages
     neg_v_max = map_items(op.neg, bus_attrs['v_max'])
