@@ -29,7 +29,6 @@ from egret.models.copperplate_dispatch import (_include_system_feasibility_slack
                                                create_copperplate_dispatch_approx_model)
 from egret.common.log import logger
 from math import pi, radians, degrees
-from ._utils import get_unique_bus_pairs, get_out_of_service_gens, get_out_of_service_branches
 
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_attrs, p_marginal_slack_penalty):
@@ -53,8 +52,8 @@ def _include_feasibility_slack(model, bus_names, bus_p_loads, gens_by_bus, gen_a
 def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, include_feasibility_slack=False, pw_cost_model='delta',
                               keep_vars_for_out_of_service_elements=False):
     if keep_vars_for_out_of_service_elements:
-        out_of_service_gens = get_out_of_service_gens(model_data)
-        out_of_service_branches = get_out_of_service_branches(model_data)
+        out_of_service_gens = tx_utils.get_out_of_service_gens(model_data)
+        out_of_service_branches = tx_utils.get_out_of_service_branches(model_data)
     else:
         out_of_service_gens = list()
         out_of_service_branches = list()
