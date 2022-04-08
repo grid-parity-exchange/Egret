@@ -279,6 +279,44 @@ class TestPWCost(unittest.TestCase):
         pw_obj = pe.value(m_pw.obj.expr)
         self.assertAlmostEqual(pw_obj, 803.56080829371604, places=2)
 
+    def test_pw_cost_with_out_of_service_gens(self):
+        md = ModelData.read(os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', 'pglib_opf_case30_as.m'))
+        poly_cost_to_pw_cost(md, num_points=3)
+        md.data["elements"]["generator"]["2"]["in_service"] = False
+        m1, _ = create_atan_acopf_model(md, keep_vars_for_out_of_service_elements=False)
+        m2, _ = create_atan_acopf_model(md, keep_vars_for_out_of_service_elements=True)
+
+        opt = pe.SolverFactory('ipopt')
+        res1 = opt.solve(m1)
+        res2 = opt.solve(m2)
+
+        self.assertEqual(res1.solver.termination_condition, TerminationCondition.optimal)
+        self.assertEqual(res2.solver.termination_condition, TerminationCondition.optimal)
+
+        obj1 = pe.value(m1.obj)
+        obj2 = pe.value(m2.obj)
+
+        self.assertAlmostEqual(obj1, obj2)
+
+    def test_pw_cost_with_out_of_service_gens_epi(self):
+        md = ModelData.read(os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', 'pglib_opf_case30_as.m'))
+        poly_cost_to_pw_cost(md, num_points=3)
+        md.data["elements"]["generator"]["2"]["in_service"] = False
+        m1, _ = create_atan_acopf_model(md, keep_vars_for_out_of_service_elements=False, pw_cost_model='epi')
+        m2, _ = create_atan_acopf_model(md, keep_vars_for_out_of_service_elements=True, pw_cost_model='epi')
+
+        opt = pe.SolverFactory('ipopt')
+        res1 = opt.solve(m1)
+        res2 = opt.solve(m2)
+
+        self.assertEqual(res1.solver.termination_condition, TerminationCondition.optimal)
+        self.assertEqual(res2.solver.termination_condition, TerminationCondition.optimal)
+
+        obj1 = pe.value(m1.obj)
+        obj2 = pe.value(m2.obj)
+
+        self.assertAlmostEqual(obj1, obj2)
+
 
 class TestDeltaThetaBounds(unittest.TestCase):
     def test_0_delta_theta_bounds(self):

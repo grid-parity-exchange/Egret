@@ -293,6 +293,44 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
 
     model.obj = pe.Objective(expr=obj_expr)
 
+    out_of_service_gens_set = set(out_of_service_gens)
+
+    for gen_name, e in model.pg_operating_cost.items():
+        if gen_name in out_of_service_gens_set:
+            e.expr = 0
+
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            for gen_name, ndx in model.delta_pg_set:
+                if gen_name in out_of_service_gens_set:
+                    model.delta_pg[gen_name, ndx].set_value(0, skip_validation=True)
+                    model.delta_pg[gen_name, ndx].fix()
+                    model.pg_delta_pg_con[gen_name].deactivate()
+        else:
+            for gen_name, ndx in model.pg_piecewise_cost_set:
+                if gen_name in out_of_service_gens_set:
+                    model.pg_cost[gen_name].set_value(0, skip_validation=True)
+                    model.pg_cost[gen_name].fix()
+                    model.pg_piecewise_cost_cons[gen_name, ndx].deactivate()
+
+    if q_costs is not None:
+        for gen_name, e in model.qg_operating_cost.items():
+            if gen_name in out_of_service_gens_set:
+                e.expr = 0
+        if len(pw_qg_cost_gens) > 0:
+            if pw_cost_model == 'delta':
+                for gen_name, ndx in model.delta_qg_set:
+                    if gen_name in out_of_service_gens_set:
+                        model.delta_qg[gen_name, ndx].set_value(0, skip_validation=True)
+                        model.delta_qg[gen_name, ndx].fix()
+                        model.qg_delta_qg_con[gen_name].deactivate()
+            else:
+                for gen_name, ndx in model.qg_piecewise_cost_set:
+                    if gen_name in out_of_service_gens_set:
+                        model.qg_cost[gen_name].set_value(0, skip_validation=True)
+                        model.qg_cost[gen_name].fix()
+                        model.qg_piecewise_cost_cons[gen_name, ndx].deactivate()
+
     for gen_name in out_of_service_gens:
         model.pg[gen_name].set_value(0, skip_validation=True)
         model.qg[gen_name].set_value(0, skip_validation=True)
@@ -300,13 +338,15 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
         model.qg[gen_name].fix()
         model_data.data['elements']['generator'][gen_name]['in_service'] = False
         md.data['elements']['generator'][gen_name]['in_service'] = False
-        model.pg_delta_pg_con[gen_name].deactivate()
-        # model.qg_delta_qg_con[gen_name].deactivate()
     for branch_name in out_of_service_branches:
-        model.pf[branch_name].fix(0)
-        model.pt[branch_name].fix(0)
-        model.qf[branch_name].fix(0)
-        model.qt[branch_name].fix(0)
+        model.pf[branch_name].set_value(0, skip_validation=True)
+        model.pt[branch_name].set_value(0, skip_validation=True)
+        model.qf[branch_name].set_value(0, skip_validation=True)
+        model.qt[branch_name].set_value(0, skip_validation=True)
+        model.pf[branch_name].fix()
+        model.pt[branch_name].fix()
+        model.qf[branch_name].fix()
+        model.qt[branch_name].fix()
         model.eq_pf_branch[branch_name].deactivate()
         model.eq_pt_branch[branch_name].deactivate()
         model.eq_qf_branch[branch_name].deactivate()
