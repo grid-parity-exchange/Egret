@@ -95,6 +95,7 @@ jobs:
                     $URL/idaes-lib-windows-64.tar.gz > $IPOPT_TAR
                 fi
                 cd $IPOPT_DIR
+                ls -l $IPOPT_TAR
                 tar -xvi < $IPOPT_TAR
                 echo ""
                 echo "$IPOPT_DIR"
