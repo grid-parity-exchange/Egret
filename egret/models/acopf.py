@@ -294,12 +294,10 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
     model.obj = pe.Objective(expr=obj_expr)
 
     for gen_name in out_of_service_gens:
-        model.pg[gen_name].setlb(0)
-        model.pg[gen_name].setub(0)
-        model.qg[gen_name].setlb(0)
-        model.qg[gen_name].setub(0)
-        model.pg[gen_name].fix(0)
-        model.qg[gen_name].fix(0)
+        model.pg[gen_name].set_value(0, skip_validation=True)
+        model.qg[gen_name].set_value(0, skip_validation=True)
+        model.pg[gen_name].fix()
+        model.qg[gen_name].fix()
         model_data.data['elements']['generator'][gen_name]['in_service'] = False
         md.data['elements']['generator'][gen_name]['in_service'] = False
         model.pg_delta_pg_con[gen_name].deactivate()
