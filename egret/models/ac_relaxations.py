@@ -217,8 +217,10 @@ class SOCEdgeCutsData(BaseRelaxationData):
 def create_soc_relaxation(model_data,
                           use_linear_relaxation=True,
                           include_feasibility_slack=False,
-                          use_fbbt=True):
-    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack)
+                          use_fbbt=True,
+                          keep_vars_for_out_of_service_elements=False):
+    model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                            keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
     if use_linear_relaxation:
         _relaxation_helper(model=model,
                            md=md,
@@ -238,8 +240,10 @@ def create_atan_relaxation(model_data,
                            use_linear_relaxation=True,
                            include_feasibility_slack=False,
                            use_soc_edge_cuts=False,
-                           use_fbbt=True):
-    model, md = create_atan_acopf_model(model_data=model_data, include_feasibility_slack=include_feasibility_slack)
+                           use_fbbt=True,
+                           keep_vars_for_out_of_service_elements=False):
+    model, md = create_atan_acopf_model(model_data=model_data, include_feasibility_slack=include_feasibility_slack,
+                                        keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
     del model.ineq_soc
     del model._con_ineq_soc
     if use_soc_edge_cuts:
@@ -268,8 +272,10 @@ def create_polar_acopf_relaxation(model_data,
                                   include_soc=True,
                                   use_linear_relaxation=True,
                                   include_feasibility_slack=False,
-                                  use_fbbt=True):
-    model, md = create_psv_acopf_model(model_data, include_feasibility_slack=include_feasibility_slack)
+                                  use_fbbt=True,
+                                  keep_vars_for_out_of_service_elements=False):
+    model, md = create_psv_acopf_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                       keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
     _relaxation_helper(model=model,
                        md=md,
                        include_soc=include_soc,
@@ -282,8 +288,10 @@ def create_rectangular_acopf_relaxation(model_data,
                                         include_soc=True,
                                         use_linear_relaxation=True,
                                         include_feasibility_slack=False,
-                                        use_fbbt=True):
-    model, md = create_rsv_acopf_model(model_data, include_feasibility_slack=include_feasibility_slack)
+                                        use_fbbt=True,
+                                        keep_vars_for_out_of_service_elements=False):
+    model, md = create_rsv_acopf_model(model_data, include_feasibility_slack=include_feasibility_slack,
+                                       keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
     _relaxation_helper(model=model,
                        md=md,
                        include_soc=include_soc,

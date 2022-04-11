@@ -17,9 +17,38 @@ import math
 from math import radians
 import logging
 import copy
+from collections import OrderedDict
+from egret.data.data_utils import map_items, zip_items
 
 
 logger = logging.getLogger(__name__)
+
+
+def get_unique_bus_pairs(md):
+    branch_attrs = md.attributes(element_type='branch')
+    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
+    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()))
+    return unique_bus_pairs
+
+
+def _get_out_of_service_gens(md):
+    out_of_service_gens = list()
+    for gen_name, gen_dict in md.elements(element_type='generator'):
+        if not gen_dict['in_service']:
+            out_of_service_gens.append(gen_name)
+            gen_dict['in_service'] = True
+
+    return out_of_service_gens
+
+
+def _get_out_of_service_branches(md):
+    out_of_service_branches = list()
+    for branch_name, branch_dict in md.elements(element_type='branch'):
+        if not branch_dict['in_service']:
+            out_of_service_branches.append(branch_name)
+            branch_dict['in_service'] = True
+
+    return out_of_service_branches
 
 
 def dicts_of_vr_vj(buses):

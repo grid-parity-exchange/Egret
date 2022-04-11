@@ -29,14 +29,14 @@ jobs:
             matrix:
                 os: [ubuntu-latest]
                 python-version: [3.7, 3.8, 3.9]
-                pyomo-version: [6.1.2]
+                pyomo-version: [6.4.0]
                 include:
                     - os: macos-latest
                       python-version: 3.7
-                      pyomo-version: 6.1.2
+                      pyomo-version: 6.4.0
                     - os: windows-latest
                       python-version: 3.7
-                      pyomo-version: 6.1.2
+                      pyomo-version: 6.4.0
                     - os: ubuntu-latest
                       python-version: 3.7
                       pyomo-version: main
@@ -86,13 +86,13 @@ jobs:
                   #  - ipopt needs: libopenblas-dev gfortran liblapack-dev
                   sudo apt-get install libopenblas-dev libgfortran4 libgomp1 gfortran liblapack-dev
                   curl --max-time 150 --retry 8 \
-                    -L $URL/idaes-solvers-ubuntu1804-64.tar.gz \
+                    -L $URL/idaes-solvers-ubuntu1804-x86_64.tar.gz \
                     > $IPOPT_TAR
                 else
                   # windows
                    curl --max-time 150 --retry 8 \
-                    -L $URL/idaes-solvers-windows-64.tar.gz \
-                    $URL/idaes-lib-windows-64.tar.gz > $IPOPT_TAR
+                    -L $URL/idaes-solvers-windows-x86_64.tar.gz \
+                    $URL/idaes-lib-windows-x86_64.tar.gz > $IPOPT_TAR
                 fi
                 cd $IPOPT_DIR
                 tar -xzi < $IPOPT_TAR
