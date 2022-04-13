@@ -634,10 +634,9 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
                 m.ZonalRegulationDnShortfall[rz,t] >= m.ZonalRegulationDnRequirement[rz,t]
     model.EnforceZonalRegulationDnRequirements = Constraint(model.RegulationZones, model.TimePeriods, rule=enforce_zonal_reg_dn_requirement_rule)
 
-    ## NOTE: making sure not to double count the shortfall
     def system_reg_up_provided(m,t):
         return sum(m.RegulationReserveUp[g,t] for g in m.AGC_Generators) + \
-                m.SystemRegulationUpShortfall[t] + sum(m.ZonalRegulationUpShortfall[rz,t] for rz in m.RegulationZones) 
+                m.SystemRegulationUpShortfall[t]
     model.SystemRegulationUpProvided = Expression(model.TimePeriods, rule=system_reg_up_provided)
 
     def enforce_system_regulation_up_requirement_rule(m, t):
@@ -646,7 +645,7 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
 
     def enforce_system_regulation_dn_requirement_rule(m, t):
         return sum(m.RegulationReserveDn[g,t] for g in m.AGC_Generators) + \
-                m.SystemRegulationDnShortfall[t] + sum(m.ZonalRegulationDnShortfall[rz,t] for rz in m.RegulationZones) \
+                m.SystemRegulationDnShortfall[t] \
                 >= m.SystemRegulationDnRequirement[t]
     model.EnforceSystemRegulationDnRequirement = Constraint(model.TimePeriods, rule=enforce_system_regulation_dn_requirement_rule)
 
@@ -737,7 +736,6 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
 
     def system_spinning_reserve_provided(m,t):
         return sum(m.SpinningReserveDispatched[g,t] for g in m.ThermalGenerators) \
-                + sum(m.ZonalSpinningReserveShortfall[rz,t] for rz in m.SpinningReserveZones) \
                 + m.SystemSpinningReserveShortfall[t]
     model.SystemSpinningReserveProvided = Expression(model.TimePeriods, rule=system_spinning_reserve_provided)
 
@@ -835,7 +833,6 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
 
     def nspin_reserves_provided(m,t):
         return sum(m.NonSpinningReserveDispatched[g,t] for g in m.NonSpinGenerators) \
-                + sum(m.ZonalNonSpinningReserveShortfall[rz,t] for rz in m.NonSpinReserveZones) \
                 + m.SystemNonSpinningReserveShortfall[t]
     model.SystemNonSpinningReserveProvided = Expression(model.TimePeriods, rule=nspin_reserves_provided)
 
@@ -958,7 +955,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return m.SupplementalZonalReservesProvided[rz,t] \
                   + (m.NonSpinningZonalReservesProvided[rz,t] if nspin else 0.) \
                   + (m.ZonalSpinningReserveProvided[rz,t] if spin else 0.) \
-                  + (m.ZonalRegulationUpRequirement[rz,t] if reg_up else 0.) \
+                  + (m.ZonalRegulationUpProvided[rz,t] if reg_up else 0.) \
                 >= m.ZonalSupplementalReserveRequirement[rz,t] \
                   + (m.ZonalNonSpinningReserveRequirement[rz,t] if nspin else 0.) \
                   + (m.ZonalSpinningReserveRequirement[rz,t] if spin else 0.)\
@@ -967,7 +964,6 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
 
     def operational_reserves_provided(m,t):
         return sum(m.SupplementalReserveDispatched[g,t] for g in m.ThermalGenerators) \
-                + sum(m.ZonalSupplementalReserveShortfall[rz,t] for rz in m.SupplementalReserveZones) \
                 + m.SystemSupplementalReserveShortfall[t]
     model.SystemSupplementalReserveProvided = Expression(model.TimePeriods, rule=operational_reserves_provided)
 
@@ -975,7 +971,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return m.SystemSupplementalReserveProvided[t] \
                     + (m.SystemNonSpinningReserveProvided[t] if nspin_reserves else 0.) \
                     + (m.SystemSpinningReserveProvided[t] if spin_reserves else 0.) \
-                    + (m.SystemRegulationUpRequirement[t] if regup_reserves else 0.)\
+                    + (m.SystemRegulationUpProvided[t] if regup_reserves else 0.)\
                 >= m.SystemSupplementalReserveRequirement[t] \
                     + (m.SystemNonSpinningReserveRequirement[t] if nspin_reserves else 0.) \
                     + (m.SystemSpinningReserveRequirement[t] if spin_reserves else 0.)\
@@ -1063,14 +1059,12 @@ def flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_
 
     def system_flex_up_requirement_rule(m, t):
         return sum(m.FlexUpProvided[g,t] for g in m.ThermalGenerators) \
-                 + sum(m.ZonalFlexUpShortfall[rz,t] for rz in m.FlexRampZones) \
                  + m.SystemFlexUpShortfall[t] \
                  >= m.SystemFlexUpRequirement[t]
     model.SystemFlexUpRequirementConstr = Constraint(model.TimePeriods, rule=system_flex_up_requirement_rule)
 
     def system_flex_dn_requirement_rule(m, t):
         return sum(m.FlexDnProvided[g,t] for g in m.ThermalGenerators) \
-                 + sum(m.ZonalFlexDnShortfall[rz,t] for rz in m.FlexRampZones) \
                  + m.SystemFlexDnShortfall[t] \
                  >= m.SystemFlexDnRequirement[t]
     model.SystemFlexDnRequirementConstr = Constraint(model.TimePeriods, rule=system_flex_dn_requirement_rule)
