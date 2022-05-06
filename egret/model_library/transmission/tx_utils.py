@@ -608,6 +608,14 @@ def _insert_last_point(p_max, values, pop=True):
         values.pop()
     values.append((p_max, last_cost))
 
+def _remove_duplicates(values):
+    duplicate_incides = []
+    for idx, ((o1, c1), (o2, c2)) in enumerate(zip(values, values[1:])):
+        if math.isclose(o1,o2) and math.isclose(c1, c2):
+            duplicate_incides.append(idx)
+    for idx in reversed(duplicate_incides):
+        del values[idx]
+
 def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=None):
     """
     Parameters
@@ -655,6 +663,8 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
                 at_time_t = "" if (t is None) else f"at time {t}"
                 raise ValueError(f"Generator {gen_name} {at_time_t} has only a single point on its "
                                   "piecewise cost curve which is not covered by p_min or p_max.")
+
+        _remove_duplicates(values)
 
         # print a warning (once) if we're extending the cost curve
         if (p_min < values[0][0] and not math.isclose(p_min, values[0][0])) or \
