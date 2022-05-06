@@ -675,15 +675,14 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
                 _insert_last_point(p_max, values, pop=False)
 
         # now that we've extended the cost curve, we need to catch the
-        # case that p_min == p_max and we're at one of the extremes
+        # case that p_min == p_max and we're on one of the points
         # of the cost curve. The logic below fails in this case.
         if math.isclose(p_min, p_max):
-            of, cf = values[0]
-            if math.isclose(p_min, of):
-                return [(p_min,cf)]
-            ol, cl = values[-1]
-            if math.isclose(p_max, ol):
-                return [(p_max,cl)]
+            for o, c in values:
+                if math.isclose(p_min, o):
+                    return [(p_min,c)]
+                if math.isclose(p_max, o):
+                    return [(p_max,c)]
 
         cleaned_values = list()
         last_slope = None
