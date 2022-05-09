@@ -260,8 +260,19 @@ class TestValidateCostCurves(unittest.TestCase):
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
 
-    def test_pw_pmin_is_pmax_single_point(self):
+    def test_pw_pmin_is_pmax_on_curve_2(self):
         curve = example_pw_curve()
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=50,
+                                                                p_max=50,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(50, 178.0)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+
+    def test_pw_pmin_is_pmax_single_point(self):
         curve = dict()
         curve['data_type'] = 'cost_curve'
         curve['cost_curve_type'] = 'piecewise'
@@ -298,6 +309,20 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 gen_name='foo',
                                                                 t=None)
         expected_values = [(5, 3)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmax_less_than_first_point3(self):
+        curve = example_pw_curve()
+        curve['values'] = 2*[curve['values'][0]] + curve['values']
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=-5,
+                                                                p_max=5,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(-5, -27), (5, 3)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
         tx_utils.validate_and_clean_cost_curve._printed_warning = False
@@ -350,6 +375,21 @@ class TestValidateCostCurves(unittest.TestCase):
                                                                 gen_name='foo',
                                                                 t=None)
         expected_values = [(100, 588)]
+        self.assertEqual(cleaned_values, expected_values)
+        self.assertIsNot(expected_values, curve['values'])
+        tx_utils.validate_and_clean_cost_curve._printed_warning = False
+
+    def test_pmin_greater_than_last_point3(self):
+        curve = example_pw_curve()
+        curve['values'].append(curve['values'][-1])
+        curve['values'].append(curve['values'][-1])
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve=curve,
+                                                                curve_type='cost_curve',
+                                                                p_min=100,
+                                                                p_max=110,
+                                                                gen_name='foo',
+                                                                t=None)
+        expected_values = [(100, 588), (110, 678)]
         self.assertEqual(cleaned_values, expected_values)
         self.assertIsNot(expected_values, curve['values'])
         tx_utils.validate_and_clean_cost_curve._printed_warning = False
