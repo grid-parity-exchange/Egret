@@ -24,7 +24,7 @@ jobs:
             matrix:
                 os: [ubuntu-latest]
                 python-version: [3.7]
-                pyomo-version: [6.1.2]
+                pyomo-version: [6.4.0]
         steps:
           - uses: actions/checkout@v2
           - uses: conda-incubator/setup-miniconda@v2
@@ -60,7 +60,7 @@ jobs:
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
           - name: Install Coramin
             run: |
-              pip install coramin
+              pip install coramin==0.1.1
           - name: Install EGRET
             run: |
               python setup.py develop
