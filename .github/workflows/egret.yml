@@ -112,9 +112,6 @@ jobs:
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
-          - name: Install Coramin
-            run: |
-              pip install coramin
           - name: Install EGRET
             run: |
               python setup.py develop
