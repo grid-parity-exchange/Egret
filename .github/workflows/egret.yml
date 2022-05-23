@@ -106,9 +106,9 @@ jobs:
           - name: Install Nose/Parameterized/Pytest
             run: |
               pip install nose parameterized pytest coveralls
-          - name: Install Cython/Numpy/Pandas
+          - name: Install Cython/Numpy/Pandas/Scipy
             run: |
-              pip install cython numpy pandas
+              pip install cython numpy pandas scipy
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
