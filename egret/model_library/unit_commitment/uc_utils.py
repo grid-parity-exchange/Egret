@@ -142,9 +142,13 @@ def make_indexed_penalty_rule(element_key, base_penalty):
     return penalty_rule
 
 def _reconstruct_pyomo_component(component):
-    component.clear()
-    component._constructed = False
-    component.construct()
+    function = component._rule._fcn
+    model = component.parent_block()
+    if component.is_indexed():
+        for idx, param in component.items():
+            param.value = function(model, idx)
+    else:
+        component.value = function(model)
 
 def reset_unit_commitment_penalties(m):
     scale_ModelData_to_pu(m.model_data, inplace=True)
