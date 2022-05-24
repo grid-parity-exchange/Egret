@@ -141,16 +141,20 @@ def make_indexed_penalty_rule(element_key, base_penalty):
         return m.model_data.data['elements'][element_key][idx].get('violation_penalty', base_penalty._rule(m, None))
     return penalty_rule
 
-def _reconstruct_pyomo_component(component):
-    component.clear()
-    component._constructed = False
-    component.construct()
+def _reset_mutable_param(param):
+    function = param._rule._fcn
+    model = param.parent_block()
+    if param.is_indexed():
+        for idx, param_data in param.items():
+            param_data.value = function(model, idx)
+    else:
+        param.value = function(model)
 
 def reset_unit_commitment_penalties(m):
     scale_ModelData_to_pu(m.model_data, inplace=True)
-    _reconstruct_pyomo_component(m.LoadMismatchPenalty)
+    _reset_mutable_param(m.LoadMismatchPenalty)
     for param in m.component_objects(Param):
         if param.mutable and isinstance(param._rule, (ScalarCallInitializer, IndexedCallInitializer)) \
                 and (param._rule._fcn.__name__ == 'penalty_rule'):
-            _reconstruct_pyomo_component(param)
+            _reset_mutable_param(param)
     unscale_ModelData_to_pu(m.model_data, inplace=True)
