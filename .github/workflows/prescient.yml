@@ -24,7 +24,7 @@ jobs:
             matrix:
                 os: [ubuntu-latest]
                 python-version: [3.7]
-                pyomo-version: [6.1.2]
+                pyomo-version: [6.4.0]
         steps:
           - uses: actions/checkout@v2
           - uses: conda-incubator/setup-miniconda@v2
@@ -49,27 +49,18 @@ jobs:
               fi
               # test cbc executable
               cbc -quit
-          - name: Install Nose/Parameterized/Pytest
-            run: |
-              pip install nose parameterized pytest coveralls
-          - name: Install Cython/Numpy/Pandas
-            run: |
-              pip install cython numpy pandas
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
-          - name: Install Coramin
-            run: |
-              pip install coramin
           - name: Install EGRET
             run: |
-              python setup.py develop
+              pip install -e .
           - name: Install Prescient
             run: |
               cd ..
               git clone --depth=1 https://github.com/grid-parity-exchange/Prescient.git
               cd Prescient
-              python setup.py develop
+              pip install -e .
           - name: Run Prescient Tests
             run: |
               cd ../Prescient
