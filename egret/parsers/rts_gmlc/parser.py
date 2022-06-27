@@ -154,7 +154,7 @@ def parse_to_cache(rts_gmlc_dir:str,
 def _read_metadata(base_dir:str) -> pd.DataFrame:
     metadata_path = os.path.join(base_dir, "simulation_objects.csv")
     if not os.path.exists(metadata_path):
-        raise ValueError(f'RTS-GMLC directory "{rts_gmlc_dir}" does not contain expected CSV files.')
+        raise ValueError(f'RTS-GMLC directory "{base_dir}" does not contain expected CSV files.')
 
     # Read metadata about the data
     metadata_df = pd.read_csv(metadata_path, index_col=0)
