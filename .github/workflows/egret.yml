@@ -106,18 +106,12 @@ jobs:
           - name: Install Nose/Parameterized/Pytest
             run: |
               pip install nose parameterized pytest coveralls
-          - name: Install Cython/Numpy/Pandas
-            run: |
-              pip install cython numpy pandas
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
-          - name: Install Coramin
-            run: |
-              pip install coramin==0.1.1
           - name: Install EGRET
             run: |
-              python setup.py develop
+              pip install -e .
           - name: Run EGRET Tests
             run: |
               nosetests -v --nologcapture --with-coverage --cover-package=egret egret 
