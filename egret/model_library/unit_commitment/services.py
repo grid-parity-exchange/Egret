@@ -11,7 +11,7 @@
 from pyomo.environ import *
 import math
 
-from .uc_utils import add_model_attr, uc_time_helper 
+from .uc_utils import add_model_attr, uc_time_helper, make_penalty_rule
 from .status_vars import _is_relaxed
 
 @add_model_attr('storage_service', requires = {'data_loader': None,
@@ -203,7 +203,7 @@ def ancillary_services(model):
     '''
     Defines ancillary services: regulation, spinning reserve, nonspinning reserve, operational reserve, flexible ramp
     ## NOTE: As in most markets, the value of ancillary services from high to low is regulation, spinning reserve, nonspinning reserve, and supplemental reserve.
-    ##       We allow for a higher-quality ancillary service to be subtituted for a lower-quality one
+    ##       We allow for a higher-quality ancillary service to be substituted for a lower-quality one
     ##       Flexible ramp is treated differently, again as it is in most markets. There is no bid for flexible ramp, and it is priced at opportunity cost
     '''
     md = model.model_data
@@ -212,18 +212,6 @@ def ancillary_services(model):
     elements = md.data['elements']
 
     TimeMapper = uc_time_helper(model.TimePeriods)
-
-
-    ## list of possible ancillary services coming
-    ## from model_data
-    ancillary_service_list = [ 'spinning_reserve_requirement',
-                               'non_spinning_reserve_requirement',
-                               'regulation_up_requirement',
-                               'regulation_down_requirement',
-                               'supplemental_reserve_requirement',
-                               'flexible_ramp_up_requirement',
-                               'flexible_ramp_down_requirement',
-                             ]
 
     if 'zone' not in elements:
         elements['zone'] = dict()
@@ -255,7 +243,7 @@ def ancillary_services(model):
     ## check here and break if there's nothing to do
     no_reserves = not (add_spinning_reserve or add_non_spinning_reserve or add_regulation_reserve or add_supplemental_reserve or add_flexi_ramp_reserve)
 
-    ## add a flag for which brach we took here
+    ## add a flag for which branch we took here
     if no_reserves:
         model.nonbasic_reserves = False
         model.regulation_service = None
@@ -272,30 +260,50 @@ def ancillary_services(model):
         raise Exception('Exception adding ancillary_services! ancillary_services requires one of: garver_3bin_vars, garver_2bin_vars, garver_3bin_relaxed_stop_vars, ALS_state_transition_vars, to be used for the status_vars.')
 
     ## set some penalties by default based on the other model penalties
-    default_reg_pen = value(model.LoadMismatchPenalty+model.ReserveShortfallPenalty)/2.
     ## set these penalties in relation to each other, from higher quality service to lower
+    #################################################################################
+    # penalty costs for constraint violation
+    #
+    # While the user can specify these, by default we base all penalties
+    # off the "load_mismatch_cost", which always has the highest penalty
+    # value (default $1M/MWh). If the user sets "load_mismatch_cost"
+    # at $1000/MWh, the following penalties will be used:
+    #
+    # (defined in params.py)
+    # "q_load_mismatch_cost"              : $500/MVh ("load_mismatch_cost"/2)
+    # "transmission_flow_violation_cost"  : $500/MWh ("load_mismatch_cost"/2)
+    # "contingency_flow_violation_cost"   : $500/MWh ("load_mismatch_cost"/2)
+    # "interface_flow_violation_cost"     : $300/MWh ("load_mismatch_cost"/(10/3))
+    # "reserve_shortfall_cost"            : $100/MWh ("load_mismatch_cost"/10)
+    #
+    # (defined here in services.py)
+    # "regulation_penalty_price"          : $250/MWh ("load_mismatch_cost"/4)
+    # "spinning_reserve_penalty_price"    : $200/MWh ("load_mismatch_cost"/5)
+    # "non_spinning_reserve_penalty_price": $150/MWh ("load_mismatch_cost"/(20/3))
+    # "supplemental_reserve_penalty_price": $125/MWh ("load_mismatch_cost"/8)
+    # "flexible_ramp_penalty_price"       : $110/MWh ("load_mismatch_cost"/(100/11))
+    #
+    # Note these can be overridden by the user specifying the values themselves.
+    # Further, penalties on branch flows and interfaces can be set per-element.
+    ################################################################################
     model.RegulationPenalty = Param(within=NonNegativeReals,
-            initialize=system.get('regulation_penalty_price', default_reg_pen),
+            rule=make_penalty_rule('regulation_penalty_price', 4.),
             mutable=True)
 
-    default_spin_pen = value(model.RegulationPenalty+model.ReserveShortfallPenalty)/2.
     model.SpinningReservePenalty = Param(within=NonNegativeReals, 
-            initialize=system.get('spinning_reserve_penalty_price', default_spin_pen),
+            rule=make_penalty_rule('spinning_reserve_penalty_price', 5.),
             mutable=True)
 
-    default_nspin_pen = value(model.SpinningReservePenalty+model.ReserveShortfallPenalty)/2.
     model.NonSpinningReservePenalty = Param(within=NonNegativeReals,
-            initialize=system.get('non_spinning_reserve_penalty_price', default_nspin_pen),
+            rule=make_penalty_rule('non_spinning_reserve_penalty_price', (20/3.)), #6.667
             mutable=True)
 
-    default_supp_pen = value(model.NonSpinningReservePenalty+model.ReserveShortfallPenalty)/2.
     model.SupplementalReservePenalty = Param(within=NonNegativeReals,
-            initialize=system.get('supplemental_reserve_penalty_price', default_supp_pen),
+            rule=make_penalty_rule('supplemental_reserve_penalty_price', 8.),
             mutable=True)
 
-    default_flex_pen = value(model.NonSpinningReservePenalty+model.SpinningReservePenalty)/2.
     model.FlexRampPenalty = Param(within=NonNegativeReals,
-            initialize=system.get('flexible_ramp_penalty_price', default_flex_pen),
+            rule=make_penalty_rule('flexible_ramp_penalty_price', (100/11.)), #9.09
             mutable=True)
 
     thermal_gen_attrs = md.attributes(element_type='generator', generator_type='thermal')
@@ -626,10 +634,9 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
                 m.ZonalRegulationDnShortfall[rz,t] >= m.ZonalRegulationDnRequirement[rz,t]
     model.EnforceZonalRegulationDnRequirements = Constraint(model.RegulationZones, model.TimePeriods, rule=enforce_zonal_reg_dn_requirement_rule)
 
-    ## NOTE: making sure not to double count the shortfall
     def system_reg_up_provided(m,t):
         return sum(m.RegulationReserveUp[g,t] for g in m.AGC_Generators) + \
-                m.SystemRegulationUpShortfall[t] + sum(m.ZonalRegulationUpShortfall[rz,t] for rz in m.RegulationZones) 
+                m.SystemRegulationUpShortfall[t]
     model.SystemRegulationUpProvided = Expression(model.TimePeriods, rule=system_reg_up_provided)
 
     def enforce_system_regulation_up_requirement_rule(m, t):
@@ -638,7 +645,7 @@ def regulation_services(model, zone_initializer_builder, zone_requirement_getter
 
     def enforce_system_regulation_dn_requirement_rule(m, t):
         return sum(m.RegulationReserveDn[g,t] for g in m.AGC_Generators) + \
-                m.SystemRegulationDnShortfall[t] + sum(m.ZonalRegulationDnShortfall[rz,t] for rz in m.RegulationZones) \
+                m.SystemRegulationDnShortfall[t] \
                 >= m.SystemRegulationDnRequirement[t]
     model.EnforceSystemRegulationDnRequirement = Constraint(model.TimePeriods, rule=enforce_system_regulation_dn_requirement_rule)
 
@@ -729,7 +736,6 @@ def spinning_reserves(model, zone_initializer_builder, zone_requirement_getter, 
 
     def system_spinning_reserve_provided(m,t):
         return sum(m.SpinningReserveDispatched[g,t] for g in m.ThermalGenerators) \
-                + sum(m.ZonalSpinningReserveShortfall[rz,t] for rz in m.SpinningReserveZones) \
                 + m.SystemSpinningReserveShortfall[t]
     model.SystemSpinningReserveProvided = Expression(model.TimePeriods, rule=system_spinning_reserve_provided)
 
@@ -827,7 +833,6 @@ def non_spinning_reserves(model, zone_initializer_builder, zone_requirement_gett
 
     def nspin_reserves_provided(m,t):
         return sum(m.NonSpinningReserveDispatched[g,t] for g in m.NonSpinGenerators) \
-                + sum(m.ZonalNonSpinningReserveShortfall[rz,t] for rz in m.NonSpinReserveZones) \
                 + m.SystemNonSpinningReserveShortfall[t]
     model.SystemNonSpinningReserveProvided = Expression(model.TimePeriods, rule=nspin_reserves_provided)
 
@@ -950,7 +955,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return m.SupplementalZonalReservesProvided[rz,t] \
                   + (m.NonSpinningZonalReservesProvided[rz,t] if nspin else 0.) \
                   + (m.ZonalSpinningReserveProvided[rz,t] if spin else 0.) \
-                  + (m.ZonalRegulationUpRequirement[rz,t] if reg_up else 0.) \
+                  + (m.ZonalRegulationUpProvided[rz,t] if reg_up else 0.) \
                 >= m.ZonalSupplementalReserveRequirement[rz,t] \
                   + (m.ZonalNonSpinningReserveRequirement[rz,t] if nspin else 0.) \
                   + (m.ZonalSpinningReserveRequirement[rz,t] if spin else 0.)\
@@ -959,7 +964,6 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
 
     def operational_reserves_provided(m,t):
         return sum(m.SupplementalReserveDispatched[g,t] for g in m.ThermalGenerators) \
-                + sum(m.ZonalSupplementalReserveShortfall[rz,t] for rz in m.SupplementalReserveZones) \
                 + m.SystemSupplementalReserveShortfall[t]
     model.SystemSupplementalReserveProvided = Expression(model.TimePeriods, rule=operational_reserves_provided)
 
@@ -967,7 +971,7 @@ def supplemental_reserves(model, zone_initializer_builder, zone_requirement_gett
         return m.SystemSupplementalReserveProvided[t] \
                     + (m.SystemNonSpinningReserveProvided[t] if nspin_reserves else 0.) \
                     + (m.SystemSpinningReserveProvided[t] if spin_reserves else 0.) \
-                    + (m.SystemRegulationUpRequirement[t] if regup_reserves else 0.)\
+                    + (m.SystemRegulationUpProvided[t] if regup_reserves else 0.)\
                 >= m.SystemSupplementalReserveRequirement[t] \
                     + (m.SystemNonSpinningReserveRequirement[t] if nspin_reserves else 0.) \
                     + (m.SystemSpinningReserveRequirement[t] if spin_reserves else 0.)\
@@ -1055,14 +1059,12 @@ def flexible_ramping_reserves(model, zone_initializer_builder, zone_requirement_
 
     def system_flex_up_requirement_rule(m, t):
         return sum(m.FlexUpProvided[g,t] for g in m.ThermalGenerators) \
-                 + sum(m.ZonalFlexUpShortfall[rz,t] for rz in m.FlexRampZones) \
                  + m.SystemFlexUpShortfall[t] \
                  >= m.SystemFlexUpRequirement[t]
     model.SystemFlexUpRequirementConstr = Constraint(model.TimePeriods, rule=system_flex_up_requirement_rule)
 
     def system_flex_dn_requirement_rule(m, t):
         return sum(m.FlexDnProvided[g,t] for g in m.ThermalGenerators) \
-                 + sum(m.ZonalFlexDnShortfall[rz,t] for rz in m.FlexRampZones) \
                  + m.SystemFlexDnShortfall[t] \
                  >= m.SystemFlexDnRequirement[t]
     model.SystemFlexDnRequirementConstr = Constraint(model.TimePeriods, rule=system_flex_dn_requirement_rule)

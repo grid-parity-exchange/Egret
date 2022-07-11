@@ -1148,23 +1148,23 @@ def _save_uc_results(m, relaxed):
 
         g_dict['pg'] = _time_series_dict(pg_dict)
         if reserve_requirement:
-            g_dict['rg'] = _time_series_dict(rg_dict)
+            g_dict['reserve_supplied'] = _time_series_dict(rg_dict)
         g_dict['commitment'] = _time_series_dict(commitment_dict)
         g_dict['commitment_cost'] = _time_series_dict(commitment_cost_dict)
         g_dict['production_cost'] = _time_series_dict(production_cost_dict)
         if regulation:
-            g_dict['reg_provider'] = _time_series_dict(reg_prov)
-            g_dict['reg_up_supplied'] = _time_series_dict(reg_up_supp)
-            g_dict['reg_down_supplied'] = _time_series_dict(reg_dn_supp)
+            g_dict['regulation_provider'] = _time_series_dict(reg_prov)
+            g_dict['regulation_up_supplied'] = _time_series_dict(reg_up_supp)
+            g_dict['regulation_down_supplied'] = _time_series_dict(reg_dn_supp)
         if spin:
-            g_dict['spinning_supplied'] = _time_series_dict(spin_supp)
+            g_dict['spinning_reserve_supplied'] = _time_series_dict(spin_supp)
         if nspin:
-            g_dict['non_spinning_supplied'] = _time_series_dict(nspin_supp)
+            g_dict['non_spinning_reserve_supplied'] = _time_series_dict(nspin_supp)
         if supp:
-            g_dict['supplemental_supplied'] = _time_series_dict(supp_supp)
+            g_dict['supplemental_reserve_supplied'] = _time_series_dict(supp_supp)
         if flex:
-            g_dict['flex_up_supplied'] = _time_series_dict(flex_up_supp)
-            g_dict['flex_down_supplied'] = _time_series_dict(flex_dn_supp)
+            g_dict['flexible_ramp_up_supplied'] = _time_series_dict(flex_up_supp)
+            g_dict['flexible_ramp_down_supplied'] = _time_series_dict(flex_dn_supp)
         if gfs:
             g_dict['fuel_consumed'] = _time_series_dict(fuel_consumed)
         if gdsf:
@@ -1515,14 +1515,14 @@ def _save_uc_results(m, relaxed):
                                                                  'balance_m' : m.SystemFlexDnRequirementConstr,
                                                                 }
     if supp:
-        _zonal_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_shortfall',
-                                                                 'price' : 'supplemental_price',
+        _zonal_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_reserve_shortfall',
+                                                                 'price' : 'supplemental_reserve_price',
                                                                  'shortfall_m' : m.ZonalSupplementalReserveShortfall,
                                                                  'balance_m' : m.EnforceZonalSupplementalReserveRequirement,
                                                                  }
 
-        _system_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_shortfall',
-                                                                   'price' : 'supplemental_price',
+        _system_reserve_map['supplemental_reserve_requirement'] = {'shortfall' : 'supplemental_reserve_shortfall',
+                                                                   'price' : 'supplemental_reserve_price',
                                                                    'shortfall_m' : m.SystemSupplementalReserveShortfall,
                                                                    'balance_m' : m.EnforceSystemSupplementalReserveRequirement,
                                                                    }
@@ -1559,6 +1559,30 @@ def _save_uc_results(m, relaxed):
     _populate_zonal_reserves(zones, 'zone_')
 
     _populate_system_reserves(md.data['system'])
+
+    if relaxed:
+        _reserve_stacking = { # NOTE: need to maintain this order to avoid double-counting
+                              'regulation_up_price' : ('spinning_reserve_price', 'non_spinning_reserve_price', 'supplemental_reserve_price'),
+                              'spinning_reserve_price' : ('non_spinning_reserve_price', 'supplemental_reserve_price'),
+                              'non_spinning_reserve_price' : ('supplemental_reserve_price',),
+                            }
+
+        def _stack_reserves_zones(elements_dict):
+            for e_dict in elements_dict.values():
+                _stack_reserves(e_dict)
+
+        def _stack_reserves(e_dict):
+            for price_name, stack in _reserve_stacking.items():
+                if price_name in e_dict:
+                    vals = e_dict[price_name]['values']
+                    for stacked_name in stack:
+                        if stacked_name in e_dict:
+                            for idx, v in enumerate(e_dict[stacked_name]['values']):
+                                vals[idx] += v
+
+        _stack_reserves_zones(areas)
+        _stack_reserves_zones(zones)
+        _stack_reserves(md.data['system'])
 
     if fs:
         fuel_supplies = dict(md.elements(element_type='fuel_supply'))

@@ -26,6 +26,7 @@ from collections import OrderedDict
 from egret.data.networkx_utils import get_networkx_graph
 import networkx
 from pyomo.common.collections.orderedset import OrderedSet
+from pyomo.contrib.fbbt import interval
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
                                gens_by_bus, gen_attrs,
@@ -67,7 +68,14 @@ def _validate_and_extract_slack_penalties(model_data):
     return model_data.data['system']['load_mismatch_cost'], model_data.data['system']['q_load_mismatch_cost']
 
 
-def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_cost_model='delta', keep_vars_for_out_of_service_elements=False):
+    if keep_vars_for_out_of_service_elements:
+        out_of_service_gens = tx_utils._get_out_of_service_gens(model_data)
+        out_of_service_branches = tx_utils._get_out_of_service_branches(model_data)
+    else:
+        out_of_service_gens = list()
+        out_of_service_branches = list()
+                
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace=True)
 
@@ -85,8 +93,7 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
-    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
-    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()))
+    unique_bus_pairs = tx_utils.get_unique_bus_pairs(md)
 
     model = pe.ConcreteModel()
 
@@ -111,20 +118,14 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
 
     def _c_bounds_rule(m, from_bus, to_bus):
         bdat = branch_w_index[(from_bus, to_bus)]
-        if bdat['angle_diff_max'] < 0:
-            the_mid = bdat['angle_diff_max']
-        elif bdat['angle_diff_min'] > 0:
-            the_mid = bdat['angle_diff_min']
-        else:
-            the_mid = 0
-        lb = (bus_attrs['v_min'][from_bus]
-              * bus_attrs['v_min'][to_bus]
-              * cos(max(abs(bdat['angle_diff_min']),
-                        abs(bdat['angle_diff_max']))*pi/180))
-        ub = (bus_attrs['v_max'][from_bus]
-              *  bus_attrs['v_max'][to_bus]
-              *  cos(the_mid*pi/180))
-        return lb, ub
+
+        theta_bounds = (bdat['angle_diff_min']*pi/180, bdat['angle_diff_max']*pi/180)
+        vf_bounds = (bus_attrs['v_min'][from_bus], bus_attrs['v_max'][from_bus])
+        vt_bounds = (bus_attrs['v_min'][to_bus], bus_attrs['v_max'][to_bus])
+        c_bounds = interval.cos(*theta_bounds)
+        c_bounds = interval.mul(*vf_bounds, *c_bounds)
+        c_bounds = interval.mul(*vt_bounds, *c_bounds)
+        return c_bounds
     libbranch.declare_var_c(model=model,
                             index_set=unique_bus_pairs,
                             initialize=1,
@@ -133,23 +134,13 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
     def _s_bounds_rule(m, from_bus, to_bus):
         bdat = branch_w_index[(from_bus, to_bus)]
 
-        if bdat['angle_diff_min'] >= 0:
-            lb = (bus_attrs['v_min'][from_bus]
-                  * bus_attrs['v_min'][to_bus]
-                  * sin(bdat['angle_diff_min']*pi/180))
-        else:
-            lb = (bus_attrs['v_max'][from_bus]
-                  * bus_attrs['v_max'][to_bus]
-                  * sin(bdat['angle_diff_min']*pi/180))
-        if bdat['angle_diff_max'] >= 0:
-            ub = (bus_attrs['v_max'][from_bus]
-                  * bus_attrs['v_max'][to_bus]
-                  * sin(bdat['angle_diff_max']*pi/180))
-        else:
-            ub = (bus_attrs['v_min'][from_bus]
-                  * bus_attrs['v_min'][to_bus]
-                  * sin(bdat['angle_diff_max']*pi/180))
-        return lb, ub
+        theta_bounds = (bdat['angle_diff_min']*pi/180, bdat['angle_diff_max']*pi/180)
+        vf_bounds = (bus_attrs['v_min'][from_bus], bus_attrs['v_max'][from_bus])
+        vt_bounds = (bus_attrs['v_min'][to_bus], bus_attrs['v_max'][to_bus])
+        s_bounds = interval.sin(*theta_bounds)
+        s_bounds = interval.mul(*vf_bounds, *s_bounds)
+        s_bounds = interval.mul(*vt_bounds, *s_bounds)
+        return s_bounds
     libbranch.declare_var_s(model=model, index_set=unique_bus_pairs, initialize=0,
                             bounds=_s_bounds_rule)
 
@@ -302,16 +293,88 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
 
     model.obj = pe.Objective(expr=obj_expr)
 
+    out_of_service_gens_set = set(out_of_service_gens)
+
+    for gen_name, e in model.pg_operating_cost.items():
+        if gen_name in out_of_service_gens_set:
+            e.expr = 0
+
+    if len(pw_pg_cost_gens) > 0:
+        if pw_cost_model == 'delta':
+            for gen_name, ndx in model.delta_pg_set:
+                if gen_name in out_of_service_gens_set:
+                    model.delta_pg[gen_name, ndx].set_value(0, skip_validation=True)
+                    model.delta_pg[gen_name, ndx].fix()
+                    model.pg_delta_pg_con[gen_name].deactivate()
+        else:
+            for gen_name, ndx in model.pg_piecewise_cost_set:
+                if gen_name in out_of_service_gens_set:
+                    model.pg_cost[gen_name].set_value(0, skip_validation=True)
+                    model.pg_cost[gen_name].fix()
+                    model.pg_piecewise_cost_cons[gen_name, ndx].deactivate()
+
+    if q_costs is not None:
+        for gen_name, e in model.qg_operating_cost.items():
+            if gen_name in out_of_service_gens_set:
+                e.expr = 0
+        if len(pw_qg_cost_gens) > 0:
+            if pw_cost_model == 'delta':
+                for gen_name, ndx in model.delta_qg_set:
+                    if gen_name in out_of_service_gens_set:
+                        model.delta_qg[gen_name, ndx].set_value(0, skip_validation=True)
+                        model.delta_qg[gen_name, ndx].fix()
+                        model.qg_delta_qg_con[gen_name].deactivate()
+            else:
+                for gen_name, ndx in model.qg_piecewise_cost_set:
+                    if gen_name in out_of_service_gens_set:
+                        model.qg_cost[gen_name].set_value(0, skip_validation=True)
+                        model.qg_cost[gen_name].fix()
+                        model.qg_piecewise_cost_cons[gen_name, ndx].deactivate()
+
+    for gen_name in out_of_service_gens:
+        model.pg[gen_name].set_value(0, skip_validation=True)
+        model.qg[gen_name].set_value(0, skip_validation=True)
+        model.pg[gen_name].fix()
+        model.qg[gen_name].fix()
+        model_data.data['elements']['generator'][gen_name]['in_service'] = False
+        md.data['elements']['generator'][gen_name]['in_service'] = False
+    for branch_name in out_of_service_branches:
+        model.pf[branch_name].set_value(0, skip_validation=True)
+        model.pt[branch_name].set_value(0, skip_validation=True)
+        model.qf[branch_name].set_value(0, skip_validation=True)
+        model.qt[branch_name].set_value(0, skip_validation=True)
+        model.pf[branch_name].fix()
+        model.pt[branch_name].fix()
+        model.qf[branch_name].fix()
+        model.qt[branch_name].fix()
+        model.eq_pf_branch[branch_name].deactivate()
+        model.eq_pt_branch[branch_name].deactivate()
+        model.eq_qf_branch[branch_name].deactivate()
+        model.eq_qt_branch[branch_name].deactivate()
+        model.ineq_sf_branch_thermal_limit[branch_name].deactivate()
+        model.ineq_st_branch_thermal_limit[branch_name].deactivate()
+        model.ineq_angle_diff_branch_lb[branch_name].deactivate()
+        model.ineq_angle_diff_branch_ub[branch_name].deactivate()
+        model_data.data['elements']['branch'][branch_name]['in_service'] = False
+        md.data['elements']['branch'][branch_name]['in_service'] = False
+
+    unique_bus_pairs_set = set(unique_bus_pairs)
+    ubp = set(tx_utils.get_unique_bus_pairs(md))
+    ubp_diff = unique_bus_pairs_set - ubp
+    for from_bus, to_bus in ubp_diff:
+        model.c[from_bus, to_bus].setlb(None)
+        model.c[from_bus, to_bus].setub(None)
+        model.s[from_bus, to_bus].setlb(None)
+        model.s[from_bus, to_bus].setub(None)
+
     return model, md
 
 
-def create_atan_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+def create_atan_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta', keep_vars_for_out_of_service_elements=False):
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
-                                            pw_cost_model=pw_cost_model)
+                                            pw_cost_model=pw_cost_model, keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
 
-    branch_attrs = md.attributes(element_type='branch')
-    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
-    unique_bus_pairs = OrderedSet(val for val in bus_pairs.values())
+    unique_bus_pairs = tx_utils.get_unique_bus_pairs(md)
     for fb, tb in unique_bus_pairs:
         assert (tb, fb) not in unique_bus_pairs
 
@@ -354,13 +417,11 @@ def create_atan_acopf_model(model_data, include_feasibility_slack=False, pw_cost
     return model, md
 
 
-def create_psv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+def create_psv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta', keep_vars_for_out_of_service_elements=False):
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
-                                            pw_cost_model=pw_cost_model)
+                                            pw_cost_model=pw_cost_model, keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
     bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
-    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
-    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
+    unique_bus_pairs = tx_utils.get_unique_bus_pairs(md)
 
     # declare the polar voltages
     libbranch.declare_var_dva(model=model,
@@ -399,13 +460,11 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_
     return model, md
 
 
-def create_rsv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta'):
+def create_rsv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_model='delta', keep_vars_for_out_of_service_elements=False):
     model, md = _create_base_power_ac_model(model_data, include_feasibility_slack=include_feasibility_slack,
-                                            pw_cost_model=pw_cost_model)
+                                            pw_cost_model=pw_cost_model, keep_vars_for_out_of_service_elements=keep_vars_for_out_of_service_elements)
     bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
-    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
-    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()).keys())
+    unique_bus_pairs = tx_utils.get_unique_bus_pairs(md)
 
     # declare the rectangular voltages
     neg_v_max = map_items(op.neg, bus_attrs['v_max'])

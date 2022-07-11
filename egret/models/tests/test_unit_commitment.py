@@ -80,7 +80,6 @@ def _make_get_dcopf_uc_model(network):
     return get_dcopf_uc_model
 
 ## definitely skip MIP tests if we don't have one of gurobi or cplex available
-
 @unittest.skipUnless(comm_mip_avail, "Neither Gurobi or CPLEX solver is available")
 def test_int_all_uc_models():
     _test_uc_model(create_tight_unit_commitment_model)
@@ -157,7 +156,7 @@ def test_super_tight_uc_model():
     _test_uc_model(create_super_tight_unit_commitment_model, relax=True, test_objvals=lp_obj_list)
 
 def test_uc_runner():
-    test_names = ['tiny_uc_{}'.format(i) for i in range(1,11+1)]
+    test_names = ['tiny_uc_{}'.format(i) for i in range(1,12+1)]
     for test_name in test_names:
         input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
         md_in = ModelData(input_json_file_name)

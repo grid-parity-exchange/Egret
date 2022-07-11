@@ -16,13 +16,16 @@ working with unit commitment models
 ## some useful functions and function decorators for building these dynamic models
 from enum import Enum
 from functools import wraps
-from pyomo.environ import Var, quicksum
+from pyomo.environ import Param, Var, quicksum, value
 from pyomo.core.expr.numeric_expr import LinearExpression
+from pyomo.core.base.initializer import ScalarCallInitializer, IndexedCallInitializer
 
 import warnings
 
 import logging
 logger = logging.getLogger('egret.model_library.unit_commitment.uc_utils')
+
+from egret.model_library.transmission.tx_utils import scale_ModelData_to_pu, unscale_ModelData_to_pu
 
 class SlackType(Enum):
     '''
@@ -124,3 +127,34 @@ def get_linear_expr(*args):
         if not is_var(arg):
             return linear_summation
     return _linear_expression
+
+# Helpers for making penalty factors "commonly" mutable.
+# E.g., change LoadMismatchPenalty and the rest adjust
+# automatically if not directly specified
+def make_penalty_rule(penalty_key, divisor):
+    def penalty_rule(m):
+        return m.model_data.data['system'].get(penalty_key, value(m.LoadMismatchPenalty/divisor))
+    return penalty_rule
+
+def make_indexed_penalty_rule(element_key, base_penalty):
+    def penalty_rule(m, idx):
+        return m.model_data.data['elements'][element_key][idx].get('violation_penalty', base_penalty._rule(m, None))
+    return penalty_rule
+
+def _reset_mutable_param(param):
+    function = param._rule._fcn
+    model = param.parent_block()
+    if param.is_indexed():
+        for idx, param_data in param.items():
+            param_data.value = function(model, idx)
+    else:
+        param.value = function(model)
+
+def reset_unit_commitment_penalties(m):
+    scale_ModelData_to_pu(m.model_data, inplace=True)
+    _reset_mutable_param(m.LoadMismatchPenalty)
+    for param in m.component_objects(Param):
+        if param.mutable and isinstance(param._rule, (ScalarCallInitializer, IndexedCallInitializer)) \
+                and (param._rule._fcn.__name__ == 'penalty_rule'):
+            _reset_mutable_param(param)
+    unscale_ModelData_to_pu(m.model_data, inplace=True)

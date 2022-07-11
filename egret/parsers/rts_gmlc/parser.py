@@ -154,7 +154,7 @@ def parse_to_cache(rts_gmlc_dir:str,
 def _read_metadata(base_dir:str) -> pd.DataFrame:
     metadata_path = os.path.join(base_dir, "simulation_objects.csv")
     if not os.path.exists(metadata_path):
-        raise ValueError(f'RTS-GMLC directory "{rts_gmlc_dir}" does not contain expected CSV files.')
+        raise ValueError(f'RTS-GMLC directory "{base_dir}" does not contain expected CSV files.')
 
     # Read metadata about the data
     metadata_df = pd.read_csv(metadata_path, index_col=0)
@@ -479,25 +479,20 @@ def _read_branches(base_dir:str, elements:dict, bus_id_to_name:dict) -> None:
     branch_df = None
 
     # add the DC branches
-    # TODO: see issue #229
-    #if os.path.exists(os.path.join(base_dir,'dc_branch.csv')):
-    #    elements["dc_branch"] = {}
-    #    branch_df = pd.read_csv(os.path.join(base_dir,'dc_branch.csv'))
-    #    for idx,row in branch_df.iterrows():
-
-    #        # TODO: The fields below don't match what Egrets expects or supports for DC branches.
-    #        #       The code below is just a placeholder.
-    #        branch_dict = {
-    #            "from_bus": bus_id_to_name[str(row['From Bus'])], 
-    #            "to_bus": bus_id_to_name[str(row['To Bus'])],
-    #            "in_service": True,
-    #            "branch_type": "dc",
-    #            "resistance": float(row['R Line'])
-    #        }
-
-    #        name = str(row['UID'])
-    #        elements["dc_branch"][name] = branch_dict
-    #    branch_df = None
+    if os.path.exists(os.path.join(base_dir,'dc_branch.csv')):
+        elements["dc_branch"] = {}
+        branch_df = pd.read_csv(os.path.join(base_dir,'dc_branch.csv'))
+        for idx,row in branch_df.iterrows():
+            branch_dict = {
+                "from_bus": bus_id_to_name[str(row['From Bus'])], 
+                "to_bus": bus_id_to_name[str(row['To Bus'])],
+                "rating_short_term": float(row['MW Load']),
+                "rating_long_term": float(row['MW Load']),
+                "rating_emergency": float(row['MW Load'])
+            }
+            name = str(row['UID'])
+            elements["dc_branch"][name] = branch_dict
+        branch_df = None
 
 def _read_generators(base_dir:str, elements:dict, bus_id_to_name:dict) -> None:
     from math import isnan

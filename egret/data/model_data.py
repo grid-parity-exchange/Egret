@@ -122,8 +122,9 @@ nested dictionary structure.
     * Document the data-types for attributes
 
 """
-import logging
 import copy as cp
+import logging
+import pathlib
 import egret.data.data_utils as du
 logger = logging.getLogger('egret.model_data')
 
@@ -436,6 +437,8 @@ class ModelData(object):
                 logger.warning("Unrecognized file_type for file {} in ModelData.write, using 'json'".format(filename))
                 file_type = 'json'
 
+        # make the containing directory, if it doesn't exist
+        pathlib.Path(filename).parent.mkdir(parents=True, exist_ok=True)
         if file_type == 'json':
             import json
             with open(filename,'w') as f:

@@ -17,9 +17,38 @@ import math
 from math import radians
 import logging
 import copy
+from collections import OrderedDict
+from egret.data.data_utils import map_items, zip_items
 
 
 logger = logging.getLogger(__name__)
+
+
+def get_unique_bus_pairs(md):
+    branch_attrs = md.attributes(element_type='branch')
+    bus_pairs = zip_items(branch_attrs['from_bus'], branch_attrs['to_bus'])
+    unique_bus_pairs = list(OrderedDict((val, None) for idx, val in bus_pairs.items()))
+    return unique_bus_pairs
+
+
+def _get_out_of_service_gens(md):
+    out_of_service_gens = list()
+    for gen_name, gen_dict in md.elements(element_type='generator'):
+        if not gen_dict['in_service']:
+            out_of_service_gens.append(gen_name)
+            gen_dict['in_service'] = True
+
+    return out_of_service_gens
+
+
+def _get_out_of_service_branches(md):
+    out_of_service_branches = list()
+    for branch_name, branch_dict in md.elements(element_type='branch'):
+        if not branch_dict['in_service']:
+            out_of_service_branches.append(branch_name)
+            branch_dict['in_service'] = True
+
+    return out_of_service_branches
 
 
 def dicts_of_vr_vj(buses):
@@ -214,32 +243,35 @@ def load_shed_limit(load, gens, gen_mins):
     return max_load_shed
 
 ## attributes which are scaled for power flow models
+## tuple of supported ancillary services, as named in model data
+ancillary_services = (
+    'reserve',
+    'spinning_reserve',
+    'non_spinning_reserve',
+    'regulation_up',
+    'regulation_down',
+    'supplemental_reserve',
+    'flexible_ramp_up',
+    'flexible_ramp_down',
+)
+
+## tuple of penalty prices (up/down reserves have the same penalty price)
+penalty_prices = (
+    'regulation_penalty_price',
+    'spinning_reserve_penalty_price',
+    'non_spinning_reserve_penalty_price',
+    'supplemental_reserve_penalty_price',
+    'flexible_ramp_penalty_price',
+)
+
+# construct this from the above items
 ancillary_service_stack = [
-                            'reserve_requirement',
-                            'spinning_reserve_requirement',
-                            'non_spinning_reserve_requirement',
-                            'regulation_up_requirement',
-                            'regulation_down_requirement',
-                            'flexible_ramp_up_requirement',
-                            'flexible_ramp_down_requirement',
-                            'supplemental_reserve_requirement',
-                            'reserve_shortfall',
-                            'spinning_reserve_shortfall',
-                            'non_spinning_reserve_shortfall',
-                            'regulation_up_shortfall',
-                            'regulation_down_shortfall',
-                            'flexible_ramp_up_shortfall',
-                            'flexible_ramp_down_shortfall',
-                            'supplemental_shortfall',
-                            'reserve_price',
-                            'spinning_reserve_price',
-                            'non_spinning_reserve_price',
-                            'regulation_up_price',
-                            'regulation_down_price',
-                            'flexible_ramp_up_price',
-                            'flexible_ramp_down_price',
-                            'supplemental_price',
-                        ]
+        *(name+'_requirement' for name in ancillary_services),
+        *(name+'_shortfall' for name in ancillary_services),
+        *(name+'_price' for name in ancillary_services),
+        *penalty_prices,
+]
+
 
 ## TODO?: break apart by data that needed to be scaled down (capacity limits, power),
 ## vs. scaled up (costs, prices, etc)
@@ -271,15 +303,15 @@ scaled_attributes = {
                                                           'ramp_q',
                                                           'pg',
                                                           'qg',
-                                                          'rg',
+                                                          'reserve_supplied',
                                                           'headroom',
-                                                          'reg_up_supplied',
-                                                          'reg_down_supplied',
-                                                          'flex_up_supplied',
-                                                          'flex_down_supplied',
-                                                          'spinning_supplied',
-                                                          'non_spinning_supplied',
-                                                          'supplemental_supplied',
+                                                          'regulation_up_supplied',
+                                                          'regulation_down_supplied',
+                                                          'flexible_ramp_up_supplied',
+                                                          'flexible_ramp_down_supplied',
+                                                          'spinning_reserve_supplied',
+                                                          'non_spinning_reserve_supplied',
+                                                          'supplemental_reserve_supplied',
                                                           'p_cost',
                                                           'p_fuel',
                                                           'q_cost',
@@ -388,6 +420,9 @@ scaled_attributes = {
                        ('system_attributes', None, None ) : [
                                                         'load_mismatch_cost',
                                                         'q_load_mismatch_cost',
+                                                        'transmission_flow_violation_cost',
+                                                        'contingency_flow_violation_cost',
+                                                        'interface_flow_violation_cost',
                                                         'reserve_shortfall_cost',
                                                      ] + \
                                                      ancillary_service_stack,
@@ -573,6 +608,14 @@ def _insert_last_point(p_max, values, pop=True):
         values.pop()
     values.append((p_max, last_cost))
 
+def _remove_duplicates(values):
+    duplicate_incides = []
+    for idx, ((o1, c1), (o2, c2)) in enumerate(zip(values, values[1:])):
+        if math.isclose(o1,o2) and math.isclose(c1, c2):
+            duplicate_incides.append(idx)
+    for idx in reversed(duplicate_incides):
+        del values[idx]
+
 def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=None):
     """
     Parameters
@@ -621,6 +664,8 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
                 raise ValueError(f"Generator {gen_name} {at_time_t} has only a single point on its "
                                   "piecewise cost curve which is not covered by p_min or p_max.")
 
+        _remove_duplicates(values)
+
         # print a warning (once) if we're extending the cost curve
         if (p_min < values[0][0] and not math.isclose(p_min, values[0][0])) or \
                 (p_max > values[-1][0] and not math.isclose(p_max, values[-1][0])):
@@ -640,15 +685,14 @@ def validate_and_clean_cost_curve(curve, curve_type, p_min, p_max, gen_name, t=N
                 _insert_last_point(p_max, values, pop=False)
 
         # now that we've extended the cost curve, we need to catch the
-        # case that p_min == p_max and we're at one of the extremes
+        # case that p_min == p_max and we're on one of the points
         # of the cost curve. The logic below fails in this case.
         if math.isclose(p_min, p_max):
-            of, cf = values[0]
-            if math.isclose(p_min, of):
-                return [(p_min,cf)]
-            ol, cl = values[-1]
-            if math.isclose(p_max, ol):
-                return [(p_max,cl)]
+            for o, c in values:
+                if math.isclose(p_min, o):
+                    return [(p_min,c)]
+                if math.isclose(p_max, o):
+                    return [(p_max,c)]
 
         cleaned_values = list()
         last_slope = None
