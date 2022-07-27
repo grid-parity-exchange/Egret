@@ -51,6 +51,10 @@ class _PTDFManagerBase(abc.ABC):
     def calculate_PFV(self,mb):
         pass
 
+    def _insert_reference_bus(self, bus_array, val):
+        return np.insert(bus_array, self._busname_to_index_map[self._reference_bus], val)
+
+
 class VirtualPTDFMatrix(_PTDFManagerBase):
     '''
     Helper class which *looks like* a PTDF matrix, but doesn't
@@ -408,9 +412,6 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         '''
         yield from zip(self.buses_keys_no_ref, self._get_interface_row(interface_name))
 
-    def _insert_reference_bus(self, bus_array, val):
-        return np.insert(bus_array, self._busname_to_index_map[self._reference_bus], val)
-
     def _calculate_PFV_delta(self, cn, PFV, VA, masked):
         comp = self.contingency_compensators[cn]
 
@@ -666,6 +667,8 @@ class PTDFMatrix(_PTDFManagerBase):
 
         if interfaces is None:
             interfaces = dict()
+        # no contingency analysis for Full PTDF matrix
+        self.contingencies = dict()
         self._calculate_ptdf_interface(interfaces)
 
         self._set_lazy_limits(ptdf_options)
@@ -874,7 +877,7 @@ class PTDFMatrix(_PTDFManagerBase):
     def bus_iterator(self):
         yield from self.buses_keys
 
-    def calculate_PFV(self,mb):
+    def calculate_masked_PFV(self,mb):
         NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys), float, count=len(self.buses_keys))
         NWV += self.phi_adjust_array
     
@@ -884,7 +887,40 @@ class PTDFMatrix(_PTDFManagerBase):
         PFV_I = self.PTDFM_I.dot(NWV)
         PFV_I += self.PTDFM_I_const
     
-        return PFV, PFV_I
+        return PFV, PFV_I, None
+
+    def calculate_PFV(self,mb):
+        NWV = np.fromiter((value(mb.p_nw[b]) for b in self.buses_keys), float, count=len(self.buses_keys))
+        NWV += self.phi_adjust_array
+    
+        PFV  = self.PTDFM.dot(NWV)
+        PFV += self.phase_shift_array
+    
+        PFV_I = self.PTDFM_I.dot(NWV)
+        PFV_I += self.PTDFM_I_const
+    
+        return PFV, PFV_I, None
+
+    def calculate_LMP(self, mb, dual, bus_balance_constr):
+        ## NOTE: unmonitored lines cannot contribute to LMPC
+        PFD = np.fromiter( ( value(dual[mb.ineq_pf_branch_thermal_bounds[bn]])
+                              if bn in mb.ineq_pf_branch_thermal_bounds else
+                              0. for i,bn in enumerate(self.branches_keys_masked) ),
+                              float, count=len(self.branches_keys_masked))
+
+        ## interface constributes to LMP
+        PFID = np.fromiter( ( value(dual[mb.ineq_pf_interface_bounds[i_n]])
+                               if i_n in mb.ineq_pf_interface_bounds else
+                               0. for i,i_n in enumerate(self.interface_keys) ),
+                               float, count=len(self.interface_keys))
+        LMPC = -self.PTDFM.T.dot(PFD)
+        LMPI = -self.PTDFM_I.T.dot(PFID)
+
+        LMPE = value(dual[bus_balance_constr])
+
+        LMP = LMPE + LMPC + LMPI
+
+        return self._insert_reference_bus(LMP, LMPE)
 
 class PTDFLossesMatrix(PTDFMatrix):
 
