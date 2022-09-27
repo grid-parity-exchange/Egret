@@ -640,15 +640,14 @@ def solve_dcopf(model_data,
 
     timer.stop("Model Post-Processing")
     timer.stop("Solve DCOPF")
-    print(timer)
 
     if return_model and return_results:
-        return md, m, results
+        return md, m, results, timer
     elif return_model:
-        return md, m
+        return md, m, timer
     elif return_results:
-        return md, results
-    return md
+        return md, results, timer
+    return md, timer
 
 def check_instance_feasibility(instance, tolerance, active_only=True):
     infeasibilities = list()
