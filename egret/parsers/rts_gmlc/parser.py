@@ -154,7 +154,7 @@ def parse_to_cache(rts_gmlc_dir:str,
 def _read_metadata(base_dir:str) -> pd.DataFrame:
     metadata_path = os.path.join(base_dir, "simulation_objects.csv")
     if not os.path.exists(metadata_path):
-        raise ValueError(f'RTS-GMLC directory "{base_dir}" does not contain expected CSV files.')
+        raise ValueError(f'RTS-GMLC directory "{rts_gmlc_dir}" does not contain expected CSV files.')
 
     # Read metadata about the data
     metadata_df = pd.read_csv(metadata_path, index_col=0)
@@ -777,7 +777,8 @@ def _read_timeseries_data(model_data:dict, rts_gmlc_dir:str,
     # All timeseries data that has already been read (map[filename] -> DataFrame)
     timeseries_file_map = {}
 
-    timeseries_pointer_df = pd.read_csv(os.path.join(rts_gmlc_dir, "timeseries_pointers.csv"), header=0)
+    timeseries_pointer_df = pd.read_csv(os.path.join(rts_gmlc_dir, "timeseries_pointers.csv"), 
+                                        header=0, dtype={'Object':str})
 
     elements = model_data['elements']
     params_of_interest = {
@@ -808,7 +809,7 @@ def _read_timeseries_data(model_data:dict, rts_gmlc_dir:str,
         is_reserve = (row['Category'] == 'Reserve')
         if is_reserve:
             # Skip unrecognized reserve names
-            name = str(row['Object'])
+            name = row['Object']
             if not is_valid_reserve_name(name, model_data):
                 continue
 
