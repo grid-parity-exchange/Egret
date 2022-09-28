@@ -462,6 +462,7 @@ def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=True, symbolic_s
     from egret.common.solver_interface import _solve_model
 
     PTDF = m._PTDF
+    PTDF.timer = timer
 
     ptdf_options = m._ptdf_options
 
