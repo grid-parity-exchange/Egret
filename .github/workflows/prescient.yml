@@ -23,7 +23,7 @@ jobs:
         strategy:
             matrix:
                 os: [ubuntu-latest]
-                python-version: [3.7]
+                python-version: [3.9]
                 pyomo-version: [6.4.0]
         steps:
           - uses: actions/checkout@v2
@@ -38,15 +38,7 @@ jobs:
               conda list
           - name: Install CBC
             run: |
-              if [ ${{ matrix.os }} = windows-latest ]
-              then
-                # download CBC binary, copy to place already in PATH
-                curl -O https://ampl.com/dl/open/cbc/cbc-win64.zip
-                unzip cbc-win64.zip
-                cp cbc.exe $CONDA_PREFIX
-              else
-                conda install -c conda-forge coincbc
-              fi
+              conda install -c conda-forge coincbc
               # test cbc executable
               cbc -quit
           - name: Install Pyomo

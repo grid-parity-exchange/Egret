@@ -787,9 +787,8 @@ def _read_timeseries_data(model_data:dict, rts_gmlc_dir:str,
         'Area':      {'MW Load'}
         }
 
-    # Add a column to timeseries DF to reference the parsed data 
-    # instead of the file name
-    timeseries_pointer_df['Series'] = None
+    # Create an array where we can gather parsed timeseries data
+    series_data = [None]*timeseries_pointer_df.shape[0]
 
     # Store the timeseries data in the timeseries DF
     for idx,row in timeseries_pointer_df.iterrows():
@@ -823,7 +822,10 @@ def _read_timeseries_data(model_data:dict, rts_gmlc_dir:str,
             timeseries_file_map[fname] = data
 
         # Save a reference to the relevant data as a Series
-        timeseries_pointer_df.at[idx,'Series'] = timeseries_file_map[fname][row['Object']]
+        series_data[idx]= timeseries_file_map[fname][row['Object']]
+
+    # Add the 'Series' column
+    timeseries_pointer_df = timeseries_pointer_df.assign(Series=series_data)
 
     # Remove columns that we don't want to preserve
     keepers= {'Simulation', 'Category', 'Object', 'Parameter', 'Series'}
