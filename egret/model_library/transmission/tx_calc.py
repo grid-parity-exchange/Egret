@@ -766,6 +766,8 @@ class _ContingencyCompensators(abc.Mapping):
         self._U = U
         self._Pr = Pr
         self._Pc = Pc
+        self._order = {}
+        self._count = {}
 
     def __getitem__(self, key):
         return self._compensators[key]
