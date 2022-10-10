@@ -265,8 +265,8 @@ class _MaximalViolationsStore:
         self._add_violations( name, outer_name, lower_viol_lazy_array, lower_viol_lazy_idx )
 
         if get_counts:
-            viol_indices = set(np.nonzero(lower_viol_lazy_array > 0)[0])
-            viol_indices.update(np.nonzero(upper_viol_lazy_array > 0)[0])
+            viol_indices = set(np.nonzero((lower_enforced_limits - flow_array) > 0)[0])
+            viol_indices.update(np.nonzero((flow_array - upper_enforced_limits) > 0)[0])
             return len(viol_indices.difference(monitored_indices))
         return
 
@@ -396,6 +396,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
             cn_iterator = PTDF.contingency_compensators._order[time]
         else:
             cn_iterator = PTDF.contingency_compensators
+        total = 0
         for cn in cn_iterator:
             PFV_delta = PTDF.calculate_masked_PFV_delta(cn, PFV, VA)
             PTDF.contingency_compensators._count[time,cn] = violations_store.check_and_add_violations('contingency', PFV_delta, mb.pfc,
@@ -403,9 +404,11 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
                                                             lazy_contingency_limits_lower, enforced_contingency_limits_lower,
                                                             mb._contingencies_monitored, PTDF.branches_keys_masked,
                                                             outer_name = cn, PFV = PFV, get_counts=True)
+
+            total += PTDF.contingency_compensators._count[time,cn]
             all_contingencies.remove(cn)
             if time in PTDF.contingency_compensators._order:
-                if len(violations_store.violations_store) == violations_store.max_viol_add:
+                if total >= violations_store.max_viol_add:
                     print(violations_store.violations_store)
                     print(violations_store.max_viol_add)
                     print("BREAKING")
