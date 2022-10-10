@@ -386,11 +386,12 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
         ## In this way, we avoid (number of contingenies) adds PFV+PFV_delta_c
 
-        logger.debug("Checking contingency flows...")
+        print("Checking contingency flows...")
         lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
         lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
         enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
         enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
+        all_contingencies = set(PTDF.contingency_compensators)
         if time in PTDF.contingency_compensators._order:
             cn_iterator = PTDF.contingency_compensators._order[time]
         else:
@@ -402,10 +403,20 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
                                                             lazy_contingency_limits_lower, enforced_contingency_limits_lower,
                                                             mb._contingencies_monitored, PTDF.branches_keys_masked,
                                                             outer_name = cn, PFV = PFV, get_counts=True)
+            all_contingencies.remove(cn)
             if time in PTDF.contingency_compensators._order:
                 if len(violations_store.violations_store) == violations_store.max_viol_add:
+                    print(violations_store.violations_store)
+                    print(violations_store.max_viol_add)
+                    print("BREAKING")
                     break
         PTDF.contingency_compensators._order[time] = list(sorted(PTDF.contingency_compensators, key=lambda cn: PTDF.contingency_compensators._count[time,cn], reverse=True))
+        if len(all_contingencies) > 0:
+            print(f"ONLY checked a subset of contingencies! Number checked: {len(PTDF.contingency_compensators)-len(all_contingencies)}")
+        else:
+            print(f"CHECKED ALL CONTINGENCIES, Number checked: {len(PTDF.contingency_compensators) - len(all_contingencies)}")
+    else:
+        print("Skipping contingency flow check")
 
     logger.debug(f"branches_monitored: {mb._idx_monitored}\n"
                  f"interfaces_monitored: {mb._interfaces_monitored}\n"
