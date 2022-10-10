@@ -146,6 +146,9 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
         # dense array write buffer
         self._bus_sensi_buffer = np.empty((1,len(self.buses_keys_no_ref)), dtype=np.float64)
 
+        # helper
+        self._first_time_contingency = True
+
     def _calculate_ptdf_factorization(self):
         logger.info("Calculating PTDF Matrix Factorization")
         MLU, B_dA, ref_bus_mask, contingency_compensators, B_dA_I, I = \

@@ -189,7 +189,7 @@ class _MaximalViolationsStore:
         while viol_indices:
             idx = np.argmax(viol_array[viol_indices])
             val = viol_array[viol_indices[idx]]
-            if val < self.min_flow_violation() and len(self.violations_store) >= self.max_viol_add:
+            if len(self.violations_store) >= self.max_viol_add and val < self.min_flow_violation():
                 break
             # If this violation is close in value to
             # one already in the set, it is likely
@@ -383,6 +383,9 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
         lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
         enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
         enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
+        if PTDF._first_time_contingency:
+            _old_max_viol_add = violations_store.max_viol_add
+            violations_store.max_viol_add = 1e100
         for cn in PTDF.contingency_compensators:
             PFV_delta = PTDF.calculate_masked_PFV_delta(cn, PFV, VA)
             violations_store.check_and_add_violations('contingency', PFV_delta, mb.pfc,
@@ -390,6 +393,21 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
                                                       lazy_contingency_limits_lower, enforced_contingency_limits_lower,
                                                       mb._contingencies_monitored, PTDF.branches_keys_masked,
                                                       outer_name = cn, PFV = PFV)
+            if not PTDF._first_time_contingency:
+                if len(violations_store.violations_store) == violations_store.max_viol_add:
+                    break
+        if PTDF._first_time_contingency:
+            # sort PTDF.contingency_compensators
+            sorter = {cn : 0. for cn in PTDF.contingency_compensators}
+            for key, val in violations_store.violations_store.items():
+                if isinstance(key[1], tuple):
+                    sorter[key[1][0]] += val
+            PTDF.contingency_compensators._compensators = dict(sorted(PTDF.contingency_compensators._compensators.items(), key=lambda x: sorter[x[0]], reverse=True))
+            # take violations_store back down to max_viol_add
+            violations_store.violations_store = dict(sorted(violations_store.violations_store.items(), key=lambda x: x[1], reverse=True)[:_old_max_viol_add])
+            violations_store.max_viol_add = _old_max_viol_add
+
+        PTDF._first_time_contingency = False
 
     logger.debug(f"branches_monitored: {mb._idx_monitored}\n"
                  f"interfaces_monitored: {mb._interfaces_monitored}\n"
@@ -403,6 +421,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
     flows = _CalculatedFlows(PFV=PFV, PFV_I=PFV_I)
 
     return flows, violations_store.total_violations, violations_store.monitored_violations, viol_lazy
+
 
 def _generate_flow_monitor_remove_message(flow_type, bn, slack, baseMVA, time):
     ret_str = "removing {0} {1} from monitored set".format(flow_type, bn)
