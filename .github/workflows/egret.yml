@@ -85,9 +85,9 @@ jobs:
                 echo "$SOLVER_DIR"
                 ls -l $SOLVER_DIR
               fi
-          - name: Install Nose/Parameterized/Pytest
+          - name: Install Parameterized/Pytest
             run: |
-              pip install nose parameterized pytest coveralls
+              pip install parameterized pytest coveralls
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
@@ -96,4 +96,4 @@ jobs:
               pip install -e .
           - name: Run EGRET Tests
             run: |
-              nosetests -v --nologcapture --with-coverage --cover-package=egret egret 
+              pytest -v --cov=egret egret 
