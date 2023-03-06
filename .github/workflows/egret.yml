@@ -28,7 +28,7 @@ jobs:
             fail-fast: false
             matrix:
                 os: [ubuntu-20.04]
-                python-version: [3.7, 3.8, 3.9]
+                python-version: [3.7, 3.8, 3.9, '3.10']
                 pyomo-version: [6.4.0]
                 include:
                     - os: macos-latest
@@ -40,6 +40,9 @@ jobs:
                     - os: ubuntu-20.04
                       python-version: 3.7
                       pyomo-version: main
+                    - os: ubuntu-20.04
+                      python-version: '3.11'
+                      pyomo-version: 6.4.3
         steps:
           - uses: actions/checkout@v2
           - uses: conda-incubator/setup-miniconda@v2
@@ -85,9 +88,9 @@ jobs:
                 echo "$SOLVER_DIR"
                 ls -l $SOLVER_DIR
               fi
-          - name: Install Nose/Parameterized/Pytest
+          - name: Install Parameterized/Pytest
             run: |
-              pip install nose parameterized pytest coveralls
+              pip install parameterized pytest coveralls
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
@@ -96,4 +99,4 @@ jobs:
               pip install -e .
           - name: Run EGRET Tests
             run: |
-              nosetests -v --nologcapture --with-coverage --cover-package=egret egret 
+              pytest -v egret 
