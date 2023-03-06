@@ -96,4 +96,4 @@ jobs:
               pip install -e .
           - name: Run EGRET Tests
             run: |
-              pytest -v --cov=egret egret 
+              pytest -v egret 
