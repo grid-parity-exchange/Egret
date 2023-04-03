@@ -298,11 +298,9 @@ def _read_2D_timeseries_file(file_name:str, minutes_per_period:int,
     period is included in the results.  Like a typical python range, the returned data includes 
     the start_time but does not include the end_time.
     """
-    _date_parser = lambda *columns: datetime(*map(int,columns[0:3]))
     df = pd.read_csv(file_name, 
                      header=0, 
-                     parse_dates=[[0, 1, 2]],
-                     date_parser=_date_parser,
+                     parse_dates=[['Year', 'Month', 'Day']],
                      index_col=0)
     df.sort_index(inplace=True)
 
