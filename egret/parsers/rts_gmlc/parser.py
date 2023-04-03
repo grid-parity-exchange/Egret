@@ -251,14 +251,12 @@ def _read_columnar_timeseries_file(file_name:str, minutes_per_period:int,
     The returned DataFrame converts the first 4 columns into a datetime which is used as
     the DataFrame's index.  All other CSV columns are included as columns in the DataFrame.
     """
-    _date_parser = lambda *columns: datetime(*map(int,columns[0:3])) + \
-                                    timedelta(minutes = minutes_per_period*(int(columns[3])-1))
-    df = pd.read_csv(file_name, 
-                     header=0, 
-                     parse_dates=[[0, 1, 2, 3]],
-                     date_parser=_date_parser,
-                     index_col=0)
+    df = pd.read_csv(file_name,
+                     header=0,
+                     parse_dates=[['Year', 'Month', 'Day']])
+    df.index = df['Year_Month_Day'] + pd.to_timedelta((df['Period']-1)*minutes_per_period, 'm')
     df.index.names = ['DateTime']
+    df.drop(['Year_Month_Day', 'Period'], axis=1, inplace=True)
 
     df.sort_index(inplace=True)
 
@@ -573,7 +571,7 @@ def _read_generators(base_dir:str, elements:dict, bus_id_to_name:dict) -> None:
 
         if fuel_field_count > 0:
             ## /1000. from the RTS-GMLC MATPOWER writer -- 
-            ## heat rates are in BTU/kWh, 1BTU == 10^-6 MMBTU, 1kWh == 10^-3 MWh, so MMBTU/MWh == 10^3/10^6 * BTU/kWh
+            ## heat rates are in BTU/kWh, 10^6 BTU == 1 MMBTU, 10^3 kWh == 1 MWh, so MMBTU/MWh == 10^3/10^6 * BTU/kWh
             f = {}
             f[0] = (float(row['HR_avg_0'])*1000./ 1000000.)*x[0]
             for i in range(1,fuel_field_count):
