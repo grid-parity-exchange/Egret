@@ -8,7 +8,7 @@
 #  ___________________________________________________________________________
 
 from setuptools import setup, find_packages
-from distutils.core import Extension
+from pathlib import Path
 
 DISTNAME = 'gridx-egret'
 VERSION = '0.5.4.dev0'
@@ -30,6 +30,9 @@ setuptools_kwargs = {
     'python_requires' : '>=3.7, <4',
 }
 
+this_directory = Path(__file__).parent
+long_description = (this_directory / 'README.md').read_text()
+
 setup(name=DISTNAME,
       version=VERSION,
       packages=PACKAGES,
@@ -38,5 +41,7 @@ setup(name=DISTNAME,
       author=AUTHOR,
       maintainer_email=MAINTAINER_EMAIL,
       license=LICENSE,
+      long_description=long_description,
+      long_description_content_type='text/markdown',
       url=URL,
       **setuptools_kwargs)
