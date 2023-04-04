@@ -11,7 +11,7 @@ from setuptools import setup, find_packages
 from pathlib import Path
 
 DISTNAME = 'gridx-egret'
-VERSION = '0.5.5'
+VERSION = '0.5.6.dev0'
 PACKAGES = find_packages()
 EXTENSIONS = []
 DESCRIPTION = 'EGRET: Electrical Grid Research and Engineering Tools.'
