@@ -278,7 +278,8 @@ def _btheta_dcopf_network_model(block,tm):
                 outlet_branches_by_bus[b].append(l)
 
     va_bounds = {k: (-pi, pi) for k in buses.keys()}
-    libbus.declare_var_va(block, buses.keys(), initialize=None,
+    # initialize for disconnected AC networks (see PR #306)
+    libbus.declare_var_va(block, buses.keys(), initialize=0.0,
                           bounds=va_bounds
                           )
 
@@ -731,7 +732,8 @@ def power_balance_constraints(model, slack_type=SlackType.TRANSMISSION_LIMITS):
     model.BranchViolationCost = Expression(model.TimePeriods, rule=branch_violation_cost_rule)
 
     # voltage angles at the buses (S) (lock the first bus at 0) in radians
-    model.Angle = Var(model.Buses, model.TimePeriods, within=Reals, bounds=(-3.14159265,3.14159265))
+    # initialize for disconnected AC networks (see PR #306)
+    model.Angle = Var(model.Buses, model.TimePeriods, within=Reals, bounds=(-3.14159265,3.14159265), initialize=0.0)
     
     def fix_first_angle_rule(m,t):
         first_bus = list(sorted(m.Buses))[0]
