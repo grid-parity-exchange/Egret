@@ -15,6 +15,7 @@ import os
 import math
 
 import unittest
+import pytest
 from pyomo.opt import SolverFactory, TerminationCondition
 from pyomo.core.plugins.transform.relax_integrality \
         import RelaxIntegrality
@@ -252,6 +253,33 @@ def test_uc_ptdf_termination():
     md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, slack_type=SlackType.TRANSMISSION_LIMITS, return_results=True, **kwargs)
 
     assert results.egret_metasolver['iterations'] == 1
+
+def test_uc_tc_disconnected():
+    test_name = 'tiny_uc_tc_disconnected'
+    input_json_file_name = os.path.join(current_dir, 'uc_test_instances', test_name+'.json')
+
+    md_in = ModelData(input_json_file_name)
+
+    kwargs = {'network_constraints':'btheta_power_flow'}
+
+    md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, slack_type=SlackType.TRANSMISSION_LIMITS, return_results=True, **kwargs)
+
+    reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', 'tiny_uc_tc_relaxed_results.json')
+    md_reference = ModelData(reference_json_file_name)
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
+
+    kwargs = {'network_constraints':'power_balance_constraints'}
+
+    md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, slack_type=SlackType.TRANSMISSION_LIMITS, return_results=True, **kwargs)
+
+    reference_json_file_name = os.path.join(current_dir, 'uc_test_instances', 'tiny_uc_tc_relaxed_results.json')
+    md_reference = ModelData(reference_json_file_name)
+    assert math.isclose(md_reference.data['system']['total_cost'], md_results.data['system']['total_cost'], rel_tol=rel_tol)
+
+    kwargs = {'network_constraints':'ptdf_power_flow'}
+
+    with pytest.raises(RuntimeError, match="Network is not connected, cannot use PTDF formulation"):
+        md_results, results = solve_unit_commitment(md_in, solver=test_solver, relaxed=True, slack_type=SlackType.TRANSMISSION_LIMITS, return_results=True, **kwargs)
 
 def test_scuc():
     input_json_file_name = os.path.join(current_dir, 'uc_test_instances', 'test_scuc_masked.json')
