@@ -102,7 +102,8 @@ def create_model_data_dict(rts_gmlc_dir:str,
 def parse_to_cache(rts_gmlc_dir:str, 
                    begin_time:Union[datetime,str],
                    end_time:Union[datetime,str],
-                   t0_state:Optional[dict]=None) -> ParsedCache:
+                   t0_state:Optional[dict]=None,
+                   honor_lookahead=True) -> ParsedCache:
     ''' Parse data in RTS-GMLC format, keeping the portions between a start and end time
 
     rts_gmlc_dir : str
@@ -127,7 +128,7 @@ def parse_to_cache(rts_gmlc_dir:str,
     model_data = _create_rtsgmlc_skeleton(rts_gmlc_dir)
 
     # Save the data frequencies
-    metadata_df = _read_metadata(rts_gmlc_dir)
+    metadata_df = _read_metadata(rts_gmlc_dir, honor_lookahead)
     minutes_per_period = {'DAY_AHEAD':int(metadata_df.loc['Period_Resolution', 'DAY_AHEAD'])//60,
                           'REAL_TIME':int(metadata_df.loc['Period_Resolution', 'REAL_TIME'])//60}
 
@@ -151,13 +152,17 @@ def parse_to_cache(rts_gmlc_dir:str,
                        timeseries_df, load_participation_factors, constant_reserve_data)
     
     
-def _read_metadata(base_dir:str) -> pd.DataFrame:
+def _read_metadata(base_dir:str, honor_lookahead:bool) -> pd.DataFrame:
     metadata_path = os.path.join(base_dir, "simulation_objects.csv")
     if not os.path.exists(metadata_path):
         raise ValueError(f'RTS-GMLC directory "{rts_gmlc_dir}" does not contain expected CSV files.')
 
     # Read metadata about the data
     metadata_df = pd.read_csv(metadata_path, index_col=0)
+
+    if not honor_lookahead:
+        metadata_df.loc['Look_Ahead_Periods_per_Step']['DAY_AHEAD'] = 0
+        metadata_df.loc['Look_Ahead_Periods_per_Step']['REAL_TIME'] = 0
 
     return metadata_df
 
