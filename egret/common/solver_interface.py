@@ -83,7 +83,7 @@ def _solve_model(model,
                  return_solver = False,
                  vars_to_load = None,
                  set_instance = True,
-                 timer = None):
+                 ):
     '''
     Create and solve an Egret power system optimization model
 
@@ -119,7 +119,6 @@ def _solve_model(model,
     -------
 
     '''
-    timer.start("model solve")
     results = None
 
     ## termination conditions which are acceptable
@@ -150,23 +149,16 @@ def _solve_model(model,
 
     if isinstance(solver, PersistentSolver):
         if set_instance:
-            timer.start("set instance")
             solver.set_instance(model, symbolic_solver_labels=symbolic_solver_labels)
-            timer.stop("set instance")
-        timer.start("solve call")
         results = solver.solve(model, tee=solver_tee, load_solutions=False, save_results=False, **solve_method_options)
-        timer.stop("solve call")
     else:
-        timer.start("solve call")
         results = solver.solve(model, tee=solver_tee, \
                               symbolic_solver_labels=symbolic_solver_labels, load_solutions=False,
                               **solve_method_options)
-        timer.stop("solve call")
 
     if results.solver.termination_condition not in safe_termination_conditions:
         raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))
 
-    timer.start("load solution")
     if isinstance(solver, PersistentSolver):
         solver.load_vars(vars_to_load)
         if vars_to_load is None:
@@ -176,9 +168,7 @@ def _solve_model(model,
                 solver.load_slacks()
     else:
         model.solutions.load_from(results)
-    timer.stop("load solution")
 
-    timer.stop("model solve")
 
     if return_solver:
         return model, results, solver

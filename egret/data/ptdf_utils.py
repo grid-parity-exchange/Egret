@@ -305,7 +305,6 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
                                 self.enforced_interface_min_limits)
 
     def _get_ptdf_row(self, branch_name):
-        self.timer.start("Generate PTDF row")
         if branch_name in self._ptdf_rows:
             PTDF_row = self._ptdf_rows[branch_name]
         else:
@@ -313,7 +312,6 @@ class VirtualPTDFMatrix(_PTDFManagerBase):
             branch_idx = self._branchname_to_index_map[branch_name]
             PTDF_row = self.MLU.solve(self.B_dA[branch_idx].toarray(out=self._bus_sensi_buffer)[0], trans='T')
             self._ptdf_rows[branch_name] = PTDF_row
-        self.timer.stop("Generate PTDF row")
         return PTDF_row
 
     def _get_contingency_row(self, contingency_name, branch_name):
@@ -839,9 +837,7 @@ class PTDFMatrix(_PTDFManagerBase):
     def get_branch_ptdf_iterator(self, branch_name):
         row_idx = self._branchname_to_index_map[branch_name]
         ## get the row slice
-        self.timer.start("Generate PTDF row")
         PTDF_row = self.PTDFM[row_idx]
-        self.timer.stop("Generate PTDF row")
         yield from zip(self.buses_keys, PTDF_row)
 
     def get_branch_ptdf_abs_max(self, branch_name):
