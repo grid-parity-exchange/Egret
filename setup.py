@@ -8,10 +8,10 @@
 #  ___________________________________________________________________________
 
 from setuptools import setup, find_packages
-from distutils.core import Extension
+from pathlib import Path
 
 DISTNAME = 'gridx-egret'
-VERSION = '0.5.3.dev0'
+VERSION = '0.5.6.dev0'
 PACKAGES = find_packages()
 EXTENSIONS = []
 DESCRIPTION = 'EGRET: Electrical Grid Research and Engineering Tools.'
@@ -24,11 +24,14 @@ setuptools_kwargs = {
     'zip_safe': False,
     'scripts': [],
     'include_package_data': True,
-    'install_requires': ['pyomo>=6.4', 'numpy', 'pytest', 'pandas<1.5',
+    'install_requires': ['pyomo>=6.4', 'numpy', 'pytest', 'pandas',
                          'matplotlib', 'seaborn', 'scipy', 'networkx',
                          'coramin==0.1.1'],
     'python_requires' : '>=3.7, <4',
 }
+
+this_directory = Path(__file__).parent
+long_description = (this_directory / 'README.md').read_text()
 
 setup(name=DISTNAME,
       version=VERSION,
@@ -38,5 +41,7 @@ setup(name=DISTNAME,
       author=AUTHOR,
       maintainer_email=MAINTAINER_EMAIL,
       license=LICENSE,
+      long_description=long_description,
+      long_description_content_type='text/markdown',
       url=URL,
       **setuptools_kwargs)

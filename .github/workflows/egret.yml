@@ -27,8 +27,8 @@ jobs:
             # still want the results of other tests even if one fails
             fail-fast: false
             matrix:
-                os: [ubuntu-latest]
-                python-version: [3.7, 3.8, 3.9]
+                os: [ubuntu-20.04]
+                python-version: [3.7, 3.8, 3.9, '3.10']
                 pyomo-version: [6.4.0]
                 include:
                     - os: macos-latest
@@ -37,9 +37,12 @@ jobs:
                     - os: windows-latest
                       python-version: 3.7
                       pyomo-version: 6.4.0
-                    - os: ubuntu-latest
+                    - os: ubuntu-20.04
                       python-version: 3.7
                       pyomo-version: main
+                    - os: ubuntu-20.04
+                      python-version: '3.11'
+                      pyomo-version: 6.4.3
         steps:
           - uses: actions/checkout@v2
           - uses: conda-incubator/setup-miniconda@v2
@@ -51,61 +54,43 @@ jobs:
             run: |
               conda info
               conda list
-          - name: Install CBC
+          - name: Install Solvers
             run: |
-              if [ ${{ matrix.os }} = windows-latest ]
+              if [ ${{ matrix.os }} = macos-latest ]
               then
-                # download CBC binary, copy to place already in PATH
-                curl -O https://ampl.com/dl/open/cbc/cbc-win64.zip
-                unzip cbc-win64.zip
-                cp cbc.exe $CONDA_PREFIX
+                conda install -c conda-forge coincbc ipopt
               else
-                conda install -c conda-forge coincbc
-              fi
-              # test cbc executable
-              cbc -quit
-          - name: Install IPOPT
-            run: |
-              if [ ${{ matrix.os }} = windows-latest ]
-              then
-                IPOPT_DIR="${GITHUB_WORKSPACE}/cache/ipopt"
-                mkdir -p "$IPOPT_DIR"
-                echo "$IPOPT_DIR" >> $GITHUB_PATH
+                # download IPOPT & CBC from idaes-ext
+                echo "...downloading solvers"
+                SOLVER_DIR="${GITHUB_WORKSPACE}/cache/solvers"
+                mkdir -p "$SOLVER_DIR"
+                echo "$SOLVER_DIR" >> $GITHUB_PATH
                 DOWNLOAD_DIR="${GITHUB_WORKSPACE}/cache/download"
                 mkdir -p "$DOWNLOAD_DIR"
-                IPOPT_TAR=${DOWNLOAD_DIR}/ipopt.tar.gz
-
+                SOLVER_TAR=${DOWNLOAD_DIR}/solvers.tar.gz
                 URL=https://github.com/IDAES/idaes-ext
                 RELEASE=$(curl --max-time 150 --retry 8 \
                     -L -s -H 'Accept: application/json' ${URL}/releases/latest)
                 VER=$(echo $RELEASE | sed -e 's/.*"tag_name":"\([^"]*\)".*/\1/')
                 URL=${URL}/releases/download/$VER
-
-                if [ ${{ matrix.os }} = ubuntu-latest ]
-                then
-                  #  - ipopt needs: libopenblas-dev gfortran liblapack-dev
-                  sudo apt-get install libopenblas-dev libgfortran4 libgomp1 gfortran liblapack-dev
-                  curl --max-time 150 --retry 8 \
-                    -L $URL/idaes-solvers-ubuntu1804-x86_64.tar.gz \
-                    > $IPOPT_TAR
+                if test "${{matrix.os}}" == ubuntu-20.04; then
+                    curl --max-time 150 --retry 8 \
+                        -L $URL/idaes-solvers-ubuntu2004-x86_64.tar.gz \
+                        > $SOLVER_TAR
                 else
-                  # windows
-                   curl --max-time 150 --retry 8 \
-                    -L $URL/idaes-solvers-windows-x86_64.tar.gz \
-                    $URL/idaes-lib-windows-x86_64.tar.gz > $IPOPT_TAR
+                    curl --max-time 150 --retry 8 \
+                        -L $URL/idaes-solvers-windows-x86_64.tar.gz \
+                        $URL/idaes-lib-windows-x86_64.tar.gz > $SOLVER_TAR
                 fi
-                cd $IPOPT_DIR
-                tar -xzi < $IPOPT_TAR
+                cd $SOLVER_DIR
+                tar -xzi < $SOLVER_TAR
                 echo ""
-                echo "$IPOPT_DIR"
-                ls -l $IPOPT_DIR
-              else
-                # download IPOPT from conda-forge
-                conda install -c conda-forge ipopt
+                echo "$SOLVER_DIR"
+                ls -l $SOLVER_DIR
               fi
-          - name: Install Nose/Parameterized/Pytest
+          - name: Install Parameterized/Pytest
             run: |
-              pip install nose parameterized pytest coveralls
+              pip install parameterized pytest coveralls
           - name: Install Pyomo
             run: |
               pip install git+https://github.com/Pyomo/pyomo.git@${{ matrix.pyomo-version }}
@@ -114,4 +99,4 @@ jobs:
               pip install -e .
           - name: Run EGRET Tests
             run: |
-              nosetests -v --nologcapture --with-coverage --cover-package=egret egret 
+              pytest -v egret 

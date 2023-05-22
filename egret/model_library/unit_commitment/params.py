@@ -696,7 +696,7 @@ def load_params(model, model_data, slack_type):
                 logger.error('Generator {} has more output at T0 than is feasible to ramp down to'.format(g))
                 return False
             v_greater_min = v >= value(m.MinimumPowerOutput[g,t] - m.NominalRampUpLimit[g]*m.TimePeriodLengthHours)
-            if not v_less_max:
+            if not v_greater_min:
                 logger.error('Generator {} has less output at T0 than is feasible to ramp up to'.format(g))
                 return False
             return True
@@ -1266,9 +1266,9 @@ def load_params(model, model_data, slack_type):
     # has to have lower bound of 0, so the unit can cost 0 when off -- this is added
     # back in to the objective if a unit is on
 
-    model.MinimumProductionCost = Param(model.SingleFuelGenerators, model.TimePeriods, within=NonNegativeReals, initialize=_minimum_production_cost, mutable=True)
+    model.MinimumProductionCost = Param(model.SingleFuelGenerators, model.TimePeriods, within=Reals, initialize=_minimum_production_cost, mutable=True)
 
-    model.MinimumFuelConsumption = Param(model.FuelSupplyGenerators, model.TimePeriods, within=NonNegativeReals, initialize=_minimum_fuel_consumption, mutable=True)
+    model.MinimumFuelConsumption = Param(model.FuelSupplyGenerators, model.TimePeriods, within=Reals, initialize=_minimum_fuel_consumption, mutable=True)
 
     ## END PRODUCTION COST CALCULATIONS
 
