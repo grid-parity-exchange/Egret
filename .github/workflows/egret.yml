@@ -28,8 +28,8 @@ jobs:
             fail-fast: false
             matrix:
                 os: [ubuntu-20.04]
-                python-version: [3.7, 3.8, 3.9, '3.10']
-                pyomo-version: [6.4.0]
+                python-version: [3.8, 3.9, '3.10', '3.11']
+                pyomo-version: [6.4.3]
                 include:
                     - os: macos-latest
                       python-version: 3.7
@@ -39,10 +39,10 @@ jobs:
                       pyomo-version: 6.4.0
                     - os: ubuntu-20.04
                       python-version: 3.7
-                      pyomo-version: main
+                      pyomo-version: 6.4.0
                     - os: ubuntu-20.04
                       python-version: '3.11'
-                      pyomo-version: 6.4.3
+                      pyomo-version: main
         steps:
           - uses: actions/checkout@v3
           - uses: conda-incubator/setup-miniconda@v2
