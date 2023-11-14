@@ -111,7 +111,7 @@ def is_var(v):
     return isinstance(v, Var)
 
 def linear_summation(linear_vars, linear_coefs, constant=0.):
-    return quicksum((c*v for c,v in zip(linear_coefs, linear_vars)), start=constant, linear=True)
+    return quicksum((c*v for c,v in zip(linear_coefs, linear_vars)), start=constant)
 
 def _linear_expression(linear_vars, linear_coefs, constant=0.):
     return LinearExpression(linear_vars=linear_vars, linear_coefs=linear_coefs, constant=constant)
