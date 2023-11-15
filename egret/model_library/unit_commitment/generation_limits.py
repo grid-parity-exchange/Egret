@@ -302,8 +302,8 @@ def _KOW_generation_limits(model):
         if not full_range: 
             i = SU_time_limit+1
             if (t-i) >= value(m.InitialTime):
-                coef =  max((value(Pmax) - value(SD[g,t+SD_time_limit]) - sum(value(RD[g,t+j]) for j in range(1,SD_time_limit+1)) - \
-                        (value(Pmax) - value(SU[g,t-i]) - sum(value(RU[g,t-j]) for j in range(1,i+1)))), 0)
+                coef =  max((value(Pmax) - value(SU[g,t-i]) - sum(value(RU[g,t-j]) for j in range(1,i+1))) - \
+                        (value(Pmax) - value(SD[g,t+SD_time_limit]) - sum(value(RD[g,t+j]) for j in range(1,SD_time_limit+1))), 0)
                 if coef != 0:
                     linear_vars.append(Start[g,t-i])
                     linear_coefs.append(coef)
