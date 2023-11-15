@@ -82,7 +82,8 @@ def _solve_model(model,
                  solve_method_options = None,
                  return_solver = False,
                  vars_to_load = None,
-                 set_instance = True):
+                 set_instance = True,
+                 ):
     '''
     Create and solve an Egret power system optimization model
 
@@ -118,7 +119,6 @@ def _solve_model(model,
     -------
 
     '''
-
     results = None
 
     ## termination conditions which are acceptable
@@ -168,6 +168,7 @@ def _solve_model(model,
                 solver.load_slacks()
     else:
         model.solutions.load_from(results)
+
 
     if return_solver:
         return model, results, solver

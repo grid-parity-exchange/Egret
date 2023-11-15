@@ -12,6 +12,7 @@ This module provides functions that create the modules for typical Security-Cons
 
 #TODO: document this with examples
 """
+from pyomo.common.timing import HierarchicalTimer
 import pyomo.environ as pyo
 import numpy as np
 import egret.model_library.transmission.tx_utils as tx_utils
@@ -32,8 +33,9 @@ from math import pi, radians, degrees
 
 
 def create_scopf_model(model_data, include_feasibility_slack=False,
-        base_point=BasePointType.FLATSTART, ptdf_options=None, pw_cost_model='delta'):
+        base_point=BasePointType.FLATSTART, ptdf_options=None, pw_cost_model='delta', timer=None):
 
+    timer.start("data preprocessing")
     ptdf_options = lpu.populate_default_ptdf_options(ptdf_options)
 
     baseMVA = model_data.data['system']['baseMVA']
@@ -60,6 +62,9 @@ def create_scopf_model(model_data, include_feasibility_slack=False,
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
+    timer.stop("data preprocessing")
+
+    timer.start("Pyomo model construction")
 
     model = pyo.ConcreteModel()
 
@@ -134,12 +139,16 @@ def create_scopf_model(model_data, include_feasibility_slack=False,
     ###       as we find violations
     model._contingency_set = pyo.Set(within=model._contingencies*model._branches)
     model.pfc = pyo.Expression(model._contingency_set)
+    model.pfc_slack_pos = pyo.Var(model._contingency_set, domain=pyo.NonNegativeReals, dense=False)
+    model.pfc_slack_neg = pyo.Var(model._contingency_set, domain=pyo.NonNegativeReals, dense=False)
 
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
 
+    timer.start("PTDF Pre-computation")
     PTDF = ptdf_utils.VirtualPTDFMatrix(branches, buses, reference_bus, base_point, ptdf_options,\
                                         contingencies=contingencies, branches_keys=branches_idx, buses_keys=buses_idx)
+    timer.stop("PTDF Pre-computation")
 
     model._PTDF = PTDF
     model._ptdf_options = ptdf_options
@@ -184,8 +193,13 @@ def create_scopf_model(model_data, include_feasibility_slack=False,
     if include_feasibility_slack:
         obj_expr += penalty_expr
 
-    model.obj = pyo.Objective(expr=obj_expr)
+    model.ContingencyViolationCost = pyo.Expression(expr=0.)
+    model.TimePeriodLengthHours = pyo.Param(initialize=1) 
+    model.SystemContingencyLimitPenalty = pyo.Param(initialize=500.0*baseMVA)
+    obj_expr += model.ContingencyViolationCost
 
+    model.obj = pyo.Objective(expr=obj_expr)
+    timer.stop("Pyomo model construction")
 
     return model, md
 
@@ -228,6 +242,9 @@ def solve_scopf(model_data,
     kwargs : dictionary (optional)
         Additional arguments for building model
     '''
+    timer = HierarchicalTimer() 
+    timer.start("Solve SCOPF")
+    kwargs['timer'] = timer
 
     import pyomo.environ as pe
     import pyomo.opt as po
@@ -236,17 +253,22 @@ def solve_scopf(model_data,
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
 
+    timer.start("Model Generation")
     m, md = scopf_model_generator(model_data, **kwargs)
+    timer.stop("Model Generation")
 
     m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
 
+    timer.start("Model Solution")
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,solver_options=options, return_solver=True)
+                              symbolic_solver_labels=symbolic_solver_labels,solver_options=options, return_solver=True, timer=timer)
 
     if m._ptdf_options['lazy']:
         iter_limit = m._ptdf_options['iteration_limit']
-        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
+        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit, timer=timer)
+    timer.stop("Model Solution")
 
+    timer.start("Model Post-Processing")
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -261,6 +283,7 @@ def solve_scopf(model_data,
 
     ## calculate the power flows from our PTDF matrix for maximum precision
     ## calculate the LMPC (LMP congestion) using numpy
+    timer.start("Flow calculation")
     PTDF = m._PTDF
 
     PFV, _, VA = PTDF.calculate_PFV(m)
@@ -268,20 +291,24 @@ def solve_scopf(model_data,
     branches_idx = PTDF.branches_keys
     for i,bn in enumerate(branches_idx):
         branches[bn]['pf'] = PFV[i]
+    timer.stop("Flow calculation")
 
     if hasattr(m, 'p_load_shed'):
         md.data['system']['p_balance_violation'] = value(m.p_load_shed) - value(m.p_over_generation)
     buses_idx = PTDF.buses_keys
+    timer.start("LMP calculation")
     LMP = PTDF.calculate_LMP(m, m.dual, m.eq_p_balance)
     for i,b in enumerate(buses_idx):
         b_dict = buses[b]
         b_dict['lmp'] = LMP[i]
         b_dict['pl'] = value(m.pl[b])
         b_dict['va'] = degrees(VA[i])
+    timer.stop("LMP calculation")
 
     for k, k_dict in dc_branches.items():
         k_dict['pf'] = value(m.dcpf[k])
 
+    timer.start("Monitored Contingency Flow Computation")
     contingencies = dict(md.elements(element_type='contingency'))
     contingency_flows = PTDF.calculate_monitored_contingency_flows(m)
     for (cn,bn), flow in contingency_flows.items():
@@ -289,8 +316,14 @@ def solve_scopf(model_data,
         if 'monitored_branches' not in c_dict:
             c_dict['monitored_branches'] = {}
         c_dict['monitored_branches'][bn] = {'pf': flow}
+    timer.stop("Monitored Contingency Flow Computation")
 
+    timer.start("Unscaling PU")
     unscale_ModelData_to_pu(md, inplace=True)
+    timer.stop("Unscaling PU")
+
+    timer.stop("Model Post-Processing")
+    timer.stop("Solve SCOPF")
 
     if return_model and return_results:
         return md, m, results
@@ -298,4 +331,4 @@ def solve_scopf(model_data,
         return md, m
     elif return_results:
         return md, results
-    return md
+    return md, timer
