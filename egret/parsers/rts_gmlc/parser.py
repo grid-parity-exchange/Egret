@@ -357,6 +357,7 @@ def _create_rtsgmlc_skeleton(rts_gmlc_dir:str) -> dict:
     bus_id_to_name = _read_buses_and_areas(base_dir, elements, system)
     _read_branches(base_dir, elements, bus_id_to_name)
     _read_generators(base_dir, elements, bus_id_to_name)
+    _read_storage(base_dir, elements)
 
     return model_data
 
@@ -642,6 +643,96 @@ def _read_generators(base_dir:str, elements:dict, bus_id_to_name:dict) -> None:
 
         elements["generator"][name] = gen_dict
     gen_df = None
+
+def _read_storage(base_dir:str, elements:dict) -> None:
+    from math import isnan
+
+    elements["storage"] = {}
+
+    stor_path = os.path.join(base_dir,'storage.csv')
+    if not os.path.exists(stor_path):
+        return
+
+    stor_df = pd.read_csv(stor_path)
+
+    # optional columns as tuples: (Egret property name, RTS-GMLC column name)
+    optional_cols = (
+        ('initial_state_of_charge', 'Initial Volume GWh'),
+        ('initial_charge_rate', 'Initial Charge Rate MW'),
+        ('initial_discharge_rate', 'Initial Discharge Rate MW'),
+        ('max_charge_rate', 'Inflow Limit GWh'),
+        ('max_discharge_rate', 'Rating MVA'),
+        ('min_discharge_rate', 'Min Discharge Rate MW'),
+        ('min_charge_rate', 'Min Charge Rate MW'),
+        ('minimum_state_of_charge', 'Min SoC'),
+        ('charge_efficiency', 'Charge Efficiency'),
+        ('discharge_efficiency', 'Discharge Efficiency'),
+        ('retention_rate_60min', 'Hourly Retention Rate'),
+        ('charge_cost', 'Charge Cost'),
+        ('discharge_cost', 'Discharge Cost'),
+        ('end_state_of_charge', 'End State of Charge'),
+    )
+
+    for idx,row in stor_df.iterrows():
+        # Populate from required columns
+        stor_name = str(row['Storage'])
+        gen_name = str(row['GEN UID'])
+        bus_name = elements['generator'][gen_name]['bus']
+        stor_dict = {
+            'bus': bus_name,
+            'energy_capacity': float(row['Max Volume GWh'])*1000,
+            'ramp_up_output_60min': float(row['Max Hourly Discharge Ramp Up MW']),
+            'ramp_down_output_60min': float(row['Max Hourly Discharge Ramp Down MW']),
+            'ramp_up_input_60min': float(row['Max Hourly Charge Ramp Up MW']),
+            'ramp_down_input_60min': float(row['Max Hourly Charge Ramp Down MW']),
+        }
+
+        # Read Start Energy.
+        if 'Start Energy' in stor_df:
+            # Start Energy is in the RTS-GMLC spec. It can either be interpreted
+            # as the charge rate or discharge rate depending on sign. Store in
+            # initial_discharge_rate if positive, or initial_charge_rate if
+            # negative.
+            # Egret supports concurrent non-zero values for both the initial charge
+            # rate and the initial discharge rate, with CSV columns for each. If the
+            # CSV file has non-blank values for both Start Energy and the corresponding
+            # initial charge/discharge column, the Initial [Dis]Charge Rate MW
+            # column takes precedence and the Start Energy will be ignored. This is
+            # implemented by overwriting the Start Energy value in the optional columns
+            # handling code below.
+            rate = row['Start Energy']
+            if rate is not None and not isnan(rate):
+                # Rate is present and is a real number. Convert to MW.
+                rate = float(rate)*1000
+                if rate < 0.0:
+                    stor_dict['initial_charge_rate'] = -rate
+                else:
+                    stor_dict['initial_discharge_rate'] = rate
+
+        # Fill in optional values present in CSV file
+        for (egret_name, gmlc_name) in optional_cols:
+            # If column isn't present, omit, let Egret use internal default
+            if not gmlc_name in stor_df:
+                continue
+
+            val = row[gmlc_name]
+
+            # If column is present but value is blank, omit, let Egret use internal default
+            if (val is None) or isnan(val):
+                continue
+
+            # Place value in storage dict
+            stor_dict[egret_name] = float(val)
+
+        # Do units conversion of a few values
+        if 'initial_state_of_charge' in stor_dict:
+            stor_dict['initial_state_of_charge'] /= stor_dict['energy_capacity']/1000
+        if 'max_charge_rate' in stor_dict:
+            stor_dict['max_charge_rate'] *= 1000.0
+
+        # Insert the filled-in storage dict as a storage element
+        elements["storage"][stor_name] = stor_dict
+    return
 
 def _get_scalar_reserve_data(base_dir:str, metadata_df:df, model_dict:dict) -> ScalarReserveData:
     # Store scalar reserve values as stored in the input
