@@ -41,7 +41,7 @@ EGRET is available under the BSD License (see [LICENSE.txt](https://github.com/g
 ### [Darryl Melander](https://github.com/darrylmelander)
 - Unit commitment
 
-### [JP Watson]
+### [JP Watson](https://github.com/jeanpaulwatson)
 - Unit commitment
 - AC relaxations
 
