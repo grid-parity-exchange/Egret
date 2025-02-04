@@ -132,8 +132,6 @@ def parse_to_cache(rts_gmlc_dir:str,
     minutes_per_period = {'DAY_AHEAD':int(metadata_df.loc['Period_Resolution', 'DAY_AHEAD'])//60,
                           'REAL_TIME':int(metadata_df.loc['Period_Resolution', 'REAL_TIME'])//60}
 
-    data_start, data_end = _get_data_date_range(metadata_df)
-
     constant_reserve_data = _get_scalar_reserve_data(rts_gmlc_dir, metadata_df, model_data)
 
     begin_time, end_time = _parse_datetimes_if_strings(begin_time, end_time)
@@ -165,31 +163,6 @@ def _read_metadata(base_dir:str, honor_lookahead:bool) -> pd.DataFrame:
         metadata_df.loc['Look_Ahead_Periods_per_Step']['REAL_TIME'] = 0
 
     return metadata_df
-
-def _get_data_date_range(metadata_df) -> Tuple[datetime, datetime]:
-    ''' Get the range of dates for which there is data available
-    '''
-
-    # Data start time
-    row = metadata_df.loc['Date_From']
-    data_start = max(dateutil.parser.parse(row['DAY_AHEAD']),
-                     dateutil.parser.parse(row['REAL_TIME']))
-
-    # Data end time is a little more tricky
-    row = metadata_df.loc['Date_To']
-    def _extract_end_date(which:str):
-        # The actual end date is the metadata's Date_To plus a number of look ahead periods.
-        # Each look ahead period is a specified number of seconds
-        extra_seconds = int(metadata_df.loc['Look_Ahead_Periods_per_Step'][which]) * \
-                        int(metadata_df.loc['Look_Ahead_Resolution'][which])
-        end_date = dateutil.parser.parse(row[which])
-        return end_date + timedelta(seconds=extra_seconds)
-    # Get the end date for each kind of data.  Both kinds of data
-    # are available up through the later of the two simulation categories.
-    data_end = max(_extract_end_date('DAY_AHEAD'),
-                   _extract_end_date('REAL_TIME'))
-
-    return (data_start, data_end)
 
 def _read_timeseries_file(file_name:str, minutes_per_period:int,
                           start_time:datetime, end_time:datetime,
