@@ -1,0 +1,44 @@
+###############################################################################
+# mpi-sppy: MPI-based Stochastic Programming in PYthon
+#
+# Copyright (c) 2024, Lawrence Livermore National Security, LLC, Alliance for
+# Sustainable Energy, LLC, The Regents of the University of California, et al.
+# All rights reserved. Please see the files COPYRIGHT.md and LICENSE.md for
+# full copyright and license information.
+###############################################################################
+
+[build-system]
+requires = ["setuptools >= 68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gridx-egret"
+version = "0.5.6.dev0"
+authors = [
+    {name = "Michael Bynum"},
+    {name = "Anya Castillo"},
+    {name = "Carl Laird"},
+    {name = "Bernard Knueven", email = "carldlaird@users.noreply.github.com"},
+    {name = "Jean-Paul Watson"},
+]
+description = "EGRET: Electrical Grid Research and Engineering Tools."
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+requires-python = ">=3.7, <4"
+dependencies = [
+    "pyomo>=6.4",
+    "numpy",
+    "pytest",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "scipy",
+    "networkx",
+    "coramin==0.1.1",
+]
+
+[project.urls]
+homepage = "https://github.com/grid-parity-exchange/Egret"
+source = "https://github.com/grid-parity-exchange/Egret"
+download = "https://github.com/grid-parity-exchange/Egret"
+tracker = "https://github.com/grid-parity-exchange/Egret/issues"
