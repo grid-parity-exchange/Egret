@@ -1,11 +1,11 @@
-###############################################################################
-# mpi-sppy: MPI-based Stochastic Programming in PYthon
+#  ___________________________________________________________________________
 #
-# Copyright (c) 2024, Lawrence Livermore National Security, LLC, Alliance for
-# Sustainable Energy, LLC, The Regents of the University of California, et al.
-# All rights reserved. Please see the files COPYRIGHT.md and LICENSE.md for
-# full copyright and license information.
-###############################################################################
+#  EGRET: Electrical Grid Research and Engineering Tools
+#  Copyright 2019 National Technology & Engineering Solutions of Sandia, LLC
+#  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+#  Government retains certain rights in this software.
+#  This software is distributed under the Revised BSD License.
+#  ___________________________________________________________________________
 
 [build-system]
 requires = ["setuptools >= 68.0.0", "wheel"]
@@ -17,8 +17,8 @@ version = "0.5.6.dev0"
 authors = [
     {name = "Michael Bynum"},
     {name = "Anya Castillo"},
-    {name = "Carl Laird"},
-    {name = "Bernard Knueven", email = "carldlaird@users.noreply.github.com"},
+    {name = "Carl Laird", email = "carldlaird@users.noreply.github.com"},
+    {name = "Bernard Knueven"},
     {name = "Jean-Paul Watson"},
 ]
 description = "EGRET: Electrical Grid Research and Engineering Tools."
@@ -27,7 +27,7 @@ license = { file = "LICENSE.txt" }
 requires-python = ">=3.7, <4"
 dependencies = [
     "pyomo>=6.4",
-    "numpy",
+    "numpy<2",
     "pytest",
     "pandas",
     "matplotlib",
