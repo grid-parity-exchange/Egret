@@ -27,20 +27,20 @@ jobs:
             # still want the results of other tests even if one fails
             fail-fast: false
             matrix:
-                os: [ubuntu-20.04]
-                python-version: [3.8, 3.9, '3.10', '3.11']
+                os: [ubuntu-latest]
+                python-version: [3.9, '3.10', '3.11']
                 pyomo-version: [6.4.3]
                 include:
                     - os: macos-latest
-                      python-version: 3.7
+                      python-version: 3.9
                       pyomo-version: 6.4.0
                     - os: windows-latest
-                      python-version: 3.7
+                      python-version: 3.9
                       pyomo-version: 6.4.0
-                    - os: ubuntu-20.04
-                      python-version: 3.7
+                    - os: ubuntu-latest
+                      python-version: 3.9
                       pyomo-version: 6.4.0
-                    - os: ubuntu-20.04
+                    - os: ubuntu-latest
                       python-version: '3.11'
                       pyomo-version: main
         steps:
