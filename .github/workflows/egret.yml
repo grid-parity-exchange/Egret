@@ -27,7 +27,7 @@ jobs:
             # still want the results of other tests even if one fails
             fail-fast: false
             matrix:
-                os: [ubuntu-latest]
+                os: [ubuntu-22.04]
                 python-version: [3.9, '3.10', '3.11']
                 pyomo-version: [6.4.3]
                 include:
@@ -37,19 +37,18 @@ jobs:
                     - os: windows-latest
                       python-version: 3.9
                       pyomo-version: 6.4.0
-                    - os: ubuntu-latest
+                    - os: ubuntu-22.04
                       python-version: 3.9
                       pyomo-version: 6.4.0
-                    - os: ubuntu-latest
+                    - os: ubuntu-22.04
                       python-version: '3.11'
                       pyomo-version: main
         steps:
           - uses: actions/checkout@v3
-          - uses: conda-incubator/setup-miniconda@v2
+          - uses: conda-incubator/setup-miniconda@v3
             with:
-              activate-environment: test_env
-              python-version:  ${{ matrix.python-version }}
-              auto-activate-base: false
+              auto-update-conda: true
+              python-version: ${{ matrix.python-version }}
           - name: Conda Env
             run: |
               conda info
@@ -69,9 +68,9 @@ jobs:
                   -L -s -H 'Accept: application/json' ${URL}/releases/latest)
               VER=$(echo $RELEASE | sed -e 's/.*"tag_name":"\([^"]*\)".*/\1/')
               URL=${URL}/releases/download/$VER
-              if test "${{matrix.os}}" == ubuntu-20.04; then
+              if test "${{matrix.os}}" == ubuntu-22.04; then
                   curl --max-time 150 --retry 8 \
-                      -L $URL/idaes-solvers-ubuntu2004-x86_64.tar.gz \
+                      -L $URL/idaes-solvers-ubuntu2204-x86_64.tar.gz \
                       > $SOLVER_TAR
               elif test "${{matrix.os}}" == macos-latest; then
                   curl --max-time 150 --retry 8 \
