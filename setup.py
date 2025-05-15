@@ -25,7 +25,7 @@ setuptools_kwargs = {
     'scripts': [],
     'include_package_data': True,
     'install_requires': ['pyomo>=6.4', 'numpy<2', 'pytest', 'pandas',
-                         'matplotlib', 'seaborn', 'scipy<1.14', 'networkx',
+                         'matplotlib', 'seaborn', 'scipy<1.13', 'networkx',
                          'coramin==0.1.1'],
     'python_requires' : '>=3.7, <4',
 }
