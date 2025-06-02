@@ -27,6 +27,8 @@ from egret.data.networkx_utils import get_networkx_graph
 import networkx
 from pyomo.common.collections.orderedset import OrderedSet
 from pyomo.contrib.fbbt import interval
+from .fixed_vars import fix_var_and_remove_bounds
+
 
 def _include_feasibility_slack(model, bus_names, bus_p_loads, bus_q_loads,
                                gens_by_bus, gen_attrs,
@@ -102,8 +104,10 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
 
     libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
     libbus.declare_var_ql(model, bus_attrs['names'], initialize=bus_q_loads)
-    model.pl.fix()
-    model.ql.fix()
+    for k, v in model.pl.items():
+        fix_var_and_remove_bounds(v, v.value)
+    for k, v in model.ql.items():
+        fix_var_and_remove_bounds(v, v.value)
 
     ### declare the fixed shunts at the buses
     bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
@@ -303,14 +307,12 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
         if pw_cost_model == 'delta':
             for gen_name, ndx in model.delta_pg_set:
                 if gen_name in out_of_service_gens_set:
-                    model.delta_pg[gen_name, ndx].set_value(0, skip_validation=True)
-                    model.delta_pg[gen_name, ndx].fix()
+                    fix_var_and_remove_bounds(model.delta_pg[gen_name, ndx], 0)
                     model.pg_delta_pg_con[gen_name].deactivate()
         else:
             for gen_name, ndx in model.pg_piecewise_cost_set:
                 if gen_name in out_of_service_gens_set:
-                    model.pg_cost[gen_name].set_value(0, skip_validation=True)
-                    model.pg_cost[gen_name].fix()
+                    fix_var_and_remove_bounds(model.pg_cost[gen_name], 0)
                     model.pg_piecewise_cost_cons[gen_name, ndx].deactivate()
 
     if q_costs is not None:
@@ -321,32 +323,24 @@ def _create_base_power_ac_model(model_data, include_feasibility_slack=False, pw_
             if pw_cost_model == 'delta':
                 for gen_name, ndx in model.delta_qg_set:
                     if gen_name in out_of_service_gens_set:
-                        model.delta_qg[gen_name, ndx].set_value(0, skip_validation=True)
-                        model.delta_qg[gen_name, ndx].fix()
+                        fix_var_and_remove_bounds(model.delta_qg[gen_name, ndx], 0)
                         model.qg_delta_qg_con[gen_name].deactivate()
             else:
                 for gen_name, ndx in model.qg_piecewise_cost_set:
                     if gen_name in out_of_service_gens_set:
-                        model.qg_cost[gen_name].set_value(0, skip_validation=True)
-                        model.qg_cost[gen_name].fix()
+                        fix_var_and_remove_bounds(model.qg_cost[gen_name], 0)
                         model.qg_piecewise_cost_cons[gen_name, ndx].deactivate()
 
     for gen_name in out_of_service_gens:
-        model.pg[gen_name].set_value(0, skip_validation=True)
-        model.qg[gen_name].set_value(0, skip_validation=True)
-        model.pg[gen_name].fix()
-        model.qg[gen_name].fix()
+        fix_var_and_remove_bounds(model.pg[gen_name], 0)
+        fix_var_and_remove_bounds(model.qg[gen_name], 0)
         model_data.data['elements']['generator'][gen_name]['in_service'] = False
         md.data['elements']['generator'][gen_name]['in_service'] = False
     for branch_name in out_of_service_branches:
-        model.pf[branch_name].set_value(0, skip_validation=True)
-        model.pt[branch_name].set_value(0, skip_validation=True)
-        model.qf[branch_name].set_value(0, skip_validation=True)
-        model.qt[branch_name].set_value(0, skip_validation=True)
-        model.pf[branch_name].fix()
-        model.pt[branch_name].fix()
-        model.qf[branch_name].fix()
-        model.qt[branch_name].fix()
+        fix_var_and_remove_bounds(model.pf[branch_name], 0)
+        fix_var_and_remove_bounds(model.pt[branch_name], 0)
+        fix_var_and_remove_bounds(model.qf[branch_name], 0)
+        fix_var_and_remove_bounds(model.qt[branch_name], 0)
         model.eq_pf_branch[branch_name].deactivate()
         model.eq_pt_branch[branch_name].deactivate()
         model.eq_qf_branch[branch_name].deactivate()
@@ -528,8 +522,10 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False, pw_cost_
 
     libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
     libbus.declare_var_ql(model, bus_attrs['names'], initialize=bus_q_loads)
-    model.pl.fix()
-    model.ql.fix()
+    for k, v in model.pl.items():
+        fix_var_and_remove_bounds(v, v.value)
+    for k, v in model.ql.items():
+        fix_var_and_remove_bounds(v, v.value)
 
     ### declare the fixed shunts at the buses
     bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
