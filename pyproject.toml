@@ -23,7 +23,7 @@ authors = [
 ]
 description = "EGRET: Electrical Grid Research and Engineering Tools."
 readme = "README.md"
-license = { file = "LICENSE.txt" }
+license-files = [ "LICENSE.txt" ]
 requires-python = ">=3.7, <4"
 dependencies = [
     "pyomo>=6.4",
