@@ -42,3 +42,6 @@ homepage = "https://github.com/grid-parity-exchange/Egret"
 source = "https://github.com/grid-parity-exchange/Egret"
 download = "https://github.com/grid-parity-exchange/Egret"
 tracker = "https://github.com/grid-parity-exchange/Egret/issues"
+
+[tool.setuptools]
+packages = ["egret"]
