@@ -32,7 +32,7 @@ dependencies = [
     "pandas",
     "matplotlib",
     "seaborn",
-    "scipy",
+    "scipy<1.13",
     "networkx",
     "coramin==0.1.1",
 ]
