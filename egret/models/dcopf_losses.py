@@ -99,8 +99,20 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(radians(bus_attrs['va'][k])) for k in bus_attrs['vm']}
-    p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    pf_bounds = {k: (-p_max[k],p_max[k]) for k in branches.keys()}
+
+    branch_p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+
+    pf_bounds = dict()
+    pfl_bounds = dict()
+    for k in branches.keys():
+        k_p_max = branch_p_max[k]
+        if k_p_max is None:
+            pf_bounds[k] = (None, None)
+            pfl_bounds[k] = (None, None)
+        else:
+            pf_bounds[k] = (-k_p_max, k_p_max)
+            pfl_bounds[k] = (0, k_p_max**2)
+
     pf_init = dict()
     for branch_name, branch in branches.items():
         from_bus = branch['from_bus']
@@ -111,7 +123,7 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
         ifj_init = tx_calc.calculate_ifj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
         pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
-    pfl_bounds = {k: (0,p_max[k]**2) for k in branches.keys()}
+
     pfl_init = {k: 0 for k in branches.keys()}
 
     libbranch.declare_var_pf(model=model,
@@ -162,7 +174,7 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
     libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
                                                  index_set=branch_attrs['names'],
                                                  branches=branches,
-                                                 p_thermal_limits=p_max,
+                                                 p_thermal_limits=branch_p_max,
                                                  approximation_type=ApproximationType.BTHETA
                                                  )
 
@@ -254,8 +266,16 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False,
                                               )
 
     ### declare the current flows in the branches
-    p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    pfl_bounds = {k: (-p_max[k]**2,p_max[k]**2) for k in branches.keys()}
+    branch_p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+
+    pfl_bounds = dict()
+    for k in branches.keys():
+        k_p_max = branch_p_max[k]
+        if k_p_max is None:
+            pfl_bounds[k] = (None, None)
+        else:
+            pfl_bounds[k] = (0, k_p_max**2)
+
     pfl_init = {k: 0 for k in branches.keys()}
 
     ## Do and store PTDF calculation
@@ -307,7 +327,7 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False,
     libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
                                                  index_set=branch_attrs['names'],
                                                  branches=branches,
-                                                 p_thermal_limits=p_max,
+                                                 p_thermal_limits=branch_p_max,
                                                  approximation_type=ApproximationType.PTDF
                                                  )
 
