@@ -151,6 +151,8 @@ class _MaximalViolationsStore:
         self.violations_store = {}
         self.total_violations = 0
         self.monitored_violations = 0
+        self.min_flow_screen = True
+        self.min_violation = 0.
 
     def get_violations_named(self, name):
         for key in self.violations_store:
@@ -158,14 +160,17 @@ class _MaximalViolationsStore:
                 yield key[1]
 
     def min_flow_violation(self):
-        if self.violations_store:
-            return min(self.violations_store.values())
+        if len(self.violations_store) == self.max_viol_add:
+            return self.min_violation
         else:
             return 0.
 
     def _min_violation_key(self):
         d = self.violations_store
         return min(d, key=d.get)
+
+    def update_min_flow_violation(self):
+        self.min_violation = min(self.violations_store.values())
 
     def _add_violation(self, name, other_name, index, val):
         if other_name:
@@ -184,12 +189,13 @@ class _MaximalViolationsStore:
                         f"violations_store: {self.violations_store}")
 
             del self.violations_store[min_key]
+        self.update_min_flow_violation()
     
     def _add_violations( self, name, other_name, viol_array, viol_indices):
         while viol_indices:
             idx = np.argmax(viol_array[viol_indices])
             val = viol_array[viol_indices[idx]]
-            if val < self.min_flow_violation() and len(self.violations_store) >= self.max_viol_add:
+            if len(self.violations_store) >= self.max_viol_add and val < self.min_flow_violation():
                 break
             # If this violation is close in value to
             # one already in the set, it is likely
@@ -201,17 +207,20 @@ class _MaximalViolationsStore:
             #       adding *this* iteration, it's possible to add parallel
             #       lines, which may not be necessary in may cases (e.g.,
             #       when the line is binding but not over the limit)
-            close_to_existing = any( math.isclose( val, existing ) for existing in self.violations_store.values() )
-            if close_to_existing:
-                viol_indices.pop(idx)
-                continue
+            # NOTE: the above assumes that this line will not be violated
+            #       Since they often are (e.g. contingencies), we leave this
+            #       logic out
+            #close_to_existing = any( math.isclose( val, existing ) for existing in self.violations_store.values() )
+            #if close_to_existing:
+            #    viol_indices.pop(idx)
+            #    continue
             self._add_violation( name, other_name, viol_indices[idx], val )
             viol_indices.pop(idx)
 
     def check_and_add_violations(self, name, flow_array, flow_variable,
                 upper_lazy_limits, upper_enforced_limits,
                 lower_lazy_limits, lower_enforced_limits,
-                monitored_indices, index_names, outer_name=None, PFV=None):
+                monitored_indices, index_names, outer_name=None, PFV=None, get_counts=False):
 
         if outer_name:
             # contingencies are named by cn, branch_idx, reduce to
@@ -224,21 +233,28 @@ class _MaximalViolationsStore:
         ## get the indices of the violation
         ## here filter by least violation in violations_store
         ## in the limit, this will become 0 eventually --
-        upper_viol_lazy_idx = np.nonzero(upper_viol_lazy_array > self.min_flow_violation())[0]
+        upper_viol_lazy_idx = np.nonzero(upper_viol_lazy_array > 0.0)[0]
 
-        upper_viol_array = flow_array[upper_viol_lazy_idx] - upper_enforced_limits[upper_viol_lazy_idx]
-        self._calculate_total_and_monitored_violations(upper_viol_array, upper_viol_lazy_idx, monitored_indices,
-                                                        flow_variable, flow_array, index_names, upper_enforced_limits,
-                                                        name, outer_name, PFV)
+        if len(upper_viol_lazy_idx) > 0:
+            upper_viol_array = flow_array[upper_viol_lazy_idx] - upper_enforced_limits[upper_viol_lazy_idx]
+            upper_viol_idx = self._calculate_total_and_monitored_violations(upper_viol_array, upper_viol_lazy_idx, monitored_indices,
+                                                            flow_variable, flow_array, index_names, upper_enforced_limits,
+                                                            name, outer_name, PFV)
 
-        ## viol_lazy_idx will hold the lines we're adding
-        ## this iteration -- don't want to add lines
-        ## that are already in the monitored set
+            ## viol_lazy_idx will hold the lines we're adding
+            ## this iteration -- don't want to add lines
+            ## that are already in the monitored set
 
-        # eliminate lines in the monitored set
-        upper_viol_lazy_idx = list(set(upper_viol_lazy_idx).difference(monitored_indices))
+            # eliminate lines in the monitored set
+            upper_viol_lazy_idx = set(upper_viol_lazy_idx).difference(monitored_indices)
+            upper_viol_lazy_idx = np.fromiter(upper_viol_lazy_idx, dtype='int64', count=len(upper_viol_lazy_idx))
 
-        self._add_violations( name, outer_name, upper_viol_lazy_array, upper_viol_lazy_idx )
+            upper_viol_lazy_idx_idx = np.nonzero(upper_viol_lazy_array[upper_viol_lazy_idx] > self.min_flow_violation())[0]
+            upper_viol_lazy_idx = list(upper_viol_lazy_idx[upper_viol_lazy_idx_idx])
+
+            self._add_violations( name, outer_name, upper_viol_lazy_array, upper_viol_lazy_idx )
+        else:
+            upper_viol_idx = []
 
         ## check lower bound
         lower_viol_lazy_array = lower_lazy_limits - flow_array
@@ -246,21 +262,34 @@ class _MaximalViolationsStore:
         ## get the indices of the violation
         ## here filter by least violation in violations_store
         ## in the limit, this will become 0 eventually --
-        lower_viol_lazy_idx = np.nonzero(lower_viol_lazy_array > self.min_flow_violation())[0]
+        lower_viol_lazy_idx = np.nonzero(lower_viol_lazy_array > 0.0)[0]
 
-        lower_viol_array =  lower_enforced_limits[lower_viol_lazy_idx] - flow_array[lower_viol_lazy_idx]
-        self._calculate_total_and_monitored_violations(lower_viol_array, lower_viol_lazy_idx, monitored_indices,
-                                                        flow_variable, flow_array, index_names, lower_enforced_limits,
-                                                        name, outer_name, PFV)
+        if len(lower_viol_lazy_idx) > 0:
+            lower_viol_array =  lower_enforced_limits[lower_viol_lazy_idx] - flow_array[lower_viol_lazy_idx]
+            lower_viol_idx = self._calculate_total_and_monitored_violations(lower_viol_array, lower_viol_lazy_idx, monitored_indices,
+                                                            flow_variable, flow_array, index_names, lower_enforced_limits,
+                                                            name, outer_name, PFV)
 
-        ## viol_lazy_idx will hold the lines we're adding
-        ## this iteration -- don't want to add lines
-        ## that are already in the monitored set
+            ## viol_lazy_idx will hold the lines we're adding
+            ## this iteration -- don't want to add lines
+            ## that are already in the monitored set
 
-        # eliminate lines in the monitored set
-        lower_viol_lazy_idx = list(set(lower_viol_lazy_idx).difference(monitored_indices))
+            # eliminate lines in the monitored set
+            lower_viol_lazy_idx = set(lower_viol_lazy_idx).difference(monitored_indices)
+            lower_viol_lazy_idx = np.fromiter(lower_viol_lazy_idx, dtype='int64', count=len(lower_viol_lazy_idx))
 
-        self._add_violations( name, outer_name, lower_viol_lazy_array, lower_viol_lazy_idx )
+            lower_viol_lazy_idx_idx = np.nonzero(lower_viol_lazy_array[lower_viol_lazy_idx] > self.min_flow_violation())[0]
+            lower_viol_lazy_idx = list(lower_viol_lazy_idx[lower_viol_lazy_idx_idx])
+
+            self._add_violations( name, outer_name, lower_viol_lazy_array, lower_viol_lazy_idx )
+        else:
+            lower_viol_idx = []
+
+        if get_counts:
+            viol_idx = set(upper_viol_idx)
+            viol_idx.update(lower_viol_idx)
+            return len(viol_idx.difference(monitored_indices))
+        return
 
 
     def _calculate_total_and_monitored_violations(self, viol_array, viol_lazy_idx, monitored_indices,
@@ -313,6 +342,8 @@ class _MaximalViolationsStore:
                     print(f'model: {pyo.value(flow_variable[element_name])}')
                     print('')
 
+        return viol_idx
+
 
 ## to hold the indicies of the violations
 ## in the model or block
@@ -359,7 +390,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
                                             mb._interfaces_monitored, PTDF.interface_keys)
 
     if PTDF.contingencies and \
-           violations_store.total_violations == 0:
+            violations_store.total_violations < violations_store.monitored_violations + violations_store.max_viol_add:
         ## NOTE: checking contingency constraints in general could be very expensive
         ##       we probably want to delay doing so until we have a nearly transmission feasible
         ##       solution
@@ -378,18 +409,40 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
 
         ## In this way, we avoid (number of contingenies) adds PFV+PFV_delta_c
 
-        logger.debug("Checking contingency flows...")
+        logger.info("Checking contingency flows...")
         lazy_contingency_limits_upper = PTDF.lazy_contingency_limits - PFV
         lazy_contingency_limits_lower = -PTDF.lazy_contingency_limits - PFV
         enforced_contingency_limits_upper = PTDF.enforced_contingency_limits - PFV
         enforced_contingency_limits_lower = -PTDF.enforced_contingency_limits - PFV
-        for cn in PTDF.contingency_compensators:
+        if time in PTDF.contingency_compensators._order:
+            cn_iterator = PTDF.contingency_compensators._order[time]
+        else:
+            cn_iterator = PTDF.contingency_compensators
+        total = 0
+        for c_checked, cn in enumerate(cn_iterator):
             PFV_delta = PTDF.calculate_masked_PFV_delta(cn, PFV, VA)
-            violations_store.check_and_add_violations('contingency', PFV_delta, mb.pfc,
-                                                      lazy_contingency_limits_upper, enforced_contingency_limits_upper,
-                                                      lazy_contingency_limits_lower, enforced_contingency_limits_lower,
-                                                      mb._contingencies_monitored, PTDF.branches_keys_masked,
-                                                      outer_name = cn, PFV = PFV)
+            PTDF.contingency_compensators._count[time,cn] = violations_store.check_and_add_violations('contingency', PFV_delta, mb.pfc,
+                                                            lazy_contingency_limits_upper, enforced_contingency_limits_upper,
+                                                            lazy_contingency_limits_lower, enforced_contingency_limits_lower,
+                                                            mb._contingencies_monitored, PTDF.branches_keys_masked,
+                                                            outer_name = cn, PFV = PFV, get_counts=True)
+
+            total += PTDF.contingency_compensators._count[time,cn]
+            if time in PTDF.contingency_compensators._order:
+                # give us some choice in which violations we add
+                if total >= violations_store.max_viol_add:
+                    c_checked += 1
+                    break
+            if (c_checked+1)%1000 == 0:
+                logger.info(f"Checked {c_checked+1} contingency flows...")
+
+        PTDF.contingency_compensators._order[time] = list(sorted(PTDF.contingency_compensators, key=lambda cn: PTDF.contingency_compensators._count[time,cn], reverse=True))
+        if len(PTDF.contingency_compensators) == c_checked+1:
+            logger.info(f"Checked **ALL** {c_checked} contingencies")
+        else:
+            logger.info(f"Checked {c_checked} contingencies")
+    else:
+        logger.info("Checked no contingencies")
 
     logger.debug(f"branches_monitored: {mb._idx_monitored}\n"
                  f"interfaces_monitored: {mb._interfaces_monitored}\n"
@@ -403,6 +456,7 @@ def check_violations(mb, md, PTDF, max_viol_add, time=None, prepend_str=""):
     flows = _CalculatedFlows(PFV=PFV, PFV_I=PFV_I)
 
     return flows, violations_store.total_violations, violations_store.monitored_violations, viol_lazy
+
 
 def _generate_flow_monitor_remove_message(flow_type, bn, slack, baseMVA, time):
     ret_str = "removing {0} {1} from monitored set".format(flow_type, bn)
