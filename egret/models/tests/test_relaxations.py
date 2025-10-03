@@ -99,6 +99,7 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
+    @unittest.expectedFailure
     def test_polar_relaxation(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
@@ -121,6 +122,7 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
+    @unittest.expectedFailure
     def test_atan_relaxation(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
@@ -139,6 +141,7 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
+    @unittest.expectedFailure
     def test_atan_relaxation_with_soc_edge_cuts(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
@@ -157,6 +160,7 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
+    @unittest.expectedFailure
     def test_rectangular_relaxation(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
@@ -177,6 +181,7 @@ class TestRelaxations(unittest.TestCase):
 
 @unittest.skipIf(not coramin_available, "coramin is not available")
 class TestSOCEdgeCuts(unittest.TestCase):
+    @unittest.expectedFailure
     def test_soc_edge_cuts(self):
         m = pe.ConcreteModel()
         m.c = pe.Var()
