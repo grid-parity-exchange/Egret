@@ -1,0 +1,47 @@
+#  ___________________________________________________________________________
+#
+#  EGRET: Electrical Grid Research and Engineering Tools
+#  Copyright 2019 National Technology & Engineering Solutions of Sandia, LLC
+#  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+#  Government retains certain rights in this software.
+#  This software is distributed under the Revised BSD License.
+#  ___________________________________________________________________________
+
+[build-system]
+requires = ["setuptools >= 68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gridx-egret"
+version = "0.5.6.dev0"
+authors = [
+    {name = "Michael Bynum"},
+    {name = "Anya Castillo"},
+    {name = "Carl Laird", email = "carldlaird@users.noreply.github.com"},
+    {name = "Bernard Knueven"},
+    {name = "Jean-Paul Watson"},
+]
+description = "EGRET: Electrical Grid Research and Engineering Tools."
+readme = "README.md"
+license-files = [ "LICENSE.txt" ]
+requires-python = ">=3.7, <4"
+dependencies = [
+    "pyomo>=6.4",
+    "numpy",
+    "pytest",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "scipy",
+    "networkx",
+    "coramin==0.1.1",
+]
+
+[project.urls]
+homepage = "https://github.com/grid-parity-exchange/Egret"
+source = "https://github.com/grid-parity-exchange/Egret"
+download = "https://github.com/grid-parity-exchange/Egret"
+tracker = "https://github.com/grid-parity-exchange/Egret/issues"
+
+[tool.setuptools.packages]
+find = {}

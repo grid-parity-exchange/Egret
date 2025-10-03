@@ -13,6 +13,41 @@ Major features:
 
 EGRET is available under the BSD License (see [LICENSE.txt](https://github.com/grid-parity-exchange/Egret/blob/main/LICENSE.txt))
 
+## Primary Contributors
+### [Ben Knueven](https://github.com/bknueven)
+- Unit commitment
+- ModelData
+- DCOPF
+- PTDF
+
+### [Anya Castillo](https://github.com/anyacastillo)
+- ModelData
+- DCOPF
+- ACOPF
+- AC relaxations
+- PTDF
+
+### [Carl Laird](https://github.com/carldlaird)
+- ModelData
+- DCOPF
+- ACOPF
+- AC relaxations
+
+### [Michael Bynum](https://github.com/michaelbynum/)
+- DCOPF
+- ACOPF
+- AC relaxations
+
+### [Darryl Melander](https://github.com/darrylmelander)
+- Unit commitment
+
+### [JP Watson](https://github.com/jeanpaulwatson)
+- Unit commitment
+- AC relaxations
+
+
+## Getting Started
+
 ### Installation
 
 * EGRET is a Python package and therefore requires a Python installation. We recommend using Anaconda with the latest Python (https://www.anaconda.com/distribution/).

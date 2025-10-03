@@ -19,16 +19,14 @@ from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
 from egret.data.data_utils import zip_items
 from pyomo.core.util import quicksum
 from pyomo.core.expr.numeric_expr import LinearExpression
+from pyomo.common.dependencies import attempt_import
 from collections import OrderedDict
 from pyomo.contrib.fbbt.fbbt import fbbt
 import warnings
 import logging
 from typing import List, Tuple, AbstractSet
-try:
-    import coramin
-    coramin_available = True
-except ImportError:
-    coramin_available = False
+
+coramin, coramin_available = attempt_import("coramin")
 
 
 logger = logging.getLogger(__name__)
