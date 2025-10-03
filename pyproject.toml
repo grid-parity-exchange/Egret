@@ -27,12 +27,12 @@ license-files = [ "LICENSE.txt" ]
 requires-python = ">=3.7, <4"
 dependencies = [
     "pyomo>=6.4",
-    "numpy<2",
+    "numpy",
     "pytest",
     "pandas",
     "matplotlib",
     "seaborn",
-    "scipy<1.13",
+    "scipy",
     "networkx",
     "coramin==0.1.1",
 ]
