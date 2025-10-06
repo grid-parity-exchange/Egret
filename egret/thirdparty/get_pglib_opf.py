@@ -33,8 +33,6 @@ import logging
 from zipfile import ZipFile
 import pyomo.common.fileutils as futil
 import pyomo.common.download as dload
-# we specifically list the files to prevent extracting unexpected data
-from egret.thirdparty.pglib_opf_files import pglib_files_to_extract as files
 
 logger = logging.getLogger('egret.thirdparty.get_pglib_opf')
 
@@ -77,7 +75,7 @@ def get_pglib_opf(download_dir=None):
     print('... extracting files from zip archive')
     try:
         zf = ZipFile(zipfile_dest, 'r')
-        zf.extractall(download_dir, files)
+        zf.extractall(download_dir)
     except:
         logger.error("***\nFailed to extract files from {}\n***".format(zipfile_dest))
         raise
