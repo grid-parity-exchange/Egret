@@ -13,7 +13,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gridx-egret"
-version = "0.6.0"
+version = "0.6.1.dev0"
 authors = [
     {name = "Michael Bynum"},
     {name = "Anya Castillo"},
