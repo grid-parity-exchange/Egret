@@ -1,13 +1,13 @@
 name: Publish Python distributions to PyPI and TestPyPI
 
-on:
-    # Trigger the workflow on push or pull request,
-    # but only for the main branch
-    push:
-        branches:
-            - main
-        tags:
-            - '*'
+on: push
+#     # Trigger the workflow on push or pull request,
+#     # but only for the main branch
+#     push:
+#         branches:
+#             - main
+#         tags:
+#             - '*'
 
 jobs:
   build-n-publish:
