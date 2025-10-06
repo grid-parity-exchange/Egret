@@ -151,6 +151,7 @@ class _MaximalViolationsStore:
         self.violations_store = {}
         self.total_violations = 0
         self.monitored_violations = 0
+        self.min_violation = 0.
 
     def get_violations_named(self, name):
         for key in self.violations_store:
@@ -158,14 +159,17 @@ class _MaximalViolationsStore:
                 yield key[1]
 
     def min_flow_violation(self):
-        if self.violations_store:
-            return min(self.violations_store.values())
+        if len(self.violations_store) == self.max_viol_add:
+            return self.min_violation
         else:
             return 0.
 
     def _min_violation_key(self):
         d = self.violations_store
         return min(d, key=d.get)
+
+    def update_min_flow_violation(self):
+        self.min_violation = min(self.violations_store.values())
 
     def _add_violation(self, name, other_name, index, val):
         if other_name:
@@ -184,28 +188,16 @@ class _MaximalViolationsStore:
                         f"violations_store: {self.violations_store}")
 
             del self.violations_store[min_key]
+        self.update_min_flow_violation()
     
     def _add_violations( self, name, other_name, viol_array, viol_indices):
         while viol_indices:
             idx = np.argmax(viol_array[viol_indices])
             val = viol_array[viol_indices[idx]]
             if val < self.min_flow_violation() and len(self.violations_store) >= self.max_viol_add:
-                break
-            # If this violation is close in value to
-            # one already in the set, it is likely
-            # to be a parallel constraint.
-            # If we haven't added any constraints yet
-            # any(()) is False, so this won't fire
-            # TODO: since this object gets re-created each iteration,
-            #       and the violations_store just has violations we're
-            #       adding *this* iteration, it's possible to add parallel
-            #       lines, which may not be necessary in may cases (e.g.,
-            #       when the line is binding but not over the limit)
-            close_to_existing = any( math.isclose( val, existing ) for existing in self.violations_store.values() )
-            if close_to_existing:
-                viol_indices.pop(idx)
-                continue
-            self._add_violation( name, other_name, viol_indices[idx], val )
+                pass
+            else:
+                self._add_violation( name, other_name, viol_indices[idx], val )
             viol_indices.pop(idx)
 
     def check_and_add_violations(self, name, flow_array, flow_variable,
@@ -224,7 +216,7 @@ class _MaximalViolationsStore:
         ## get the indices of the violation
         ## here filter by least violation in violations_store
         ## in the limit, this will become 0 eventually --
-        upper_viol_lazy_idx = np.nonzero(upper_viol_lazy_array > self.min_flow_violation())[0]
+        upper_viol_lazy_idx = np.nonzero(upper_viol_lazy_array > 0.0)[0]
 
         upper_viol_array = flow_array[upper_viol_lazy_idx] - upper_enforced_limits[upper_viol_lazy_idx]
         self._calculate_total_and_monitored_violations(upper_viol_array, upper_viol_lazy_idx, monitored_indices,
@@ -246,7 +238,7 @@ class _MaximalViolationsStore:
         ## get the indices of the violation
         ## here filter by least violation in violations_store
         ## in the limit, this will become 0 eventually --
-        lower_viol_lazy_idx = np.nonzero(lower_viol_lazy_array > self.min_flow_violation())[0]
+        lower_viol_lazy_idx = np.nonzero(lower_viol_lazy_array > 0.0)[0]
 
         lower_viol_array =  lower_enforced_limits[lower_viol_lazy_idx] - flow_array[lower_viol_lazy_idx]
         self._calculate_total_and_monitored_violations(lower_viol_array, lower_viol_lazy_idx, monitored_indices,

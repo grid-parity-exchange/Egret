@@ -167,7 +167,7 @@ def main(argv):
         # project module (which seems to be enough for pytest)
         argv[0] = options.projects[0]
     else:
-        options.projects.append('pyomo')
+        options.projects.append('egret')
 
     argv.append('-W ignore::Warning')
 
