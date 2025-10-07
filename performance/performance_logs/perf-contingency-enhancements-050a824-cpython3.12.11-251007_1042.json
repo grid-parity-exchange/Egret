@@ -1,0 +1,225 @@
+[
+  {
+    "time": 1759853648.0528681,
+    "python_implementation": "CPython",
+    "python_version": [
+      3,
+      12,
+      11,
+      "final",
+      0
+    ],
+    "python_build": [
+      "main",
+      "Jun  4 2025 14:38:53"
+    ],
+    "platform": "Darwin",
+    "hostname": "bknueven-41299s",
+    "egret": {
+      "branch": "contingency-enhancements",
+      "sha": "050a824b90c5be6d95e1e958e8a9f561bceac7aa",
+      "diffs": [],
+      "version": "unknown"
+    }
+  },
+  {
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case3_lmbd.m]": {
+      "test_time": 0.3913176249479875
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case5_pjm.m]": {
+      "test_time": 0.009244374989066273
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case30_as.m]": {
+      "test_time": 0.025004541035741568
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case14_ieee.m]": {
+      "test_time": 0.0125730000436306
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case24_ieee_rts.m]": {
+      "test_time": 0.018859250005334616
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case30_ieee.m]": {
+      "test_time": 0.021814834035467356
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case39_epri.m]": {
+      "test_time": 0.03048266703262925
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case60_c.m]": {
+      "test_time": 0.057022541004698724
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case57_ieee.m]": {
+      "test_time": 0.03422212501754984
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case73_ieee_rts.m]": {
+      "test_time": 0.04927949997363612
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case89_pegase.m]": {
+      "test_time": 0.062273957999423146
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case197_snem.m]": {
+      "test_time": 0.08459079201566055
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case118_ieee.m]": {
+      "test_time": 0.061679292004555464
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case200_activ.m]": {
+      "test_time": 0.06744995899498463
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case179_goc.m]": {
+      "test_time": 0.0859522910322994
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case162_ieee_dtc.m]": {
+      "test_time": 0.09470200003124774
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case300_ieee.m]": {
+      "test_time": 0.14283583295764402
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case240_pserc.m]": {
+      "test_time": 0.19302837504073977
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case588_sdet.m]": {
+      "test_time": 0.24584883399074897
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case500_goc.m]": {
+      "test_time": 0.44313987501664087
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case793_goc.m]": {
+      "test_time": 0.3360082079889253
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case1354_pegase.m]": {
+      "test_time": 0.732789249974303
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case1803_snem.m]": {
+      "test_time": 0.10942066600546241
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2383wp_k.m]": {
+      "test_time": 1.1275740419514477
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2312_goc.m]": {
+      "test_time": 2.371760458976496
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2000_goc.m]": {
+      "test_time": 2.1821399169857614
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2737sop_k.m]": {
+      "test_time": 3.5000835829996504
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2736sp_k.m]": {
+      "test_time": 8.579895584029146
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2746wop_k.m]": {
+      "test_time": 4.1693220840534195
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2746wp_k.m]": {
+      "test_time": 11.938031458994374
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2742_goc.m]": {
+      "test_time": 2.0766486250213347
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case1888_rte.m]": {
+      "test_time": 0.903916165989358
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case3022_goc.m]": {
+      "test_time": 7.863788208051119
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case1951_rte.m]": {
+      "test_time": 0.7907386670121923
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case3120sp_k.m]": {
+      "test_time": 1.8125393329537474
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2853_sdet.m]": {
+      "test_time": 6.8517296249629
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case3012wp_k.m]": {
+      "test_time": 1.6468172500026412
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case3970_goc.m]": {
+      "test_time": 7.068706459016539
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case3375wp_k.m]": {
+      "test_time": 1.9680753329885192
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case4020_goc.m]": {
+      "test_time": 8.105664499977138
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2869_pegase.m]": {
+      "test_time": 2.353352417005226
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case4601_goc.m]": {
+      "test_time": 3.989299291977659
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2848_rte.m]": {
+      "test_time": 1.626189666974824
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case2868_rte.m]": {
+      "test_time": 1.4424939999589697
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case4837_goc.m]": {
+      "test_time": 5.0423802500008605
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case4619_goc.m]": {
+      "test_time": 8.023182415985502
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case4661_sdet.m]": {
+      "test_time": 7.849537917005364
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case4917_goc.m]": {
+      "test_time": 23.929166792018805
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case5658_epigrids.m]": {
+      "test_time": 32.143016166985035
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case7336_epigrids.m]": {
+      "test_time": 12.954429582983721
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case9591_goc.m]": {
+      "test_time": 41.63978591701016
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case8387_pegase.m]": {
+      "test_time": 575.7608759999857
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case10192_epigrids.m]": {
+      "test_time": 0.010644583031535149
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case10000_goc.m]": {
+      "test_time": 10.751341208000667
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case10480_goc.m]": {
+      "test_time": 91.90215966699179
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case6470_rte.m]": {
+      "test_time": 5.3019932500319555
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case6495_rte.m]": {
+      "test_time": 5.727619750017766
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case6515_rte.m]": {
+      "test_time": 5.5800352079677396
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case6468_rte.m]": {
+      "test_time": 4.953589249984361
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case9241_pegase.m]": {
+      "test_time": 16.92210987501312
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case19402_goc.m]": {
+      "test_time": 570.5671422920423
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case20758_epigrids.m]": {
+      "test_time": 50.86483654199401
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case13659_pegase.m]": {
+      "test_time": 24.731230375007726
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case24464_goc.m]": {
+      "test_time": 73.95312991703395
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case30000_goc.m]": {
+      "test_time": 48.97027904202696
+    },
+    "performance/test_scopf.py::TestLinearizedSCOPF::test_linearized_pglib_scopf[pglib_opf_case78484_epigrids.m]": {
+      "test_time": 0.05855420796433464
+    }
+  }
+]
