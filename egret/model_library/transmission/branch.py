@@ -942,17 +942,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
                 pos_slack = None
 
             if neg_slack is not None:
-                pf_bn = m.pf[branch_name]
-                if hasattr(pf_bn, 'expr') and isinstance(pf_bn.expr, LinearExpression):
-                    ## create a copy
-                    old_expr = pf_bn.expr
-                    expr = LinearExpression(constant=old_expr.constant,
-                                            linear_vars = old_expr.linear_vars[:] + [neg_slack],
-                                            linear_coefs = old_expr.linear_coefs[:] + [1],
-                                            )
-
-                else:
-                    expr = m.pf[branch_name] + neg_slack
+                expr = m.pf[branch_name] + neg_slack
                 m.ineq_pf_branch_thermal_lb[branch_name] = \
                     (-p_thermal_limits[branch_name], expr, None)
             else:
@@ -960,16 +950,7 @@ def declare_ineq_p_branch_thermal_lbub(model, index_set,
                     (-p_thermal_limits[branch_name], m.pf[branch_name], None)
 
             if pos_slack is not None:
-                pf_bn = m.pf[branch_name]
-                if hasattr(pf_bn, 'expr') and isinstance(pf_bn.expr, LinearExpression):
-                    ## create a copy
-                    old_expr = pf_bn.expr
-                    expr = LinearExpression(constant=old_expr.constant,
-                                            linear_vars = old_expr.linear_vars[:] + [pos_slack],
-                                            linear_coefs = old_expr.linear_coefs[:] + [-1],
-                                            )
-                else:
-                    expr = m.pf[branch_name] - pos_slack
+                expr = m.pf[branch_name] - pos_slack
                 m.ineq_pf_branch_thermal_ub[branch_name] = \
                     (None, expr, p_thermal_limits[branch_name])
             else:
@@ -984,31 +965,11 @@ def generate_thermal_bounds(pf, llimit, ulimit, neg_slack=None, pos_slack=None):
     positive slack variable, pos_slack, (None if not needed) added to this 
     constraint.
     """
-    if hasattr(pf, 'expr') and isinstance(pf.expr, LinearExpression):
-        ## if necessary, copy again, so that m.pf[bn] **is** the flow
-        add_vars = list()
-        add_coefs = list()
-        if neg_slack is not None:
-            add_vars.append(neg_slack)
-            add_coefs.append(1)
-        if pos_slack is not None:
-            add_vars.append(pos_slack)
-            add_coefs.append(-1)
-        if add_vars:
-            ## create a copy
-            old_expr = pf.expr
-            expr = LinearExpression(constant = old_expr.constant,
-                                    linear_vars = old_expr.linear_vars[:] + add_vars,
-                                    linear_coefs = old_expr.linear_coefs[:] + add_coefs,
-                                   )
-        else:
-            expr = pf
-    else:
-        expr = pf
-        if neg_slack is not None:
-            expr += neg_slack
-        if pos_slack is not None:
-            expr -= pos_slack
+    expr = pf
+    if neg_slack is not None:
+        expr += neg_slack
+    if pos_slack is not None:
+        expr -= pos_slack
     return (llimit, expr, ulimit)
 
 def declare_ineq_p_branch_thermal_bounds(model, index_set,
