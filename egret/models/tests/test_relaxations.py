@@ -14,7 +14,7 @@ import os
 import math
 import unittest
 import pytest
-import pyomo
+from pyomo.version.info import version_info
 from pyomo.opt import SolverFactory, TerminationCondition
 import pyomo.environ as pe
 from egret.models.acopf import create_psv_acopf_model
@@ -101,7 +101,7 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
-    @pytest.mark.xfail(pyomo.__version__ > "6.7.1", reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
+    @pytest.mark.xfail(version_info > (6,7,1,"final",0), reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
     def test_polar_relaxation(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
@@ -124,7 +124,7 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
-    @pytest.mark.xfail(pyomo.__version__ > "6.7.1", reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
+    @pytest.mark.xfail(version_info > (6,7,1,"final",0), reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
     def test_atan_relaxation(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
@@ -143,7 +143,7 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
-    @pytest.mark.xfail(pyomo.__version__ > "6.7.1", reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
+    @pytest.mark.xfail(version_info > (6,7,1,"final",0), reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
     def test_atan_relaxation_with_soc_edge_cuts(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
@@ -162,7 +162,7 @@ class TestRelaxations(unittest.TestCase):
         self.assertTrue(comparison)
 
     @parameterized.expand(case_names)
-    @pytest.mark.xfail(pyomo.__version__ > "6.7.1", reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
+    @pytest.mark.xfail(version_info > (6,7,1,"final",0), reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
     def test_rectangular_relaxation(self, case_name):
         test_case = os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(case_name))
         upper_bound_soln = upper_bounds[case_name]
@@ -183,7 +183,7 @@ class TestRelaxations(unittest.TestCase):
 
 @unittest.skipIf(not coramin_available, "coramin is not available")
 class TestSOCEdgeCuts(unittest.TestCase):
-    @pytest.mark.xfail(pyomo.__version__ > "6.7.1", reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
+    @pytest.mark.xfail(version_info > (6,7,1,"final",0), reason="Known incompatabilty with coramin for pyomo>6.7.1 ", strict=True)
     def test_soc_edge_cuts(self):
         m = pe.ConcreteModel()
         m.c = pe.Var()
