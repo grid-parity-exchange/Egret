@@ -256,12 +256,10 @@ def _read_columnar_timeseries_file(file_name:str, minutes_per_period:int,
     The returned DataFrame converts the first 4 columns into a datetime which is used as
     the DataFrame's index.  All other CSV columns are included as columns in the DataFrame.
     """
-    df = pd.read_csv(file_name,
-                     header=0,
-                     parse_dates=[['Year', 'Month', 'Day']])
-    df.index = df['Year_Month_Day'] + pd.to_timedelta((df['Period']-1)*minutes_per_period, 'm')
+    df = pd.read_csv(file_name, header=0)
+    df.index = pd.to_datetime(df[['Year', 'Month', 'Day']]) + pd.to_timedelta((df['Period']-1)*minutes_per_period, 'm')
     df.index.names = ['DateTime']
-    df.drop(['Year_Month_Day', 'Period'], axis=1, inplace=True)
+    df.drop(['Year', 'Month', 'Day', 'Period'], axis=1, inplace=True)
 
     df.sort_index(inplace=True)
 
@@ -303,10 +301,9 @@ def _read_2D_timeseries_file(file_name:str, minutes_per_period:int,
     period is included in the results.  Like a typical python range, the returned data includes 
     the start_time but does not include the end_time.
     """
-    df = pd.read_csv(file_name, 
-                     header=0, 
-                     parse_dates=[['Year', 'Month', 'Day']],
-                     index_col=0)
+    df = pd.read_csv(file_name, header=0)
+    df.index = pd.to_datetime(df[['Year', 'Month', 'Day']])
+    df.drop(['Year', 'Month', 'Day'], axis=1, inplace=True)
     df.sort_index(inplace=True)
 
     # Remove data outside requested time period.
