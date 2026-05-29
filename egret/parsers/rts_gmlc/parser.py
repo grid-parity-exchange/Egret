@@ -161,8 +161,8 @@ def _read_metadata(base_dir:str, honor_lookahead:bool) -> pd.DataFrame:
     metadata_df = pd.read_csv(metadata_path, index_col=0)
 
     if not honor_lookahead:
-        metadata_df.loc['Look_Ahead_Periods_per_Step']['DAY_AHEAD'] = 0
-        metadata_df.loc['Look_Ahead_Periods_per_Step']['REAL_TIME'] = 0
+        metadata_df.loc['Look_Ahead_Periods_per_Step', 'DAY_AHEAD'] = '0'
+        metadata_df.loc['Look_Ahead_Periods_per_Step', 'REAL_TIME'] = '0'
 
     return metadata_df
 
@@ -180,8 +180,8 @@ def _get_data_date_range(metadata_df) -> Tuple[datetime, datetime]:
     def _extract_end_date(which:str):
         # The actual end date is the metadata's Date_To plus a number of look ahead periods.
         # Each look ahead period is a specified number of seconds
-        extra_seconds = int(metadata_df.loc['Look_Ahead_Periods_per_Step'][which]) * \
-                        int(metadata_df.loc['Look_Ahead_Resolution'][which])
+        extra_seconds = int(metadata_df.loc['Look_Ahead_Periods_per_Step', which]) * \
+                        int(metadata_df.loc['Look_Ahead_Resolution', which])
         end_date = dateutil.parser.parse(row[which])
         return end_date + timedelta(seconds=extra_seconds)
     # Get the end date for each kind of data.  Both kinds of data
