@@ -540,6 +540,22 @@ def solve_dcopf(model_data,
 
     m, md = dcopf_model_generator(model_data, **kwargs)
 
+    ## The LMP extraction below is written against the lazy constraint
+    ## generation formulation (see ptdf_utils.VirtualPTDFMatrix.calculate_LMP).
+    ## create_ptdf_dcopf_model accepts ptdf_options={'lazy': False}, but that
+    ## path declares ineq_pf_branch_thermal_lb/_ub and never builds the
+    ## "masked" matrices, so LMP extraction cannot work on it. Fail early with
+    ## an actionable message instead of an obscure AttributeError later.
+    if dcopf_model_generator == create_ptdf_dcopf_model and not m._ptdf_options['lazy']:
+        raise RuntimeError(
+            "solve_dcopf with create_ptdf_dcopf_model requires lazy PTDF "
+            "constraint generation (ptdf_options['lazy'] = True, which is the "
+            "default) because the LMP calculation reads the constraints and "
+            "matrices that only the lazy path declares. Either leave "
+            "ptdf_options['lazy'] at its default, or use "
+            "dcopf_model_generator=create_btheta_dcopf_model, which supports "
+            "both and produces identical objective values.")
+
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
