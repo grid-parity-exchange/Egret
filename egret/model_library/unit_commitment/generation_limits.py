@@ -15,7 +15,10 @@ from .uc_utils import add_model_attr, get_linear_expr
 
 component_name = 'generation_limits'
 
-def _add_reactive_limits(model, grid):
+def _add_reactive_limits(model, grid=None):
+    # NOTE: `grid` is unused; it is kept optional so that the single call site
+    # in power_balance._add_egret_power_flow, which passes only the model,
+    # works.
 
     def reactive_upper_limit(m,g,t):
         return m.ReactivePowerGenerated[g,t] <= m.MaximumReactivePowerOutput[g,t]*m.UnitOn[g,t]

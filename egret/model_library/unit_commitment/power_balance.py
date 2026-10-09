@@ -626,7 +626,7 @@ def _add_egret_power_flow(model, network_model_builder,
         elif slack_type == SlackType.TRANSMISSION_LIMITS:
             raise NotImplementedError("Need to implement transmission slacks for reactive power")
         elif slack_type == SlackType.NONE:
-            _add_blank_q_load_mistmatch(model)
+            _add_blank_q_load_mismatch(model)
         else:
             raise ValueError(f"Unrecognized slack_type: {slack_type}")
 
