@@ -260,9 +260,10 @@ def declare_expression_qg_operating_cost(model, index_set, q_costs, pw_formulati
                                                                             p_max=q_max,
                                                                             gen_name=gen_name)
                     expr = cleaned_values[0][1]
-                    for ndx, ((o1, c1), (o2, c2)) in enumerate(zip(cleaned_values, cleaned_values[1:])):
-                        slope = (c2 - c1) / (o2 - o1)
-                        expr += slope * m.delta_pg[gen_name, ndx]
+                    if len(cleaned_values) > 1:
+                        for ndx, ((o1, c1), (o2, c2)) in enumerate(zip(cleaned_values, cleaned_values[1:])):
+                            slope = (c2 - c1) / (o2 - o1)
+                            expr += slope * m.delta_qg[gen_name, ndx]
                     m.qg_operating_cost[gen_name] = expr
                 else:
                     m.qg_operating_cost[gen_name] = m.qg_cost[gen_name]
