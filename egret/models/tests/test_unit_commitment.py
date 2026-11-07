@@ -22,6 +22,7 @@ from pyomo.core.plugins.transform.relax_integrality \
 from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 from egret.models.unit_commitment import *
 from egret.data.model_data import ModelData
+from egret.parsers.pglib_uc_parser import create_ModelData
 from egret.common.solver_interface import _set_options
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -297,3 +298,51 @@ def test_scuc():
                             current_dir, 'uc_test_instances', 'test_scuc_sparse_enforce_sol.json'))
     assert math.isclose( md_results.data['system']['total_cost'], md_baseline.data['system']['total_cost'], rel_tol=rel_tol)
 
+
+def test_copperplate_balance_is_equality(tmp_path):
+    ## copperplate_power_flow requires generation to equal load, so surplus renewable
+    ## output must be curtailed and cannot count toward reserves.
+    ##
+    ## In each of two periods, one must-run unit (P_min 100, P_max 110) costs 1000 at
+    ## P_min, demand is 150, the reserve requirement is 100, and up to 300 of free
+    ## renewable power is available. With an equality, the unit at P_min leaves room
+    ## for 50 of renewables, so 110 + 50 falls 90 short of the 250 required. At 1000
+    ## per unit of shortfall each period costs 1000 + 90000. If over-generation were
+    ## free, renewables could fill the reserve row and each period would cost 1000.
+    pglib_uc = {
+        "time_periods": 2,
+        "demand": [150., 150.],
+        "reserves": [100., 100.],
+        "thermal_generators": {
+            "g1": {
+                "name": "g1", "must_run": 1,
+                "power_output_minimum": 100., "power_output_maximum": 110.,
+                "ramp_up_limit": 110., "ramp_down_limit": 110.,
+                "ramp_startup_limit": 110., "ramp_shutdown_limit": 110.,
+                "time_up_minimum": 1, "time_down_minimum": 1,
+                "power_output_t0": 100., "unit_on_t0": 1,
+                "time_up_t0": 10, "time_down_t0": 0,
+                "startup": [{"lag": 1, "cost": 0.}],
+                "piecewise_production": [{"mw": 100., "cost": 1000.},
+                                         {"mw": 110., "cost": 1100.}],
+            },
+        },
+        "renewable_generators": {
+            "r1": {"name": "r1",
+                   "power_output_minimum": [0., 0.],
+                   "power_output_maximum": [300., 300.]},
+        },
+    }
+    instance = tmp_path / "surplus_renewables.json"
+    instance.write_text(json.dumps(pglib_uc))
+    md_in = create_ModelData(str(instance))
+
+    model = create_tight_unit_commitment_model(md_in, network_constraints='copperplate_power_flow')
+    assert all(model.TransmissionBlock[t].eq_p_balance.equality for t in model.TimePeriods)
+
+    model = create_tight_unit_commitment_model(md_in, network_constraints='copperplate_relaxed_power_flow')
+    assert not any(model.TransmissionBlock[t].eq_p_balance.equality for t in model.TimePeriods)
+
+    md_results = solve_unit_commitment(md_in, solver=test_solver, mipgap=0.0,
+                                       uc_model_generator=_make_get_dcopf_uc_model('copperplate_power_flow'))
+    assert math.isclose(md_results.data['system']['total_cost'], 182000., rel_tol=rel_tol)
