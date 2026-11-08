@@ -259,7 +259,7 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
             if idx == 'include_losses':
                 p_expr -= sum(m.pfl[branch_name] for branch_name in val)
             if idx == 'relax_balance':
-                relaxed_balance = True
+                relaxed_balance = bool(val)
 
     if relaxed_balance:
         m.eq_p_balance = pe.Constraint(expr = p_expr >= 0.0)
