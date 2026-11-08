@@ -688,6 +688,68 @@ def _lazy_ptdf_warmstart_copy_violations(m, md, t_subset, solver, ptdf_options, 
         total_flow_constr_added += len(viol_lazy[t_o])
     logger.info(prepend_str+"added {0} flow constraint(s)".format(total_flow_constr_added))
 
+def _solver_warm_start_capable(solver):
+    '''
+    Return True if solver accepts a warm-start solution.
+
+    OptSolver.warm_start_capable() is Pyomo's declarative signal for this --
+    the base class returns False, while CPLEX, Gurobi, etc. override it to
+    return True. Pyomo's solver plugins only consume the keywords they
+    declare, so passing 'warmstart' to a solver that does not support it
+    raises an obscure error rather than being ignored:
+
+        GLPK  : ValueError: key 'warmstart' not defined for ConfigDict '' and
+                implicit (undefined) keys are not allowed
+        HiGHS : LegacySolverWrapper.solve() got an unexpected keyword
+                argument 'warmstart'
+
+    Parameters
+    ----------
+    solver : pyomo solver object
+
+    Returns
+    -------
+    bool
+    '''
+    capability = getattr(solver, 'warm_start_capable', None)
+    if capability is None:
+        return False
+    try:
+        return bool(capability() if callable(capability) else capability)
+    except Exception:
+        ## Never let a capability probe break a solve
+        return False
+
+
+def _require_lazy_ptdf_for_lmps(m):
+    '''
+    Raise a clear error if LMPs were requested from a non-lazy PTDF model.
+
+    PTDFMatrix.calculate_LMP is written against the lazy constraint generation
+    formulation. It reads
+
+      * self.branches_keys_masked / self.B_dA_masked and the other "masked"
+        attributes, which are built by _get_filtered_lines() -- called only
+        when ptdf_options['lazy'] is True, and
+      * mb.ineq_pf_branch_thermal_bounds / mb.ineq_pf_interface_bounds, which
+        are only declared on the lazy path (the non-lazy path declares
+        ineq_pf_branch_thermal_lb / _ub instead).
+
+    With lazy=False none of those exist, so the extraction would fail with an
+    unhelpful AttributeError. Fail early with an actionable message instead.
+    '''
+    ptdf_options = getattr(m, '_ptdf_options', None)
+    if ptdf_options is not None and not ptdf_options.get('lazy', True):
+        raise RuntimeError(
+            "LMP calculation for 'ptdf_power_flow' requires lazy PTDF constraint "
+            "generation (ptdf_options['lazy'] = True, which is the default). With "
+            "ptdf_options['lazy'] = False the model does not declare the "
+            "constraints and does not build the matrices that LMP extraction "
+            "reads. Either leave ptdf_options['lazy'] at its default, or use "
+            "network_constraints='btheta_power_flow', which computes LMPs "
+            "directly from the bus balance duals.")
+
+
 def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options=None):
     # not usually needed, but could be useful
     # in contexts where the unit commitment model
@@ -695,11 +757,24 @@ def _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solve
     main_model = m.model()
     if solve_method_options is None:
         solve_method_options = {}
+    ## Only ask for a warm start when the solver actually supports one.
+    ## NOTE: the keyword has to be omitted entirely rather than set to False.
+    ## Pyomo's solver plugins only consume the keywords they declare and pass
+    ## the rest through to the file writer, which rejects the key itself:
+    ##
+    ##   ValueError: key 'warmstart' not defined for ConfigDict '' and
+    ##               implicit (undefined) keys are not allowed
+    ##
+    ## raised from pyomo/repn/plugins/lp_writer.py -- not from the solver.
+    ## This is what made GLPK/CBC/HiGHS unusable on the lazy PTDF path.
+    solve_kwargs = dict(solve_method_options)
+    if _solver_warm_start_capable(solver):
+        solve_kwargs.setdefault('warmstart', True)
     if persistent_solver:
-        results = solver.solve(main_model, tee=solver_tee, load_solutions=False, save_results=False, warmstart=True, **solve_method_options)
+        results = solver.solve(main_model, tee=solver_tee, load_solutions=False, save_results=False, **solve_kwargs)
         solver.load_vars(vars_to_load)
     else:
-        results = solver.solve(main_model, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False, warmstart=True, **solve_method_options)
+        results = solver.solve(main_model, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels, load_solutions=False, **solve_kwargs)
         m.solutions.load_from(results)
     return results
 
@@ -767,7 +842,12 @@ def _lazy_ptdf_termination_cleanup(m, md, time_periods, solver, ptdf_options, pr
         # the warmstart basis is typically
         # worse than useless. If the solver
         # implements it, reset the solver.
-        solver.reset()
+        # NOTE: reset() lives on OptSolver, so every old-style solver plugin
+        # has it; the newer pyomo.contrib.solver wrappers (e.g. HiGHS) do not.
+        # Guard it, as this comment always intended.
+        reset_solver = getattr(solver, 'reset', None)
+        if reset_solver is not None:
+            reset_solver()
         results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
     if persistent_solver and duals and (results is not None) and (vars_to_load is None):
         solver.load_duals()
@@ -1280,6 +1360,7 @@ def _save_uc_results(m, relaxed):
         interface_flows_dict = dict()
         voltage_angle_dict = dict()
         if relaxed:
+            _require_lazy_ptdf_for_lmps(m)
             lmps_dict = dict()
         for mt in m.TimePeriods:
             b = m.TransmissionBlock[mt]
