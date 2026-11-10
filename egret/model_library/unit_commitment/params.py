@@ -1368,8 +1368,16 @@ def load_params(model, model_data, slack_type):
     
     model.InputEfficiencyEnergy  = Param(model.Storage, within=PercentFraction, default=1.0,
                                             initialize=storage_attrs.get('charge_efficiency', dict()))
+    ## NOTE: this key has historically been misspelled 'discharge_efficienty' in
+    ## this file, while docs/types_sheet.xlsx and parsers/prescient_dat_parser.py
+    ## use the correct 'discharge_efficiency'. Accept BOTH spellings so that
+    ## existing datasets keep working while new data can use the documented name.
+    ## (The misspelling silently defaulted the discharge efficiency to 1.0.)
+    _dischg_eff = dict(storage_attrs.get('discharge_efficiency', dict()))
+    for _n, _v in storage_attrs.get('discharge_efficienty', dict()).items():
+        _dischg_eff.setdefault(_n, _v)
     model.OutputEfficiencyEnergy = Param(model.Storage, within=PercentFraction, default=1.0,
-                                            initialize=storage_attrs.get('discharge_efficienty', dict()))
+                                            initialize=_dischg_eff)
     model.RetentionRate          = Param(model.Storage, within=PercentFraction, default=1.0,
                                             initialize=storage_attrs.get('retention_rate_60min', dict())) ## assumed to be %/hr
 
