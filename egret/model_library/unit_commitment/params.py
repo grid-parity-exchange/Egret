@@ -337,7 +337,7 @@ def load_params(model, model_data, slack_type):
                 if val <= 0:
                     logger.warning("Interface {} has a non-positive penalty {}, this will cause its limits to be ignored!".format(i_n,val))
         elif slack_type == SlackType.TRANSMISSION_LIMITS:
-            _interfaces_with_slack.append(bn)
+            _interfaces_with_slack.append(i_n)
 
     model.InterfacesWithSlack = Set(within=model.Interfaces, initialize=_interfaces_with_slack)
 
